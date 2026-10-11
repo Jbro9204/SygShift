@@ -41,7 +41,7 @@ describe('operational alert lifecycle reconciliation', () => {
   it('runs incremental reconciliation every minute and a full integrity pass at 2 AM Mountain', () => {
     expect(worker).toContain("'service_reconcile_operational_alert_lifecycle'")
     expect(worker).toContain("timeZone: 'America/Denver'")
-    expect(worker).toContain("denverHour === '02' && denverMinute === '00'")
+    expect(worker).toContain("fullReconciliation: hour === '02' && minute === 0")
     expect(worker).toContain('{ target_full_reconciliation: fullReconciliation }')
   })
 

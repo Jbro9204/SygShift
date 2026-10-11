@@ -37,4 +37,35 @@ describe('protected background push', () => {
     expect(send).not.toHaveBeenCalled()
     expect(rpc).toHaveBeenLastCalledWith('service_complete_employee_push', { target_id: id, target_claim_token: id, target_outcome: 'expired' })
   })
+
+  it('serializes completion RPCs so a stalled pool never receives sibling fan-out', async () => {
+    const ids = [
+      '10000000-0000-4000-8000-000000000001',
+      '10000000-0000-4000-8000-000000000002',
+    ]
+    const jobs = ids.map((id) => ({
+      id,
+      claimToken: id,
+      notificationId: id,
+      employeeId: id,
+      createdAt: new Date().toISOString(),
+      path: '/notifications',
+      attempt: 1,
+      eligible: false,
+      subscription: { endpoint: 'https://fcm.googleapis.com/x', expirationTime: null, keys: { p256dh: '', auth: '' } },
+    }))
+    let activeCompletions = 0
+    let maximumConcurrentCompletions = 0
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'service_claim_employee_push') return jobs
+      activeCompletions += 1
+      maximumConcurrentCompletions = Math.max(maximumConcurrentCompletions, activeCompletions)
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      activeCompletions -= 1
+      return null
+    })
+
+    expect(await deliverPushBatch({ publicKey: '', privateKey: '', hookSecret: '' }, rpc)).toBe(2)
+    expect(maximumConcurrentCompletions).toBe(1)
+  })
 })

@@ -1,9 +1,13 @@
+import { createHash } from 'node:crypto'
+import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it, vi } from 'vitest'
 import worker, {
   brandedEmailHtml,
   buildLoginInstructionsEmail,
   buildWelcomeEmail,
+  finalizeSignatureEnvelope,
   protectedMaintenanceWindow,
+  ScheduledSupabaseUnavailableError,
   secureResponse,
   validateSuppliedTemporaryPassword,
 } from '../worker'
@@ -1149,7 +1153,7 @@ describe('Cloudflare Worker boundary', () => {
     vi.unstubAllGlobals()
   })
 
-  it('runs the idempotent timekeeping job before processing scheduled notifications', async () => {
+  it('runs one coordinated scheduled pipeline with timekeeping first', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
       const payload = url.includes('/rpc/service_run_timekeeping_automation')
@@ -1185,7 +1189,7 @@ describe('Cloudflare Worker boundary', () => {
       { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
     )
 
-    expect(scheduledWork).toHaveLength(7)
+    expect(scheduledWork).toHaveLength(1)
     await Promise.all(scheduledWork)
     expect(fetchMock).toHaveBeenCalledTimes(18)
     const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
@@ -1220,6 +1224,395 @@ describe('Cloudflare Worker boundary', () => {
     expect(lifecycleBody.target_full_reconciliation).toBe(false)
     expect(emailSend).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
+  })
+
+  it('contains noncritical scheduled work when the database pool is transiently unavailable', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal)
+      return new Response(JSON.stringify({ message: 'Timed out acquiring connection from connection pool' }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    const scheduledWork: Promise<unknown>[] = []
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await worker.scheduled(
+      { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 11, 15, 0) },
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send: vi.fn() },
+      }),
+      { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+    )
+
+    await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/rpc/service_run_timekeeping_automation')
+    const containment = errorSpy.mock.calls
+      .map(([value]) => {
+        try {
+          return JSON.parse(String(value)) as Record<string, unknown>
+        } catch {
+          return null
+        }
+      })
+      .find((value) => value?.event === 'scheduled_work_contained')
+    expect(containment).toMatchObject({
+      failedOperation: 'service_run_timekeeping_automation',
+      status: 503,
+      timedOut: false,
+    })
+
+    errorSpy.mockRestore()
+    vi.unstubAllGlobals()
+  })
+
+  it.each([
+    { label: 'a network TypeError', failure: new TypeError('fetch failed'), status: null },
+    { label: 'a reset socket', failure: new Error('socket hang up: ECONNRESET'), status: null },
+    { label: 'an upstream 520 response', failure: null, status: 520 },
+    { label: 'an upstream 530 response', failure: null, status: 530 },
+  ])('contains scheduled fan-out after $label', async ({ failure, status }) => {
+    const fetchMock = vi.fn(async () => {
+      if (failure) throw failure
+      return new Response(JSON.stringify({ message: 'Upstream database service unavailable' }), {
+        status: status ?? 503,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    const scheduledWork: Promise<unknown>[] = []
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await worker.scheduled(
+        { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 11, 15, 2) },
+        environment(new Response('asset'), {
+          ...configuredEnvironment,
+          EMAIL: { send: vi.fn() },
+        }),
+        { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+      )
+
+      await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(errorSpy.mock.calls.some(([value]) => (
+        String(value).includes('"event":"scheduled_work_contained"')
+        && String(value).includes('"failedOperation":"service_run_timekeeping_automation"')
+      ))).toBe(true)
+    } finally {
+      errorSpy.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('delivers critical timekeeping notices before a transient noncritical failure can stop the cycle', async () => {
+    const notificationId = '20000000-0000-4000-8000-000000000099'
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/rpc/service_claim_timekeeping_notification_batch')) {
+        return new Response(JSON.stringify([{
+          id: notificationId,
+          messageType: 'automatic_clock_out',
+          aggregateType: 'timekeeping_event',
+          aggregateId: '30000000-0000-4000-8000-000000000099',
+          recipients: ['employee@example.com'],
+          message: { subject: 'Automatic clock-out recorded', text: 'Review your timecard.' },
+        }]), { headers: { 'content-type': 'application/json' } })
+      }
+      if (url.includes('/rpc/service_reconcile_patrol_obligations')) {
+        return new Response(JSON.stringify({ message: 'Timed out acquiring connection from connection pool' }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ status: 'completed' }), { headers: { 'content-type': 'application/json' } })
+    })
+    const emailSend = vi.fn().mockResolvedValue(undefined)
+    const scheduledWork: Promise<unknown>[] = []
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await worker.scheduled(
+      { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 11, 15, 3) },
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send: emailSend },
+        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+      }),
+      { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+    )
+
+    await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+    expect(emailSend).toHaveBeenCalledTimes(1)
+    const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
+    const callIndex = (rpc: string) => calledUrls.findIndex((url) => url.includes(`/rpc/${rpc}`))
+    expect(callIndex('service_run_timekeeping_automation')).toBeGreaterThanOrEqual(0)
+    expect(callIndex('service_claim_timekeeping_notification_batch')).toBeGreaterThan(callIndex('service_run_timekeeping_automation'))
+    expect(callIndex('service_mark_notification_result')).toBeGreaterThan(callIndex('service_claim_timekeeping_notification_batch'))
+    expect(callIndex('service_reconcile_patrol_obligations')).toBeGreaterThan(callIndex('service_mark_notification_result'))
+    expect(calledUrls.filter((url) => url.includes('/rpc/service_claim_timekeeping_notification_batch'))).toHaveLength(1)
+    expect(calledUrls.some((url) => url.includes('/rpc/service_claim_time_off_notification_batch'))).toBe(false)
+    expect(errorSpy.mock.calls.some(([value]) => (
+      String(value).includes('"event":"scheduled_work_contained"')
+      && String(value).includes('"failedOperation":"service_reconcile_patrol_obligations"')
+    ))).toBe(true)
+
+    errorSpy.mockRestore()
+    vi.unstubAllGlobals()
+  })
+
+  it('durably completes an accepted email before a deferred audit outage so the next cycle cannot resend it', async () => {
+    const notificationId = '20000000-0000-4000-8000-000000000088'
+    let delivered = false
+    const rpcCalls: string[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const rpcName = url.split('/rpc/')[1] ?? ''
+      rpcCalls.push(rpcName)
+      if (rpcName === 'service_claim_timekeeping_notification_batch') {
+        return new Response(JSON.stringify(delivered ? [] : [{
+          id: notificationId,
+          messageType: 'automatic_clock_out',
+          aggregateType: 'timekeeping_event',
+          aggregateId: '30000000-0000-4000-8000-000000000088',
+          recipients: ['employee@example.com'],
+          message: { subject: 'Automatic clock-out recorded', text: 'Review your timecard.' },
+        }]), { headers: { 'content-type': 'application/json' } })
+      }
+      if (rpcName === 'service_mark_notification_result') {
+        const body = JSON.parse(String(init?.body)) as { delivered?: boolean }
+        if (body.delivered === true) delivered = true
+        return new Response('null', { headers: { 'content-type': 'application/json' } })
+      }
+      if (rpcName === 'service_log_email_delivery') {
+        return new Response(JSON.stringify({ message: 'Timed out acquiring connection from connection pool' }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (rpcName.startsWith('service_claim_')) {
+        return new Response('[]', { headers: { 'content-type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ status: 'completed' }), { headers: { 'content-type': 'application/json' } })
+    })
+    const emailSend = vi.fn().mockResolvedValue(undefined)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      for (const minute of [3, 4]) {
+        const scheduledWork: Promise<unknown>[] = []
+        await worker.scheduled(
+          { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 11, 15, minute) },
+          environment(new Response('asset'), {
+            ...configuredEnvironment,
+            EMAIL: { send: emailSend },
+            SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+          }),
+          { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+        )
+        await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+      }
+
+      expect(delivered).toBe(true)
+      expect(emailSend).toHaveBeenCalledTimes(1)
+      expect(rpcCalls.filter((name) => name === 'service_claim_timekeeping_notification_batch')).toHaveLength(2)
+      expect(rpcCalls.indexOf('service_mark_notification_result')).toBeLessThan(rpcCalls.indexOf('service_log_email_delivery'))
+      expect(errorSpy.mock.calls.some(([value]) => String(value).includes('"event":"scheduled_work_contained"'))).toBe(true)
+    } finally {
+      errorSpy.mockRestore()
+      infoSpy.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('aborts a stalled scheduled database request before the next minute trigger', async () => {
+    vi.useFakeTimers()
+    const scheduledWork: Promise<unknown>[] = []
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    let requestAborted = false
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal
+      expect(signal).toBeInstanceOf(AbortSignal)
+      signal?.addEventListener('abort', () => {
+        requestAborted = true
+        reject(new DOMException('The operation was aborted.', 'AbortError'))
+      }, { once: true })
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await worker.scheduled(
+        { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 11, 15, 1) },
+        environment(new Response('asset'), {
+          ...configuredEnvironment,
+          EMAIL: { send: vi.fn() },
+        }),
+        { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+      )
+
+      const completion = Promise.all(scheduledWork)
+      await vi.advanceTimersByTimeAsync(8_000)
+      await expect(completion).resolves.toBeDefined()
+      expect(requestAborted).toBe(true)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(errorSpy.mock.calls.some(([value]) => (
+        String(value).includes('"event":"scheduled_work_contained"')
+        && String(value).includes('"timedOut":true')
+      ))).toBe(true)
+    } finally {
+      errorSpy.mockRestore()
+      vi.unstubAllGlobals()
+      vi.useRealTimers()
+    }
+  })
+
+  it('preserves uploaded signature artifacts when the commit outcome is ambiguous', async () => {
+    const envelopeId = '10000000-0000-4000-8000-000000000010'
+    const source = await PDFDocument.create()
+    source.addPage([612, 792])
+    const sourceBytes = await source.save({ useObjectStreams: false })
+    const sourceChecksum = createHash('sha256').update(sourceBytes).digest('hex')
+    const storedObjects = new Map<string, Uint8Array>()
+    const deletedObjects: string[] = []
+    const originalDigestStream = (crypto as Crypto & { DigestStream?: unknown }).DigestStream
+
+    class TestDigestStream extends WritableStream<Uint8Array> {
+      declare readonly bytesWritten: number
+      readonly digest: Promise<ArrayBuffer>
+
+      constructor() {
+        let bytesWritten = 0
+        const hash = createHash('sha256')
+        let resolveDigest!: (value: ArrayBuffer) => void
+        const digest = new Promise<ArrayBuffer>((resolve) => { resolveDigest = resolve })
+        super({
+          write(chunk) {
+            bytesWritten += chunk.byteLength
+            hash.update(chunk)
+          },
+          close() {
+            const value = hash.digest()
+            resolveDigest(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer)
+          },
+        })
+        Object.defineProperty(this, 'bytesWritten', { get: () => bytesWritten })
+        this.digest = digest
+      }
+    }
+
+    Object.defineProperty(crypto, 'DigestStream', { configurable: true, value: TestDigestStream })
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (method === 'POST') {
+        const bytes = new Uint8Array(init?.body as ArrayBuffer)
+        storedObjects.set(url, bytes)
+        return new Response(null, { status: 200 })
+      }
+      if (method === 'DELETE') {
+        deletedObjects.push(url)
+        return new Response(null, { status: 200 })
+      }
+      const bytes = url.endsWith('/hr-general/source/source.pdf') ? sourceBytes : storedObjects.get(url)
+      if (!bytes) return new Response(null, { status: 404 })
+      const body = new Uint8Array(bytes).buffer as ArrayBuffer
+      return new Response(body, { headers: { 'content-length': String(bytes.byteLength) } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const rpc = vi.fn(async (_config: unknown, name: string) => {
+      if (name === 'service_get_signature_finalization_payload') {
+        return {
+          state: 'processing',
+          jobId: '10000000-0000-4000-8000-000000000011',
+          envelopeId,
+          documentId: '10000000-0000-4000-8000-000000000012',
+          documentTitle: 'Test document',
+          sourceBucket: 'hr-general',
+          sourceObjectKey: 'source/source.pdf',
+          sourceMimeType: 'application/pdf',
+          sourceChecksum,
+          recipients: [],
+          events: [],
+        }
+      }
+      if (name === 'service_commit_signature_finalization') {
+        throw new ScheduledSupabaseUnavailableError(name, 504, 'Commit response timed out.')
+      }
+      return null
+    }) as unknown as Parameters<typeof finalizeSignatureEnvelope>[3]
+
+    try {
+      await expect(finalizeSignatureEnvelope(
+        { serviceRoleKey: 'service-role', url: 'https://example.supabase.co' },
+        envelopeId,
+        'signature-test',
+        rpc,
+      )).rejects.toBeInstanceOf(ScheduledSupabaseUnavailableError)
+      expect(storedObjects.size).toBe(2)
+      expect(deletedObjects).toHaveLength(0)
+      expect((rpc as unknown as ReturnType<typeof vi.fn>).mock.calls.some(([, name]) => name === 'service_fail_signature_finalization')).toBe(false)
+    } finally {
+      if (originalDigestStream === undefined) delete (crypto as Crypto & { DigestStream?: unknown }).DigestStream
+      else Object.defineProperty(crypto, 'DigestStream', { configurable: true, value: originalDigestStream })
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('aborts a never-resolving scheduled signature storage read at the run deadline', async () => {
+    const envelopeId = '10000000-0000-4000-8000-000000000020'
+    const abortController = new AbortController()
+    let storageAborted = false
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        storageAborted = true
+        reject(new DOMException('The operation was aborted.', 'AbortError'))
+      }, { once: true })
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const rpc = vi.fn(async (_config: unknown, name: string) => {
+      if (name === 'service_get_signature_finalization_payload') {
+        return {
+          state: 'processing',
+          jobId: '10000000-0000-4000-8000-000000000021',
+          envelopeId,
+          documentId: '10000000-0000-4000-8000-000000000022',
+          documentTitle: 'Stalled document',
+          sourceBucket: 'hr-general',
+          sourceObjectKey: 'source/stalled.pdf',
+          sourceMimeType: 'application/pdf',
+          sourceChecksum: 'a'.repeat(64),
+          recipients: [],
+          events: [],
+        }
+      }
+      return null
+    }) as unknown as Parameters<typeof finalizeSignatureEnvelope>[3]
+
+    try {
+      const completion = finalizeSignatureEnvelope(
+        { serviceRoleKey: 'service-role', url: 'https://example.supabase.co' },
+        envelopeId,
+        'signature-storage-timeout-test',
+        rpc,
+        abortController.signal,
+      )
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      abortController.abort()
+      await expect(completion).rejects.toMatchObject({
+        name: 'ScheduledSupabaseUnavailableError',
+        operation: 'signature_finalization_storage',
+        status: 504,
+      })
+      expect(storageAborted).toBe(true)
+      expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it.each([
@@ -1306,7 +1699,7 @@ describe('Cloudflare Worker boundary', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await worker.scheduled(
-      { cron: '* * * * *', scheduledTime: Date.UTC(2026, 7, 18, 18, 3) },
+      { cron: '* * * * *', scheduledTime: Date.UTC(2026, 7, 18, 18, 15) },
       environment(new Response('asset'), { ...configuredEnvironment, EMAIL: { send: vi.fn() } }),
       { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
     )

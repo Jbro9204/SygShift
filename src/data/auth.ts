@@ -164,10 +164,11 @@ export async function signOut(): Promise<void> {
   }
 }
 
-export async function getSessionContext(): Promise<SessionContext> {
+async function requestSessionContext(signal?: AbortSignal): Promise<SessionContext> {
   let response
   try {
-    response = await getSupabaseClient().rpc('get_session_context')
+    const request = getSupabaseClient().rpc('get_session_context')
+    response = signal ? await request.abortSignal(signal) : await request
   } catch {
     throw new SessionContextError(true)
   }
@@ -207,6 +208,14 @@ export async function getSessionContext(): Promise<SessionContext> {
     timeZone: parsed.time_zone,
     permissions: parsed.permissions,
   }
+}
+
+export async function getSessionContext(): Promise<SessionContext> {
+  return requestSessionContext()
+}
+
+export async function getSessionContextWithSignal(signal: AbortSignal): Promise<SessionContext> {
+  return requestSessionContext(signal)
 }
 
 export function isTransientSessionContextError(error: unknown): boolean {

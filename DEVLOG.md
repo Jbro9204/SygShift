@@ -1,5 +1,29 @@
 # SygShift Development Log
 
+## 10/11/2026 - Secure Access and Scheduled Work Containment (Validated Release Candidate)
+
+- Traced the production `Checking Secure Access...` stall to Supabase/PostgREST pool exhaustion amplified by
+  overlapping minute-triggered Worker branches and contained the incident by temporarily removing the cron trigger
+  before restarting Supabase. Production application, health, readiness, and shared-session responses recovered.
+- Made no database migration, schema change, data repair, or destructive record operation during containment;
+  employee, schedule, timekeeping, payroll, notification, audit, and active clock-in history were preserved.
+- Added a 12-second secure-access deadline, explicit retry state, transient-session preservation, fail-closed
+  invalidation rules, generation-based cancellation, isolated shared-client activation, and inactive-client event
+  filtering so stalled or late authentication work cannot trap the shell or cancel a successful handoff.
+- Replaced scheduled fanout with one serialized, budgeted pipeline: critical timekeeping and its notifications run
+  first, each RPC has an 8-second deadline, the complete database lane has a 45-second budget, transient failures
+  open a per-run circuit breaker, push completion is serial, and storage/recovery work honors the same abort signal.
+- Preserved final signature objects across ambiguous commit timeouts, prevented accepted email from being resent
+  when only best-effort audit logging fails, and moved availability recovery to bounded 15-minute batches.
+- Final focused authentication (68/68), scheduler/push (72/72), and release-guard (16/16) regressions passed. Full
+  `pnpm check` passed 370 test files / 1 skipped and 2,135 tests / 1 skipped, strict TypeScript, zero-warning lint,
+  production builds, and the static-asset contract. The mandatory desktop/mobile Time Clock workflow passed 42/42,
+  followed by a fresh production build. Independent final review found no remaining P0, P1, or P2 blocker.
+- Commit, deployment, trigger reactivation, live endpoint/asset checks, and coordinated-cron observation remain
+  pending. This entry does not claim the validated release candidate is deployed.
+- Release-candidate record:
+  `docs/changelogs/CHANGELOG_10-11-2026_SECURE_ACCESS_AND_SCHEDULER_CONTAINMENT.md`.
+
 ## 10/11/2026 - Shared-Session Outage Hardening
 
 - Diagnosed the production outage path as Supabase connection-pool acquisition timeouts reaching

@@ -418,6 +418,8 @@ interface EmailDeliveryResult {
   failed: Array<{ recipient: string, error: string }>
 }
 
+type EmailAuditMode = 'deferred' | 'inline'
+
 interface AttendanceReportPayload {
   id: string
   callOffId?: string | null
@@ -643,12 +645,25 @@ async function supabaseJson<T>(url: string, init: RequestInit): Promise<T> {
   return payload as T
 }
 
+type RpcConfig = { publishableKey?: string; serviceRoleKey?: string; url: string }
+
+interface RpcInvoker {
+  <T>(
+    config: RpcConfig,
+    name: string,
+    body: Record<string, unknown>,
+    token: string,
+    additionalHeaders?: Record<string, string>,
+  ): Promise<T>
+}
+
 async function callRpc<T>(
-  config: { publishableKey?: string; serviceRoleKey?: string; url: string },
+  config: RpcConfig,
   name: string,
   body: Record<string, unknown>,
   token: string,
   additionalHeaders?: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<T> {
   return supabaseJson<T>(`${config.url}/rest/v1/rpc/${name}`, {
     body: JSON.stringify(body),
@@ -659,7 +674,120 @@ async function callRpc<T>(
       'content-type': 'application/json',
     },
     method: 'POST',
+    signal,
   })
+}
+
+const scheduledSupabaseTimeoutMs = 8_000
+const scheduledRunBudgetMs = 45_000
+
+export class ScheduledSupabaseUnavailableError extends Error {
+  readonly operation: string
+  readonly status: number | null
+
+  constructor(operation: string, status: number | null, message: string) {
+    super(message)
+    this.name = 'ScheduledSupabaseUnavailableError'
+    this.operation = operation
+    this.status = status
+  }
+}
+
+class ScheduledSupabaseCircuitOpenError extends Error {
+  readonly operation: string
+
+  constructor(operation: string) {
+    super(`Scheduled database work was contained after ${operation} became unavailable.`)
+    this.name = 'ScheduledSupabaseCircuitOpenError'
+    this.operation = operation
+  }
+}
+
+interface ScheduledSupabaseCircuit {
+  failedOperation: string | null
+  failedStatus: number | null
+  open: boolean
+  timedOut: boolean
+}
+
+function scheduledSupabaseFailureIsTransient(error: unknown, timedOut: boolean): boolean {
+  if (timedOut) return true
+  if (error instanceof TypeError) return true
+  if (error instanceof SupabaseRequestError) {
+    if ([408, 425, 429].includes(error.status) || (error.status >= 502 && error.status <= 599)) return true
+    if (error.status !== 500) return false
+  }
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+  return message.includes('connection pool')
+    || message.includes('acquiring connection')
+    || message.includes('connection timeout')
+    || message.includes('timed out')
+    || message.includes('too many connections')
+    || message.includes('connection reset')
+    || message.includes('socket hang up')
+    || message.includes('econnreset')
+    || message.includes('econnrefused')
+    || message.includes('fetch failed')
+}
+
+function isScheduledContainmentError(error: unknown): error is ScheduledSupabaseCircuitOpenError | ScheduledSupabaseUnavailableError {
+  return error instanceof ScheduledSupabaseCircuitOpenError || error instanceof ScheduledSupabaseUnavailableError
+}
+
+function createScheduledRpcInvoker(
+  circuit: ScheduledSupabaseCircuit,
+  deadlineAt = Date.now() + scheduledRunBudgetMs,
+): RpcInvoker {
+  return async <T>(
+    config: RpcConfig,
+    name: string,
+    body: Record<string, unknown>,
+    token: string,
+    additionalHeaders?: Record<string, string>,
+  ): Promise<T> => {
+    if (circuit.open) throw new ScheduledSupabaseCircuitOpenError(circuit.failedOperation ?? name)
+
+    const remainingRunBudgetMs = deadlineAt - Date.now()
+    if (remainingRunBudgetMs <= 0) {
+      circuit.failedOperation = name
+      circuit.failedStatus = 504
+      circuit.open = true
+      circuit.timedOut = true
+      throw new ScheduledSupabaseUnavailableError(
+        name,
+        504,
+        `Scheduled database work exceeded its ${scheduledRunBudgetMs} ms invocation budget.`,
+      )
+    }
+
+    const controller = new AbortController()
+    let timedOut = false
+    const requestTimeoutMs = Math.min(scheduledSupabaseTimeoutMs, remainingRunBudgetMs)
+    const timeout = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, requestTimeoutMs)
+
+    try {
+      return await callRpc<T>(config, name, body, token, additionalHeaders, controller.signal)
+    } catch (error) {
+      if (!scheduledSupabaseFailureIsTransient(error, timedOut)) throw error
+      const status = error instanceof SupabaseRequestError ? error.status : timedOut ? 504 : null
+      circuit.failedOperation = name
+      circuit.failedStatus = status
+      circuit.open = true
+      circuit.timedOut = timedOut
+      throw new ScheduledSupabaseUnavailableError(
+        name,
+        status,
+        timedOut
+          ? `Scheduled database request ${name} exceeded ${requestTimeoutMs} ms.`
+          : `Scheduled database request ${name} is temporarily unavailable.`,
+      )
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
 }
 
 export function protectedMaintenanceWindow(
@@ -738,10 +866,11 @@ async function logEmailDelivery(
   status: 'sent' | 'failed' | 'suppressed_blocked_domain',
   context: EmailAuditContext,
   failureDetail?: string | null,
+  rpc: RpcInvoker = callRpc,
 ): Promise<void> {
   const config = configuredSupabase(environment)
   if (!config) return
-  await callRpc(
+  await rpc(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_log_email_delivery',
     {
@@ -763,6 +892,8 @@ async function sendAuditedEmail(
   message: NotificationJob['message'],
   context: EmailAuditContext,
   replyTo?: string,
+  rpc: RpcInvoker = callRpc,
+  auditMode: EmailAuditMode = 'inline',
 ): Promise<EmailDeliveryResult> {
   if (!environment.EMAIL) throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
   const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
@@ -776,7 +907,9 @@ async function sendAuditedEmail(
   for (const recipient of uniqueRecipients) {
     if (isBlockedEmailRecipient(environment, recipient)) {
       result.suppressed.push(recipient)
-      await logEmailDelivery(environment, recipient, 'suppressed_blocked_domain', context, 'Suppressed — Blocked Domain')
+      if (auditMode === 'inline') {
+        await logEmailDelivery(environment, recipient, 'suppressed_blocked_domain', context, 'Suppressed — Blocked Domain', rpc)
+      }
       continue
     }
     try {
@@ -789,15 +922,32 @@ async function sendAuditedEmail(
         to: recipient,
       })
       result.sent.push(recipient)
-      await logEmailDelivery(environment, recipient, 'sent', context)
+      if (auditMode === 'inline') await logEmailDelivery(environment, recipient, 'sent', context, null, rpc)
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Email delivery failed.'
       result.failed.push({ error: detail, recipient })
-      await logEmailDelivery(environment, recipient, 'failed', context, detail)
+      if (auditMode === 'inline') await logEmailDelivery(environment, recipient, 'failed', context, detail, rpc)
     }
   }
 
   return result
+}
+
+async function logDeferredEmailDelivery(
+  environment: Environment,
+  result: EmailDeliveryResult,
+  context: EmailAuditContext,
+  rpc: RpcInvoker,
+): Promise<void> {
+  for (const recipient of result.sent) {
+    await logEmailDelivery(environment, recipient, 'sent', context, null, rpc)
+  }
+  for (const recipient of result.suppressed) {
+    await logEmailDelivery(environment, recipient, 'suppressed_blocked_domain', context, 'Suppressed — Blocked Domain', rpc)
+  }
+  for (const failure of result.failed) {
+    await logEmailDelivery(environment, failure.recipient, 'failed', context, failure.error, rpc)
+  }
 }
 
 function buildSecurityKeyChangeEmail(
@@ -2393,12 +2543,14 @@ async function fetchPrivateStorageObject(
   config: { serviceRoleKey: string, url: string },
   bucket: string,
   objectKey: string,
+  signal?: AbortSignal,
 ): Promise<Response> {
   return fetch(privateStorageObjectUrl(config, bucket, objectKey), {
     headers: {
       apikey: config.serviceRoleKey,
       authorization: `Bearer ${config.serviceRoleKey}`,
     },
+    signal,
   })
 }
 
@@ -2427,6 +2579,7 @@ async function deletePrivateStorageObject(
   config: { serviceRoleKey: string, url: string },
   bucket: string,
   objectKey: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(privateStorageObjectUrl(config, bucket, objectKey), {
     headers: {
@@ -2434,6 +2587,7 @@ async function deletePrivateStorageObject(
       authorization: `Bearer ${config.serviceRoleKey}`,
     },
     method: 'DELETE',
+    signal,
   })
   if (!response.ok && response.status !== 404) throw new Error('Private storage cleanup failed.')
 }
@@ -2444,6 +2598,7 @@ async function storePrivateStorageObject(
   objectKey: string,
   bytes: Uint8Array,
   mimeType: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const body = bytes.buffer instanceof ArrayBuffer
     ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
@@ -2457,6 +2612,7 @@ async function storePrivateStorageObject(
       'x-upsert': 'false',
     },
     method: 'POST',
+    signal,
   })
   if (!response.ok) throw new Error(`Protected storage rejected the generated file (${response.status}).`)
 }
@@ -2536,6 +2692,7 @@ type WorkerDigestStream = WritableStream<Uint8Array> & {
 async function privateStorageChecksum(
   stored: Response,
   expectedSizeBytes: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (!stored.ok || !stored.body) {
     throw new Error(`Protected storage object could not be read (${stored.status}).`)
@@ -2545,7 +2702,7 @@ async function privateStorageChecksum(
   const DigestStream = (crypto as DigestStreamCrypto).DigestStream
   if (!DigestStream) throw new Error('The streaming integrity service is unavailable.')
   const digestStream = new DigestStream('SHA-256')
-  await stored.body.pipeTo(digestStream)
+  await stored.body.pipeTo(digestStream, signal ? { signal } : undefined)
   const observedBytes = Number(digestStream.bytesWritten)
   if (contentLength !== expectedSizeBytes || observedBytes !== expectedSizeBytes) {
     throw new Error('The stored file size does not match the authorized upload.')
@@ -2561,10 +2718,12 @@ async function verifyPrivateStorageObjectChecksum(
   objectKey: string,
   expectedSizeBytes: number,
   expectedChecksum: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const storedChecksum = await privateStorageChecksum(
-    await fetchPrivateStorageObject(config, bucket, objectKey),
+    await fetchPrivateStorageObject(config, bucket, objectKey, signal),
     expectedSizeBytes,
+    signal,
   )
   if (storedChecksum !== expectedChecksum) {
     throw new Error('The stored private object does not match its approved SHA-256 checksum.')
@@ -4751,18 +4910,32 @@ async function buildSignatureAuditCertificate(
   return pdf.save({ addDefaultPage: false, useObjectStreams: false })
 }
 
-async function finalizeSignatureEnvelope(
+export async function finalizeSignatureEnvelope(
   config: { serviceRoleKey: string, url: string },
   envelopeId: string,
   requestId: string,
+  rpc: RpcInvoker = callRpc,
+  scheduledSignal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  const payload = await callRpc<SignatureFinalizationPayload>(config, 'service_get_signature_finalization_payload', { target_envelope_id: envelopeId }, config.serviceRoleKey)
+  const payload = await rpc<SignatureFinalizationPayload>(config, 'service_get_signature_finalization_payload', { target_envelope_id: envelopeId }, config.serviceRoleKey)
   if (payload.state === 'completed') return { envelopeId, finalVersionId: payload.finalVersionId, status: 'completed' }
   if (!payload.jobId || !payload.documentId || !payload.sourceBucket || !payload.sourceObjectKey || !payload.sourceChecksum) throw new Error('Signature finalization payload is incomplete.')
-  const source = await fetchPrivateStorageObject(config, payload.sourceBucket, payload.sourceObjectKey)
-  if (!source.ok) throw new Error('The immutable source document could not be loaded.')
-  const sourceBytes = new Uint8Array(await source.arrayBuffer())
-  if (await sha256BytesHex(sourceBytes) !== payload.sourceChecksum) throw new Error('The immutable source document failed its integrity check.')
+  let sourceBytes: Uint8Array
+  try {
+    const source = await fetchPrivateStorageObject(config, payload.sourceBucket, payload.sourceObjectKey, scheduledSignal)
+    if (!source.ok) throw new Error('The immutable source document could not be loaded.')
+    sourceBytes = new Uint8Array(await source.arrayBuffer())
+    if (await sha256BytesHex(sourceBytes) !== payload.sourceChecksum) throw new Error('The immutable source document failed its integrity check.')
+  } catch (error) {
+    if (scheduledSignal?.aborted) {
+      throw new ScheduledSupabaseUnavailableError(
+        'signature_finalization_storage',
+        504,
+        'Scheduled signature storage work exceeded the invocation budget.',
+      )
+    }
+    throw error
+  }
   const finalBytes = await buildSignedPdf(config, payload, sourceBytes)
   const finalChecksum = await sha256BytesHex(finalBytes)
   const packageChecksum = await sha256Hex(`${payload.sourceChecksum}:${finalChecksum}:${payload.envelopeId}`)
@@ -4774,8 +4947,9 @@ async function finalizeSignatureEnvelope(
   const auditFilename = sanitizeHrDocumentFilename(`${payload.documentTitle ?? 'document'}-audit-certificate.pdf`)
   let finalStored = false
   let auditStored = false
+  let commitStarted = false
   try {
-    await storePrivateStorageObject(config, payload.sourceBucket, finalObjectKey, finalBytes, 'application/pdf')
+    await storePrivateStorageObject(config, payload.sourceBucket, finalObjectKey, finalBytes, 'application/pdf', scheduledSignal)
     finalStored = true
     await verifyPrivateStorageObjectChecksum(
       config,
@@ -4783,8 +4957,9 @@ async function finalizeSignatureEnvelope(
       finalObjectKey,
       finalBytes.byteLength,
       finalChecksum,
+      scheduledSignal,
     )
-    await storePrivateStorageObject(config, payload.sourceBucket, auditObjectKey, auditBytes, 'application/pdf')
+    await storePrivateStorageObject(config, payload.sourceBucket, auditObjectKey, auditBytes, 'application/pdf', scheduledSignal)
     auditStored = true
     await verifyPrivateStorageObjectChecksum(
       config,
@@ -4792,8 +4967,10 @@ async function finalizeSignatureEnvelope(
       auditObjectKey,
       auditBytes.byteLength,
       auditChecksum,
+      scheduledSignal,
     )
-    return await callRpc<Record<string, unknown>>(config, 'service_commit_signature_finalization', {
+    commitStarted = true
+    return await rpc<Record<string, unknown>>(config, 'service_commit_signature_finalization', {
       target_audit_bucket: payload.sourceBucket,
       target_audit_checksum: auditChecksum,
       target_audit_filename: auditFilename,
@@ -4811,9 +4988,22 @@ async function finalizeSignatureEnvelope(
       target_request_id: requestId,
     }, config.serviceRoleKey)
   } catch (error) {
+    // A scheduled timeout or circuit failure during the commit RPC has an
+    // ambiguous outcome: Postgres may have committed before the response was
+    // lost. Never delete the immutable objects in that state. The next run
+    // first re-reads the envelope and either observes completion or safely
+    // retries reconciliation with the preserved evidence.
+    if (commitStarted && isScheduledContainmentError(error)) throw error
+    if (scheduledSignal?.aborted) {
+      throw new ScheduledSupabaseUnavailableError(
+        'signature_finalization_storage',
+        504,
+        'Scheduled signature storage work exceeded the invocation budget.',
+      )
+    }
     if (finalStored) await deletePrivateStorageObject(config, payload.sourceBucket, finalObjectKey).catch(() => undefined)
     if (auditStored) await deletePrivateStorageObject(config, payload.sourceBucket, auditObjectKey).catch(() => undefined)
-    await callRpc(config, 'service_fail_signature_finalization', {
+    await rpc(config, 'service_fail_signature_finalization', {
       target_envelope_id: payload.envelopeId,
       target_error_code: error instanceof Error ? error.message.slice(0, 120) : 'finalization_failed',
       target_job_id: payload.jobId,
@@ -4822,7 +5012,12 @@ async function finalizeSignatureEnvelope(
   }
 }
 
-async function processSignatureFinalizationJobs(environment: Environment, limit = 2): Promise<{
+async function processSignatureFinalizationJobs(
+  environment: Environment,
+  limit = 2,
+  rpc: RpcInvoker = callRpc,
+  scheduledSignal?: AbortSignal,
+): Promise<{
   completed: string[]
   enabled: boolean
   failed: Array<{ envelopeId: string, error: string }>
@@ -4831,7 +5026,7 @@ async function processSignatureFinalizationJobs(environment: Environment, limit 
   if (!hrDocumentPipelineEnabled(environment)) return { completed: [], enabled: false, failed: [], processed: 0 }
   const config = configuredSupabase(environment)
   if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
-  const jobs = await callRpc<Array<{ envelopeId: string }>>(
+  const jobs = await rpc<Array<{ envelopeId: string }>>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_list_signature_finalization_jobs',
     { target_limit: Math.max(1, Math.min(limit, 5)) },
@@ -4846,9 +5041,16 @@ async function processSignatureFinalizationJobs(environment: Environment, limit 
       continue
     }
     try {
-      await finalizeSignatureEnvelope(config, job.envelopeId, `scheduled-signature-finalization:${crypto.randomUUID()}`)
+      await finalizeSignatureEnvelope(
+        config,
+        job.envelopeId,
+        `scheduled-signature-finalization:${crypto.randomUUID()}`,
+        rpc,
+        scheduledSignal,
+      )
       completed.push(job.envelopeId)
     } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
       failed.push({ envelopeId: job.envelopeId, error: error instanceof Error ? error.message.slice(0, 240) : 'Signature finalization failed.' })
     }
   }
@@ -8293,7 +8495,7 @@ function hrAutomationCompletionResult(job: HrAutomationJob): Record<string, unkn
   return { conditionMatched: job.payload.conditionMatched }
 }
 
-async function processHrAutomationJobs(environment: Environment, limit = 10): Promise<{
+async function processHrAutomationJobs(environment: Environment, limit = 10, rpc: RpcInvoker = callRpc): Promise<{
   claimed: number
   completed: string[]
   enabled: boolean
@@ -8308,21 +8510,19 @@ async function processHrAutomationJobs(environment: Environment, limit = 10): Pr
   if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
   const batchLimit = Math.max(1, Math.min(limit, 10))
   const targetNow = new Date().toISOString()
-  const [scheduled, escalated] = await Promise.all([
-    callRpc<number>(
-      { serviceRoleKey: config.serviceRoleKey, url: config.url },
-      'service_enqueue_due_hr_automation',
-      { target_now: targetNow },
-      config.serviceRoleKey,
-    ),
-    callRpc<number>(
-      { serviceRoleKey: config.serviceRoleKey, url: config.url },
-      'service_enqueue_hr_task_escalations',
-      { target_now: targetNow },
-      config.serviceRoleKey,
-    ),
-  ])
-  const jobs = asHrAutomationJobs(await callRpc<unknown>(
+  const scheduled = await rpc<number>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_enqueue_due_hr_automation',
+    { target_now: targetNow },
+    config.serviceRoleKey,
+  )
+  const escalated = await rpc<number>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_enqueue_hr_task_escalations',
+    { target_now: targetNow },
+    config.serviceRoleKey,
+  )
+  const jobs = asHrAutomationJobs(await rpc<unknown>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_claim_hr_automation_jobs',
     { target_lease_seconds: 120, target_limit: batchLimit, target_worker_id: crypto.randomUUID() },
@@ -8332,7 +8532,7 @@ async function processHrAutomationJobs(environment: Environment, limit = 10): Pr
   const failed: Array<{ id: string, error: string }> = []
   for (const job of jobs) {
     try {
-      await callRpc<unknown>(
+      await rpc<unknown>(
         { serviceRoleKey: config.serviceRoleKey, url: config.url },
         'service_complete_hr_automation_job',
         { target_job_id: job.id, target_result: hrAutomationCompletionResult(job) },
@@ -8340,10 +8540,11 @@ async function processHrAutomationJobs(environment: Environment, limit = 10): Pr
       )
       completed.push(job.id)
     } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
       const message = (error instanceof Error ? error.message : 'The automation job failed.').slice(0, 500)
       failed.push({ id: job.id, error: message })
       try {
-        await callRpc<unknown>(
+        await rpc<unknown>(
           { serviceRoleKey: config.serviceRoleKey, url: config.url },
           'service_fail_hr_automation_job',
           { target_error_code: 'worker_execution_failed', target_error_message: message, target_job_id: job.id },
@@ -8368,7 +8569,7 @@ async function processHrAutomationJobs(environment: Environment, limit = 10): Pr
   }
 }
 
-async function processPushJobs(environment: Environment): Promise<void> {
+async function processPushJobs(environment: Environment, rpc: RpcInvoker = callRpc): Promise<void> {
   const config = configuredSupabase(environment)
   const publicKey = environment.SYGSHIFT_PUSH_PUBLIC_KEY
   const privateKey = environment.SYGSHIFT_PUSH_PRIVATE_KEY
@@ -8376,26 +8577,27 @@ async function processPushJobs(environment: Environment): Promise<void> {
   if (!config || !publicKey || !privateKey || !hookSecret) return
   try {
     const processed = await deliverPushBatch({ publicKey, privateKey, hookSecret }, (name, input) =>
-      callRpc({ serviceRoleKey: config.serviceRoleKey, url: config.url }, name, input, config.serviceRoleKey))
+      rpc({ serviceRoleKey: config.serviceRoleKey, url: config.url }, name, input, config.serviceRoleKey))
     if (processed) console.info(JSON.stringify({ event: 'push_batch_processed', processed }))
-  } catch {
+  } catch (error) {
+    if (isScheduledContainmentError(error)) throw error
     console.error(JSON.stringify({ event: 'push_batch_deferred' }))
   }
 }
 
-async function processSygTasksReminderJobs(environment: Environment): Promise<Record<string, unknown>> {
+async function processSygTasksReminderJobs(environment: Environment, rpc: RpcInvoker = callRpc): Promise<Record<string, unknown>> {
   const config = configuredSupabase(environment)
   if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
   // Generate recurrence occurrences first so a reminder due for a newly-created
   // task can be processed in the same scheduled run. Both RPCs are independently
   // idempotent and bounded.
-  const recurringSeries = await callRpc<Record<string, unknown>>(
+  const recurringSeries = await rpc<Record<string, unknown>>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_process_due_sygtasks_recurring_series',
     { target_horizon_days: 7, target_limit: 50 },
     config.serviceRoleKey,
   )
-  const reminders = await callRpc<Record<string, unknown>>(
+  const reminders = await rpc<Record<string, unknown>>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_process_due_sygtasks_reminders',
     { target_limit: 100 },
@@ -8404,7 +8606,14 @@ async function processSygTasksReminderJobs(environment: Environment): Promise<Re
   return { recurringSeries, reminders }
 }
 
-async function processNotificationJobs(environment: Environment, limit = 10): Promise<{
+type NotificationProcessingLane = 'all' | 'noncritical' | 'timekeeping'
+
+async function processNotificationJobs(
+  environment: Environment,
+  limit = 10,
+  rpc: RpcInvoker = callRpc,
+  lane: NotificationProcessingLane = 'all',
+): Promise<{
   delivered: string[]
   failed: Array<{ id: string, error: string }>
   processed: number
@@ -8414,22 +8623,42 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
   if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
   if (!environment.EMAIL) throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
 
-  const timekeepingJobs = await callRpc<NotificationJob[]>(
-    { serviceRoleKey: config.serviceRoleKey, url: config.url },
-    'service_claim_timekeeping_notification_batch',
-    { target_limit: limit },
-    config.serviceRoleKey,
-  )
+  const timekeepingJobs = lane === 'noncritical'
+    ? []
+    : await rpc<NotificationJob[]>(
+      { serviceRoleKey: config.serviceRoleKey, url: config.url },
+      'service_claim_timekeeping_notification_batch',
+      { target_limit: limit },
+      config.serviceRoleKey,
+    )
   const delivered: string[] = []
   const failed: Array<{ id: string, error: string }> = []
   const suppressed: string[] = []
+  const recordDeferredAudit = async (
+    job: NotificationJob,
+    result: EmailDeliveryResult,
+    context: EmailAuditContext,
+  ) => {
+    try {
+      await logDeferredEmailDelivery(environment, result, context, rpc)
+    } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
+      console.error(JSON.stringify({ event: 'email_delivery_audit_deferred', notificationId: job.id }))
+    }
+  }
 
   const deliverJobs = async (jobs: NotificationJob[], respectEmployeePreferences = false) => {
     for (const job of jobs) {
+      const auditContext: EmailAuditContext = {
+        notificationType: job.messageType ?? 'outbox_notification',
+        relatedRecordId: job.aggregateId ?? null,
+        relatedRecordType: job.aggregateType ?? null,
+      }
+      let deferredAudit: EmailDeliveryResult | null = null
       try {
         let recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
         if (job.messageType === 'announcement_published' && job.aggregateId) {
-          recipients = await callRpc<string[]>(
+          recipients = await rpc<string[]>(
             { serviceRoleKey: config.serviceRoleKey, url: config.url },
             'service_get_announcement_email_recipients',
             { target_announcement_id: job.aggregateId },
@@ -8438,7 +8667,7 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
         }
         const isRequiredDocumentDelivery = job.messageType === 'document_signature_required'
         if (respectEmployeePreferences && !isRequiredDocumentDelivery && recipients.length > 0) {
-          recipients = await callRpc<string[]>(
+          recipients = await rpc<string[]>(
             { serviceRoleKey: config.serviceRoleKey, url: config.url },
             'service_filter_notification_recipients',
             {
@@ -8450,7 +8679,7 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
           )
         }
         if (recipients.length === 0) {
-          await callRpc<unknown>(
+          await rpc<unknown>(
             { serviceRoleKey: config.serviceRoleKey, url: config.url },
             'service_mark_notification_suppressed',
             { target_notification_id: job.id, target_reason: 'Suppressed — Employee Preference' },
@@ -8460,33 +8689,41 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
           continue
         }
 
-        const delivery = await sendAuditedEmail(environment, recipients, job.message, {
-          notificationType: job.messageType ?? 'outbox_notification',
-          relatedRecordId: job.aggregateId ?? null,
-          relatedRecordType: job.aggregateType ?? null,
-        })
-        if (delivery.failed.length > 0) throw new Error(delivery.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
-        if (delivery.sent.length === 0 && delivery.suppressed.length > 0) {
-          await callRpc<unknown>(
+        deferredAudit = await sendAuditedEmail(
+          environment,
+          recipients,
+          job.message,
+          auditContext,
+          undefined,
+          rpc,
+          'deferred',
+        )
+        if (deferredAudit.failed.length > 0) {
+          throw new Error(deferredAudit.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
+        }
+        if (deferredAudit.sent.length === 0 && deferredAudit.suppressed.length > 0) {
+          await rpc<unknown>(
             { serviceRoleKey: config.serviceRoleKey, url: config.url },
             'service_mark_notification_suppressed',
             { target_notification_id: job.id, target_reason: 'Suppressed — Blocked Domain' },
             config.serviceRoleKey,
           )
           suppressed.push(job.id)
-          continue
+        } else {
+          // Provider acceptance is made durable before the optional audit row.
+          // If audit storage is temporarily unavailable, the claimed outbox row
+          // is already complete and a later cycle cannot resend the email.
+          await rpc<unknown>(
+            { serviceRoleKey: config.serviceRoleKey, url: config.url },
+            'service_mark_notification_result',
+            { delivered: true, delivery_error: null, target_notification_id: job.id },
+            config.serviceRoleKey,
+          )
+          delivered.push(job.id)
         }
-
-        await callRpc<unknown>(
-          { serviceRoleKey: config.serviceRoleKey, url: config.url },
-          'service_mark_notification_result',
-          { delivered: true, delivery_error: null, target_notification_id: job.id },
-          config.serviceRoleKey,
-        )
-        delivered.push(job.id)
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Email delivery failed.'
-        await callRpc<unknown>(
+        await rpc<unknown>(
           { serviceRoleKey: config.serviceRoleKey, url: config.url },
           'service_mark_notification_result',
           { delivered: false, delivery_error: message, target_notification_id: job.id },
@@ -8494,12 +8731,24 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
         )
         failed.push({ id: job.id, error: message })
       }
+      if (deferredAudit) {
+        await recordDeferredAudit(job, deferredAudit, auditContext)
+      }
     }
   }
 
   await deliverJobs(timekeepingJobs)
 
-  const timeOffJobs = await callRpc<NotificationJob[]>(
+  if (lane === 'timekeeping') {
+    return {
+      delivered,
+      failed,
+      processed: delivered.length + failed.length + suppressed.length,
+      suppressed,
+    }
+  }
+
+  const timeOffJobs = await rpc<NotificationJob[]>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_claim_time_off_notification_batch',
     { target_limit: limit },
@@ -8507,7 +8756,7 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
   )
   await deliverJobs(timeOffJobs, true)
 
-  const generalJobs = await callRpc<NotificationJob[]>(
+  const generalJobs = await rpc<NotificationJob[]>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_claim_notification_batch',
     { target_limit: limit },
@@ -8515,24 +8764,26 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
   )
   await deliverJobs(generalJobs, true)
 
-  const supportJobs = await callRpc<NotificationJob[]>(
+  const supportJobs = await rpc<NotificationJob[]>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_claim_support_ticket_notification_batch',
     { target_limit: limit },
     config.serviceRoleKey,
   )
   for (const job of supportJobs) {
+    const auditContext: EmailAuditContext = {
+      notificationType: job.messageType ?? 'support_ticket_update',
+      relatedRecordId: job.aggregateId ?? null,
+      relatedRecordType: 'support_ticket',
+    }
+    let deferredAudit: EmailDeliveryResult | null = null
     try {
       const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
       if (recipients.length === 0) throw new Error('No approved employee email is available for this ticket update.')
-      const delivery = await sendAuditedEmail(environment, recipients, job.message, {
-        notificationType: job.messageType ?? 'support_ticket_update',
-        relatedRecordId: job.aggregateId ?? null,
-        relatedRecordType: 'support_ticket',
-      })
-      if (delivery.failed.length > 0) throw new Error(delivery.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
-      if (delivery.sent.length === 0) throw new Error('The ticket email was suppressed by the active recipient safeguards.')
-      await callRpc<unknown>(
+      deferredAudit = await sendAuditedEmail(environment, recipients, job.message, auditContext, undefined, rpc, 'deferred')
+      if (deferredAudit.failed.length > 0) throw new Error(deferredAudit.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
+      if (deferredAudit.sent.length === 0) throw new Error('The ticket email was suppressed by the active recipient safeguards.')
+      await rpc<unknown>(
         { serviceRoleKey: config.serviceRoleKey, url: config.url },
         'service_mark_support_ticket_notification_result',
         { delivered: true, delivery_error: null, target_notification_id: job.id },
@@ -8541,7 +8792,7 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
       delivered.push(job.id)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Ticket email delivery failed.'
-      await callRpc<unknown>(
+      await rpc<unknown>(
         { serviceRoleKey: config.serviceRoleKey, url: config.url },
         'service_mark_support_ticket_notification_result',
         { delivered: false, delivery_error: message, target_notification_id: job.id },
@@ -8549,26 +8800,29 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
       )
       failed.push({ id: job.id, error: message })
     }
+    if (deferredAudit) await recordDeferredAudit(job, deferredAudit, auditContext)
   }
 
-  const employeeNotificationJobs = await callRpc<NotificationJob[]>(
+  const employeeNotificationJobs = await rpc<NotificationJob[]>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_claim_employee_notification_batch',
     { target_limit: limit },
     config.serviceRoleKey,
   )
   for (const job of employeeNotificationJobs) {
+    const auditContext: EmailAuditContext = {
+      notificationType: job.messageType ?? 'direct_employee_notification',
+      relatedRecordId: job.aggregateId ?? null,
+      relatedRecordType: 'employee_notification',
+    }
+    let deferredAudit: EmailDeliveryResult | null = null
     try {
       const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
       if (recipients.length === 0) throw new Error('No approved employee email is available for this notification.')
-      const delivery = await sendAuditedEmail(environment, recipients, job.message, {
-        notificationType: job.messageType ?? 'direct_employee_notification',
-        relatedRecordId: job.aggregateId ?? null,
-        relatedRecordType: 'employee_notification',
-      })
-      if (delivery.failed.length > 0) throw new Error(delivery.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
-      if (delivery.sent.length === 0) throw new Error('The notification email was suppressed by the active recipient safeguards.')
-      await callRpc<unknown>(
+      deferredAudit = await sendAuditedEmail(environment, recipients, job.message, auditContext, undefined, rpc, 'deferred')
+      if (deferredAudit.failed.length > 0) throw new Error(deferredAudit.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
+      if (deferredAudit.sent.length === 0) throw new Error('The notification email was suppressed by the active recipient safeguards.')
+      await rpc<unknown>(
         { serviceRoleKey: config.serviceRoleKey, url: config.url },
         'service_mark_employee_notification_result',
         { delivered: true, delivery_error: null, target_delivery_id: job.id },
@@ -8577,7 +8831,7 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
       delivered.push(job.id)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Notification email delivery failed.'
-      await callRpc<unknown>(
+      await rpc<unknown>(
         { serviceRoleKey: config.serviceRoleKey, url: config.url },
         'service_mark_employee_notification_result',
         { delivered: false, delivery_error: message, target_delivery_id: job.id },
@@ -8585,6 +8839,7 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
       )
       failed.push({ id: job.id, error: message })
     }
+    if (deferredAudit) await recordDeferredAudit(job, deferredAudit, auditContext)
   }
 
   return {
@@ -8624,13 +8879,18 @@ function readiness(environment: Environment, requestId: string): Response {
   }, ready ? 200 : 503)
 }
 
-async function recoverLegacyHrDocumentAvailability(environment: Environment): Promise<{ recovered: number, failed: number }> {
+async function recoverLegacyHrDocumentAvailability(
+  environment: Environment,
+  rpc: RpcInvoker = callRpc,
+  limit = 25,
+  scheduledSignal?: AbortSignal,
+): Promise<{ recovered: number, failed: number }> {
   const config = configuredSupabase(environment)
   if (!config) return { recovered: 0, failed: 0 }
-  const candidates = await callRpc<unknown>(
+  const candidates = await rpc<unknown>(
     config,
     'service_list_hr_document_availability_recovery',
-    { target_limit: 25 },
+    { target_limit: Math.max(1, Math.min(limit, 25)) },
     config.serviceRoleKey,
   )
   if (!Array.isArray(candidates)) throw new Error('The HR document availability recovery response is invalid.')
@@ -8651,28 +8911,37 @@ async function recoverLegacyHrDocumentAvailability(environment: Environment): Pr
       continue
     }
     try {
-      await verifyPrivateStorageObjectChecksum(config, bucket, objectKey, sizeBytes, expectedChecksum)
-      await callRpc(
+      await verifyPrivateStorageObjectChecksum(config, bucket, objectKey, sizeBytes, expectedChecksum, scheduledSignal)
+      await rpc(
         config,
         'service_mark_hr_document_upload_stored',
         { target_operation_id: operationId, target_request_id: null },
         config.serviceRoleKey,
       )
       recovered += 1
-    } catch {
+    } catch (error) {
+      if (scheduledSignal?.aborted) {
+        throw new ScheduledSupabaseUnavailableError('hr_document_availability_storage', 504, 'Scheduled storage recovery exceeded the invocation budget.')
+      }
+      if (isScheduledContainmentError(error)) throw error
       failed += 1
     }
   }
   return { recovered, failed }
 }
 
-async function recoverStoredSygSphereFiles(environment: Environment): Promise<{ recovered: number, failed: number }> {
+async function recoverStoredSygSphereFiles(
+  environment: Environment,
+  rpc: RpcInvoker = callRpc,
+  limit = 25,
+  scheduledSignal?: AbortSignal,
+): Promise<{ recovered: number, failed: number }> {
   const config = configuredSupabase(environment)
   if (!config) return { recovered: 0, failed: 0 }
-  const candidates = await callRpc<unknown>(
+  const candidates = await rpc<unknown>(
     config,
     'service_list_sygsphere_file_availability_recovery',
-    { target_limit: 25 },
+    { target_limit: Math.max(1, Math.min(limit, 25)) },
     config.serviceRoleKey,
   )
   if (!Array.isArray(candidates)) throw new Error('The SygSphere availability recovery response is invalid.')
@@ -8693,32 +8962,42 @@ async function recoverStoredSygSphereFiles(environment: Environment): Promise<{ 
     }
     try {
       const checksum = await privateStorageChecksum(
-        await fetchPrivateStorageObject(config, sygsphereResumableBucket, objectKey),
+        await fetchPrivateStorageObject(config, sygsphereResumableBucket, objectKey, scheduledSignal),
         sizeBytes,
+        scheduledSignal,
       )
       if (checksum !== expectedChecksum) throw new Error('The stored file checksum does not match its upload record.')
-      await callRpc(
+      await rpc(
         config,
         'service_sygsphere_file',
         { action: 'complete', target_actor_id: authorId, input: { checksum, fileId, state: 'clean' } },
         config.serviceRoleKey,
       )
       recovered += 1
-    } catch {
+    } catch (error) {
+      if (scheduledSignal?.aborted) {
+        throw new ScheduledSupabaseUnavailableError('sygsphere_file_availability_storage', 504, 'Scheduled storage recovery exceeded the invocation budget.')
+      }
+      if (isScheduledContainmentError(error)) throw error
       failed += 1
     }
   }
   return { recovered, failed }
 }
 
-async function recoverStoredSygSphereResumableUploads(environment: Environment): Promise<{ recovered: number, failed: number }> {
+async function recoverStoredSygSphereResumableUploads(
+  environment: Environment,
+  rpc: RpcInvoker = callRpc,
+  limit = 25,
+  scheduledSignal?: AbortSignal,
+): Promise<{ recovered: number, failed: number }> {
   if (!sygsphereResumableUploadsEnabled(environment)) return { recovered: 0, failed: 0 }
   const config = configuredSupabase(environment)
   if (!config) return { recovered: 0, failed: 0 }
-  const candidates = await callRpc<unknown>(
+  const candidates = await rpc<unknown>(
     config,
     'service_list_sygsphere_resumable_availability_recovery',
-    { target_limit: 25 },
+    { target_limit: Math.max(1, Math.min(limit, 25)) },
     config.serviceRoleKey,
   )
   if (!Array.isArray(candidates)) throw new Error('The resumable availability recovery response is invalid.')
@@ -8738,31 +9017,41 @@ async function recoverStoredSygSphereResumableUploads(environment: Environment):
     }
     try {
       const checksum = await privateStorageChecksum(
-        await fetchPrivateStorageObject(config, sygsphereResumableBucket, objectKey),
+        await fetchPrivateStorageObject(config, sygsphereResumableBucket, objectKey, scheduledSignal),
         sizeBytes,
+        scheduledSignal,
       )
-      await callRpc(
+      await rpc(
         config,
         'service_complete_sygsphere_resumable_upload_available',
         { target_actor_id: authorId, target_checksum: checksum, target_request_id: null, target_upload_id: uploadId },
         config.serviceRoleKey,
       )
       recovered += 1
-    } catch {
+    } catch (error) {
+      if (scheduledSignal?.aborted) {
+        throw new ScheduledSupabaseUnavailableError('sygsphere_resumable_availability_storage', 504, 'Scheduled storage recovery exceeded the invocation budget.')
+      }
+      if (isScheduledContainmentError(error)) throw error
       failed += 1
     }
   }
   return { recovered, failed }
 }
 
-async function purgeExpiredSygSphereUploads(environment: Environment): Promise<{ deleted: number, failed: number }> {
+async function purgeExpiredSygSphereUploads(
+  environment: Environment,
+  rpc: RpcInvoker = callRpc,
+  limit = 25,
+  scheduledSignal?: AbortSignal,
+): Promise<{ deleted: number, failed: number }> {
   if (!sygsphereResumableUploadsEnabled(environment)) return { deleted: 0, failed: 0 }
   const config = configuredSupabase(environment)
   if (!config) return { deleted: 0, failed: 0 }
-  const candidates = await callRpc<unknown>(
+  const candidates = await rpc<unknown>(
     config,
     'service_list_sygsphere_resumable_purge',
-    { target_limit: 25 },
+    { target_limit: Math.max(1, Math.min(limit, 25)) },
     config.serviceRoleKey,
   )
   if (!Array.isArray(candidates)) throw new Error('The SygSphere upload cleanup response is invalid.')
@@ -8774,14 +9063,17 @@ async function purgeExpiredSygSphereUploads(environment: Environment): Promise<{
     const objectKey = String((candidate as Record<string, unknown>).objectKey ?? '')
     if (!validUuid(uploadId) || !objectKey || objectKey.includes('..')) { failed += 1; continue }
     try {
-      await deletePrivateStorageObject(config, sygsphereResumableBucket, objectKey)
+      await deletePrivateStorageObject(config, sygsphereResumableBucket, objectKey, scheduledSignal)
       deleted.push(uploadId)
     } catch {
+      if (scheduledSignal?.aborted) {
+        throw new ScheduledSupabaseUnavailableError('sygsphere_resumable_purge_storage', 504, 'Scheduled storage cleanup exceeded the invocation budget.')
+      }
       failed += 1
     }
   }
   if (deleted.length > 0) {
-    await callRpc(
+    await rpc(
       config,
       'service_mark_sygsphere_resumable_purged',
       { target_upload_ids: deleted },
@@ -8829,6 +9121,240 @@ export function secureResponse(request: Request, response: Response, requestId: 
     status: response.status,
     statusText: response.statusText,
   })
+}
+
+function scheduledDenverClock(scheduledTime: number): { fullReconciliation: boolean, minute: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    hourCycle: 'h23',
+    minute: '2-digit',
+    timeZone: 'America/Denver',
+  }).formatToParts(new Date(scheduledTime))
+  const hour = parts.find((part) => part.type === 'hour')?.value
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value)
+  return {
+    fullReconciliation: hour === '02' && minute === 0,
+    minute: Number.isFinite(minute) ? minute : 0,
+  }
+}
+
+function scheduledFailure(message: string): Record<string, unknown> {
+  return { message, status: 'failed' }
+}
+
+async function runScheduledWorkerCycle(
+  controller: WorkerScheduledController,
+  environment: Environment,
+): Promise<void> {
+  const config = configuredSupabase(environment)
+  if (!config) {
+    console.error(JSON.stringify({
+      event: 'scheduled_work_failed',
+      message: 'Scheduled work is missing its protected data configuration.',
+    }))
+    return
+  }
+
+  const circuit: ScheduledSupabaseCircuit = {
+    failedOperation: null,
+    failedStatus: null,
+    open: false,
+    timedOut: false,
+  }
+  const deadlineAt = Date.now() + scheduledRunBudgetMs
+  const scheduledAbortController = new AbortController()
+  const scheduledBudgetTimeout = setTimeout(() => scheduledAbortController.abort(), scheduledRunBudgetMs)
+  const rpc = createScheduledRpcInvoker(circuit, deadlineAt)
+  const jobRunId = crypto.randomUUID()
+  const { fullReconciliation, minute } = scheduledDenverClock(controller.scheduledTime)
+  const attendanceSafetyRefreshDue = fullReconciliation || minute % 5 === 0
+  const availabilityRecoveryDue = fullReconciliation || minute % 15 === 0
+
+  let automation: Record<string, unknown>
+  let attendanceScheduleRefresh: Record<string, unknown>
+  let alertLifecycle: Record<string, unknown>
+  let offboardingDue: Record<string, unknown>
+  let coverageNotifications: Record<string, unknown>
+
+  try {
+    // This remains the first database action on every minute trigger. The RPC is
+    // idempotent by jobRunId, and its hard deadline prevents a stalled pool from
+    // keeping overlapping Worker invocations alive for several minutes.
+    try {
+      automation = await rpc<Record<string, unknown>>(
+        config,
+        'service_run_timekeeping_automation',
+        { target_job_run_id: jobRunId },
+        config.serviceRoleKey,
+      )
+    } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
+      automation = scheduledFailure(error instanceof Error ? error.message : 'Unknown timekeeping automation failure')
+      console.error(JSON.stringify({ event: 'timekeeping_automation_failed', ...automation }))
+    }
+
+    // Automatic clock-out and other timekeeping notices are part of the minute
+    // lane. Claim and finish them before patrol, document, HR, or general-email
+    // work so a noncritical failure cannot strand a critical timekeeping notice.
+    const timekeepingNotifications = await processNotificationJobs(environment, 25, rpc, 'timekeeping')
+
+    if (attendanceSafetyRefreshDue) {
+      try {
+        attendanceScheduleRefresh = await rpc<Record<string, unknown>>(
+          config,
+          'service_refresh_attendance_alert_schedule_state',
+          { target_full_reconciliation: fullReconciliation },
+          config.serviceRoleKey,
+        )
+      } catch (error) {
+        if (isScheduledContainmentError(error)) throw error
+        attendanceScheduleRefresh = scheduledFailure(error instanceof Error ? error.message : 'Unknown attendance schedule refresh failure')
+        console.error(JSON.stringify({ event: 'attendance_alert_schedule_refresh_failed', ...attendanceScheduleRefresh }))
+      }
+    } else {
+      attendanceScheduleRefresh = { reason: 'five_minute_safety_interval', status: 'skipped' }
+    }
+
+    try {
+      alertLifecycle = await rpc<Record<string, unknown>>(
+        config,
+        'service_reconcile_operational_alert_lifecycle',
+        { target_full_reconciliation: fullReconciliation },
+        config.serviceRoleKey,
+      )
+    } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
+      alertLifecycle = scheduledFailure(error instanceof Error ? error.message : 'Unknown operational-alert lifecycle failure')
+      console.error(JSON.stringify({ event: 'operational_alert_lifecycle_reconciliation_failed', ...alertLifecycle }))
+    }
+
+    // Everything below is deliberately serial. Once any RPC reports transient
+    // pool pressure, the per-invocation circuit opens and no new noncritical
+    // Supabase work is started during this trigger.
+    const patrol = await rpc<Record<string, unknown>>(
+      config,
+      'service_reconcile_patrol_obligations',
+      {},
+      config.serviceRoleKey,
+    )
+    const scheduledAnnouncements = await rpc<Record<string, unknown>>(
+      config,
+      'service_publish_due_announcement_work_items',
+      { target_limit: 25 },
+      config.serviceRoleKey,
+    )
+
+    try {
+      offboardingDue = await rpc<Record<string, unknown>>(
+        config,
+        'service_refresh_hr_offboarding_due_cases',
+        {},
+        config.serviceRoleKey,
+      )
+    } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
+      offboardingDue = scheduledFailure(error instanceof Error ? error.message : 'Unknown offboarding queue refresh failure')
+      console.error(JSON.stringify({ event: 'offboarding_due_refresh_failed', ...offboardingDue }))
+    }
+
+    const hrAutomation = await processHrAutomationJobs(environment, 10, rpc)
+    const signatureFinalization = await processSignatureFinalizationJobs(
+      environment,
+      2,
+      rpc,
+      scheduledAbortController.signal,
+    )
+
+    try {
+      coverageNotifications = await rpc<Record<string, unknown>>(
+        config,
+        'service_process_shift_coverage_notification_waves',
+        { target_limit: 25 },
+        config.serviceRoleKey,
+      )
+    } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
+      coverageNotifications = scheduledFailure(error instanceof Error ? error.message : 'Unknown coverage notification failure')
+      console.error(JSON.stringify({ event: 'shift_coverage_notifications_failed', ...coverageNotifications }))
+    }
+
+    const notifications = await processNotificationJobs(environment, 25, rpc, 'noncritical')
+    await processPushJobs(environment, rpc)
+
+    let sygtasksScheduledWork: Record<string, unknown> | null = null
+    try {
+      sygtasksScheduledWork = await processSygTasksReminderJobs(environment, rpc)
+      console.info(JSON.stringify({ event: 'sygtasks_scheduled_work_processed', sygtasksScheduledWork }))
+    } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
+      console.error(JSON.stringify({
+        event: 'sygtasks_scheduled_work_failed',
+        message: error instanceof Error ? error.message : 'Unknown scheduled task processing failure',
+      }))
+    }
+
+    if (availabilityRecoveryDue) {
+      const cleanup = await purgeExpiredSygSphereUploads(environment, rpc, 25, scheduledAbortController.signal)
+      if (cleanup.deleted > 0 || cleanup.failed > 0) {
+        console.info(JSON.stringify({ event: 'sygsphere_upload_cleanup', ...cleanup }))
+      }
+
+      const hrRecovery = await recoverLegacyHrDocumentAvailability(environment, rpc, 25, scheduledAbortController.signal)
+      if (hrRecovery.recovered > 0 || hrRecovery.failed > 0) {
+        console.info(JSON.stringify({ event: 'hr_document_availability_recovery', ...hrRecovery }))
+      }
+
+      const fileRecovery = await recoverStoredSygSphereFiles(environment, rpc, 25, scheduledAbortController.signal)
+      if (fileRecovery.recovered > 0 || fileRecovery.failed > 0) {
+        console.info(JSON.stringify({ event: 'sygsphere_file_availability_recovery', ...fileRecovery }))
+      }
+
+      const resumableRecovery = await recoverStoredSygSphereResumableUploads(environment, rpc, 25, scheduledAbortController.signal)
+      if (resumableRecovery.recovered > 0 || resumableRecovery.failed > 0) {
+        console.info(JSON.stringify({ event: 'sygsphere_resumable_availability_recovery', ...resumableRecovery }))
+      }
+    }
+
+    console.info(JSON.stringify({
+      alertLifecycle,
+      attendanceSafetyRefreshDue,
+      attendanceScheduleRefresh,
+      automation,
+      availabilityRecoveryDue,
+      coverageNotifications,
+      cron: controller.cron,
+      fullReconciliation,
+      hrAutomation,
+      jobRunId,
+      notifications,
+      offboardingDue,
+      patrol,
+      scheduledAnnouncements,
+      scheduledTime: controller.scheduledTime,
+      signatureFinalization,
+      sygtasksScheduledWork,
+      timekeepingNotifications,
+    }))
+  } catch (error) {
+    if (isScheduledContainmentError(error)) {
+      const containmentStatus = error instanceof ScheduledSupabaseUnavailableError ? error.status : null
+      console.error(JSON.stringify({
+        event: 'scheduled_work_contained',
+        failedOperation: circuit.failedOperation ?? error.operation,
+        scheduledTime: controller.scheduledTime,
+        status: circuit.failedStatus ?? containmentStatus,
+        timedOut: circuit.timedOut || containmentStatus === 504,
+      }))
+      return
+    }
+    console.error(JSON.stringify({
+      event: 'scheduled_work_failed',
+      message: error instanceof Error ? error.message : 'Unknown scheduled work failure',
+      scheduledTime: controller.scheduledTime,
+    }))
+  } finally {
+    clearTimeout(scheduledBudgetTimeout)
+  }
 }
 
 export default {
@@ -9285,166 +9811,6 @@ export default {
     environment: Environment,
     context: WorkerExecutionContext,
   ): Promise<void> {
-    // Independent from timekeeping/email: push failures cannot stop existing scheduled jobs.
-    context.waitUntil(processPushJobs(environment))
-    // Task reminders are isolated from timekeeping and the general email queue so
-    // a reminder failure cannot delay punches, alerts, or payroll automation.
-    context.waitUntil(processSygTasksReminderJobs(environment).then((sygtasksScheduledWork) => {
-      console.info(JSON.stringify({ event: 'sygtasks_scheduled_work_processed', sygtasksScheduledWork }))
-    }).catch((error) => {
-      console.error(JSON.stringify({
-        event: 'sygtasks_scheduled_work_failed',
-        message: error instanceof Error ? error.message : 'Unknown scheduled task processing failure',
-      }))
-    }))
-    context.waitUntil(purgeExpiredSygSphereUploads(environment).catch((error) => {
-      console.error(JSON.stringify({
-        event: 'sygsphere_upload_cleanup_failed',
-        message: error instanceof Error ? error.message : 'Unknown cleanup failure',
-      }))
-    }))
-    context.waitUntil(recoverLegacyHrDocumentAvailability(environment).then((recovery) => {
-      if (recovery.recovered > 0 || recovery.failed > 0) {
-        console.info(JSON.stringify({ event: 'hr_document_availability_recovery', ...recovery }))
-      }
-    }).catch((error) => {
-      console.error(JSON.stringify({
-        event: 'hr_document_availability_recovery_failed',
-        message: error instanceof Error ? error.message : 'Unknown availability recovery failure',
-      }))
-    }))
-    context.waitUntil(recoverStoredSygSphereFiles(environment).then((recovery) => {
-      if (recovery.recovered > 0 || recovery.failed > 0) {
-        console.info(JSON.stringify({ event: 'sygsphere_file_availability_recovery', ...recovery }))
-      }
-    }).catch((error) => {
-      console.error(JSON.stringify({
-        event: 'sygsphere_file_availability_recovery_failed',
-        message: error instanceof Error ? error.message : 'Unknown availability recovery failure',
-      }))
-    }))
-    context.waitUntil(recoverStoredSygSphereResumableUploads(environment).then((recovery) => {
-      if (recovery.recovered > 0 || recovery.failed > 0) {
-        console.info(JSON.stringify({ event: 'sygsphere_resumable_availability_recovery', ...recovery }))
-      }
-    }).catch((error) => {
-      console.error(JSON.stringify({
-        event: 'sygsphere_resumable_availability_recovery_failed',
-        message: error instanceof Error ? error.message : 'Unknown availability recovery failure',
-      }))
-    }))
-    context.waitUntil((async () => {
-      const config = configuredSupabase(environment)
-      if (!config) throw new Error('Scheduled timekeeping automation is missing its protected data configuration.')
-      const jobRunId = crypto.randomUUID()
-      let automation: Record<string, unknown>
-      try {
-        automation = await callRpc<Record<string, unknown>>(
-          { serviceRoleKey: config.serviceRoleKey, url: config.url },
-          'service_run_timekeeping_automation',
-          { target_job_run_id: jobRunId },
-          config.serviceRoleKey,
-        )
-      } catch (error) {
-        automation = {
-          status: 'failed',
-          message: error instanceof Error ? error.message : 'Unknown timekeeping automation failure',
-        }
-        console.error(JSON.stringify({ event: 'timekeeping_automation_failed', ...automation }))
-      }
-      const denverTimeParts = new Intl.DateTimeFormat('en-US', {
-        hour: '2-digit',
-        hourCycle: 'h23',
-        minute: '2-digit',
-        timeZone: 'America/Denver',
-      }).formatToParts(new Date(controller.scheduledTime))
-      const denverHour = denverTimeParts.find((part) => part.type === 'hour')?.value
-      const denverMinute = denverTimeParts.find((part) => part.type === 'minute')?.value
-      const fullReconciliation = denverHour === '02' && denverMinute === '00'
-      const attendanceSafetyRefreshDue = fullReconciliation || Number(denverMinute) % 5 === 0
-      let attendanceScheduleRefresh: Record<string, unknown>
-      if (attendanceSafetyRefreshDue) {
-        try {
-          attendanceScheduleRefresh = await callRpc<Record<string, unknown>>(
-            { serviceRoleKey: config.serviceRoleKey, url: config.url },
-            'service_refresh_attendance_alert_schedule_state',
-            { target_full_reconciliation: fullReconciliation },
-            config.serviceRoleKey,
-          )
-        } catch (error) {
-          attendanceScheduleRefresh = {
-            status: 'failed',
-            message: error instanceof Error ? error.message : 'Unknown attendance schedule refresh failure',
-          }
-          console.error(JSON.stringify({ event: 'attendance_alert_schedule_refresh_failed', ...attendanceScheduleRefresh }))
-        }
-      } else {
-        attendanceScheduleRefresh = {
-          status: 'skipped',
-          reason: 'five_minute_safety_interval',
-        }
-      }
-      let alertLifecycle: Record<string, unknown>
-      try {
-        alertLifecycle = await callRpc<Record<string, unknown>>(
-          { serviceRoleKey: config.serviceRoleKey, url: config.url },
-          'service_reconcile_operational_alert_lifecycle',
-          { target_full_reconciliation: fullReconciliation },
-          config.serviceRoleKey,
-        )
-      } catch (error) {
-        alertLifecycle = {
-          status: 'failed',
-          message: error instanceof Error ? error.message : 'Unknown operational-alert lifecycle failure',
-        }
-        console.error(JSON.stringify({ event: 'operational_alert_lifecycle_reconciliation_failed', ...alertLifecycle }))
-      }
-      const patrol = await callRpc<Record<string, unknown>>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
-        'service_reconcile_patrol_obligations',
-        {},
-        config.serviceRoleKey,
-      )
-      const scheduledAnnouncements = await callRpc<Record<string, unknown>>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
-        'service_publish_due_announcement_work_items',
-        { target_limit: 25 },
-        config.serviceRoleKey,
-      )
-      let offboardingDue: Record<string, unknown>
-      try {
-        offboardingDue = await callRpc<Record<string, unknown>>(
-          { serviceRoleKey: config.serviceRoleKey, url: config.url },
-          'service_refresh_hr_offboarding_due_cases',
-          {},
-          config.serviceRoleKey,
-        )
-      } catch (error) {
-        offboardingDue = {
-          status: 'failed',
-          message: error instanceof Error ? error.message : 'Unknown offboarding queue refresh failure',
-        }
-        console.error(JSON.stringify({ event: 'offboarding_due_refresh_failed', ...offboardingDue }))
-      }
-      const hrAutomation = await processHrAutomationJobs(environment, 10)
-      const signatureFinalization = await processSignatureFinalizationJobs(environment, 2)
-      let coverageNotifications: Record<string, unknown>
-      try {
-        coverageNotifications = await callRpc<Record<string, unknown>>(
-          { serviceRoleKey: config.serviceRoleKey, url: config.url },
-          'service_process_shift_coverage_notification_waves',
-          { target_limit: 25 },
-          config.serviceRoleKey,
-        )
-      } catch (error) {
-        coverageNotifications = {
-          status: 'failed',
-          message: error instanceof Error ? error.message : 'Unknown coverage notification failure',
-        }
-        console.error(JSON.stringify({ event: 'shift_coverage_notifications_failed', ...coverageNotifications }))
-      }
-      const notifications = await processNotificationJobs(environment, 25)
-      console.info(JSON.stringify({ alertLifecycle, attendanceSafetyRefreshDue, attendanceScheduleRefresh, automation, coverageNotifications, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, offboardingDue, patrol, scheduledAnnouncements, scheduledTime: controller.scheduledTime, signatureFinalization }))
-    })())
+    context.waitUntil(runScheduledWorkerCycle(controller, environment))
   },
 }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   clearSharedIdentitySession,
+  getSharedIdentitySessionExpiresAt,
   getSharedIdentitySessionScope,
   getSharedIdentitySessionToken,
   hydrateSharedIdentitySession,
@@ -87,6 +88,18 @@ describe('shared identity browser session', () => {
     }))
   })
 
+  it('passes the secure-access abort signal to the Worker restore request', async () => {
+    const controller = new AbortController()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
+
+    await hydrateSharedIdentitySession(controller.signal)
+
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith(
+      '/api/v1/auth/shared-identity/session',
+      expect.objectContaining({ signal: controller.signal }),
+    )
+  })
+
   it('makes one restore request per recovery cycle and honors Retry-After', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json(
@@ -137,6 +150,50 @@ describe('shared identity browser session', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(getSharedIdentitySessionToken()).toBe(sharedToken)
     expect(getSharedIdentitySessionScope()).toBe('sygsphere')
+  })
+
+  it('preserves a valid shared session when a 200 response contains malformed session values', async () => {
+    const originalToken = 'original-shared-token'.repeat(4)
+    const originalExpiry = new Date(Date.now() + 120_000).toISOString()
+    setSharedIdentitySession(originalToken, originalExpiry, true, 'platform')
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      destination: '/sygsphere',
+      expiresAt: 'not-a-date',
+      persistent: false,
+      scope: 'sygsphere',
+      sharedIdentityToken: 'too-short',
+      supabaseSession: {
+        accessToken: 'candidate-access-token',
+        refreshToken: 'candidate-refresh-token',
+      },
+    })))
+
+    await expect(hydrateSharedIdentitySession()).rejects.toThrow('response was invalid')
+    expect(getSharedIdentitySessionToken()).toBe(originalToken)
+    expect(getSharedIdentitySessionExpiresAt()).toBe(originalExpiry)
+    expect(getSharedIdentitySessionScope()).toBe('platform')
+  })
+
+  it('preserves a valid shared session when a 200 response contains an expired candidate', async () => {
+    const originalToken = 'original-shared-token'.repeat(4)
+    const originalExpiry = new Date(Date.now() + 120_000).toISOString()
+    setSharedIdentitySession(originalToken, originalExpiry, true, 'platform')
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      destination: '/sygsphere',
+      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+      persistent: false,
+      scope: 'sygsphere',
+      sharedIdentityToken: 'candidate-shared-token'.repeat(4),
+      supabaseSession: {
+        accessToken: 'candidate-access-token',
+        refreshToken: 'candidate-refresh-token',
+      },
+    })))
+
+    await expect(hydrateSharedIdentitySession()).rejects.toThrow('response was invalid')
+    expect(getSharedIdentitySessionToken()).toBe(originalToken)
+    expect(getSharedIdentitySessionExpiresAt()).toBe(originalExpiry)
+    expect(getSharedIdentitySessionScope()).toBe('platform')
   })
 
   it('preserves but does not retry a non-transient endpoint contract error', async () => {
@@ -237,7 +294,7 @@ describe('shared identity browser session', () => {
     expect(getSharedIdentitySessionToken()).toBe(sharedToken)
   })
 
-  it('hydrates an exact platform destination and rejects a mismatched scope', async () => {
+  it('hydrates an exact platform destination and preserves it when a later response has a mismatched scope', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({
       destination: '/',
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
@@ -270,6 +327,6 @@ describe('shared identity browser session', () => {
     })))
 
     await expect(hydrateSharedIdentitySession()).rejects.toThrow('response was invalid')
-    expect(getSharedIdentitySessionScope()).toBeNull()
+    expect(getSharedIdentitySessionScope()).toBe('platform')
   })
 })

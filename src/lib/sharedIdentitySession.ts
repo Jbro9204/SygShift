@@ -75,15 +75,7 @@ export function setSharedIdentitySession(
   persistent: boolean,
   scope: SharedIdentityScope = 'sygsphere',
 ): void {
-  clearSharedIdentitySession()
-  const expiresAtMs = Date.parse(expiresAt)
-  if (
-    !tokenPattern.test(token)
-    || !Number.isFinite(expiresAtMs)
-    || expiresAtMs <= Date.now()
-    || !isSharedIdentityScope(scope)
-  ) return
-  currentSession = { expiresAt, persistent, scope, token }
+  replaceSharedIdentitySession({ expiresAt, persistent, scope, token })
 }
 
 export function getSharedIdentitySessionToken(): string | null {
@@ -116,8 +108,8 @@ export function sharedIdentityRefreshDelayMs(accessToken: string, now = Date.now
   }
 }
 
-export async function hydrateSharedIdentitySession(): Promise<HydratedSharedIdentitySession | null> {
-  const response = await requestSharedIdentitySession()
+export async function hydrateSharedIdentitySession(signal?: AbortSignal): Promise<HydratedSharedIdentitySession | null> {
+  const response = await requestSharedIdentitySession(signal)
   if (response.status === 204 || response.status === 401 || response.status === 403) {
     clearSharedIdentitySession()
     return null
@@ -144,11 +136,16 @@ export async function hydrateSharedIdentitySession(): Promise<HydratedSharedIden
     || typeof payload.supabaseSession?.accessToken !== 'string'
     || typeof payload.supabaseSession.refreshToken !== 'string'
   ) {
-    clearSharedIdentitySession()
     throw new Error('The shared SygShift session response was invalid.')
   }
-  setSharedIdentitySession(payload.sharedIdentityToken, payload.expiresAt, payload.persistent, scope)
-  if (!getSharedIdentitySessionToken()) return null
+  if (!replaceSharedIdentitySession({
+    expiresAt: payload.expiresAt,
+    persistent: payload.persistent,
+    scope,
+    token: payload.sharedIdentityToken,
+  })) {
+    throw new Error('The shared SygShift session response was invalid.')
+  }
   return {
     accessToken: payload.supabaseSession.accessToken,
     refreshToken: payload.supabaseSession.refreshToken,
@@ -189,12 +186,13 @@ export function sharedIdentityRecoveryDelayMs(
   return Math.max(jitteredDelay, requestedDelay)
 }
 
-async function requestSharedIdentitySession(): Promise<Response> {
+async function requestSharedIdentitySession(signal?: AbortSignal): Promise<Response> {
   try {
     return await fetch('/api/v1/auth/shared-identity/session', {
       cache: 'no-store',
       credentials: 'same-origin',
       method: 'POST',
+      signal,
     })
   } catch {
     throw new SharedIdentitySessionRestoreError(
@@ -222,6 +220,19 @@ function isRetryableRestoreFailure(status: number, code: unknown): boolean {
 
 function isSharedIdentityScope(value: unknown): value is SharedIdentityScope {
   return value === 'platform' || value === 'sygsphere'
+}
+
+function replaceSharedIdentitySession(candidate: SharedIdentitySession): boolean {
+  const expiresAtMs = Date.parse(candidate.expiresAt)
+  if (
+    !tokenPattern.test(candidate.token)
+    || !Number.isFinite(expiresAtMs)
+    || expiresAtMs <= Date.now()
+    || !isSharedIdentityScope(candidate.scope)
+  ) return false
+  currentSession = candidate
+  purgeLegacySharedIdentityStorage()
+  return true
 }
 
 function sharedIdentityResponseScope(payload: SharedIdentitySessionResponse | null): SharedIdentityScope | null {

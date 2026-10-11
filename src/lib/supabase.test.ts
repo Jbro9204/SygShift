@@ -4,7 +4,10 @@ import {
   attachTrustedDeviceHeader,
   createMemoryOnlyAuthStorage,
   deactivateSharedIdentitySupabaseSession,
+  isConfirmedInvalidSharedIdentitySupabaseSessionError,
+  isTransientSharedIdentitySupabaseSessionError,
   resolveSupabaseConfig,
+  SharedIdentitySupabaseSessionError,
 } from './supabase'
 
 afterEach(() => {
@@ -86,6 +89,19 @@ describe('supabase browser configuration', () => {
     expect(localSet.mock.calls.some(([, value]) => value.includes(accessToken) || value.includes(refreshToken))).toBe(false)
     expect(window.localStorage.length).toBe(0)
     expect(window.sessionStorage.length).toBe(0)
+  })
+
+  it('distinguishes retryable auth failures from confirmed invalid shared credentials', () => {
+    expect(isTransientSharedIdentitySupabaseSessionError(new TypeError('Failed to fetch'))).toBe(true)
+    expect(isTransientSharedIdentitySupabaseSessionError(
+      new SharedIdentitySupabaseSessionError('Auth gateway timed out.', 'transient'),
+    )).toBe(true)
+    expect(isConfirmedInvalidSharedIdentitySupabaseSessionError(
+      new SharedIdentitySupabaseSessionError('Refresh token revoked.', 'invalid'),
+    )).toBe(true)
+    expect(isConfirmedInvalidSharedIdentitySupabaseSessionError(
+      new SharedIdentitySupabaseSessionError('Unexpected auth response.', 'terminal'),
+    )).toBe(false)
   })
 
 })

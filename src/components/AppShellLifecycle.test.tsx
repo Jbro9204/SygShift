@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -31,9 +31,17 @@ type OperationalWorkspaceFixture = {
 
 const shared = vi.hoisted(() => ({
   activeAccessToken: null as string | null,
+  activationError: null as Error | null,
+  activationFailureKind: 'transient' as 'invalid' | 'terminal' | 'transient',
+  authGetSessionPromise: null as Promise<{
+    data: { session: { access_token: string } | null }
+    error?: Error | null
+  }> | null,
+  authSourceActive: true,
   authListener: null as null | ((event: string, session: { access_token: string } | null) => void),
   browserListener: null as ((action: 'cleared' | 'updated') => void) | null,
   hydrateError: null as Error | null,
+  hydrateTransient: true,
   hydrateResult: null as null | { accessToken: string; expiresAt: number; refreshToken: string; scope: 'platform' | 'sygsphere' },
   operationalWorkspace: { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' } as OperationalWorkspaceFixture,
   scope: null as null | 'platform' | 'sygsphere',
@@ -55,7 +63,7 @@ vi.mock('../lib/sharedIdentitySession', () => ({
     if (shared.hydrateResult) shared.scope = shared.hydrateResult.scope
     return shared.hydrateResult
   }),
-  isTransientSharedIdentitySessionRestoreError: vi.fn((error: unknown) => error === shared.hydrateError),
+  isTransientSharedIdentitySessionRestoreError: vi.fn((error: unknown) => shared.hydrateTransient && error === shared.hydrateError),
   sharedIdentityRecoveryDelayMs: vi.fn(() => 5_000),
   sharedIdentityRefreshDelayMs: vi.fn(() => 60_000),
   sharedIdentitySessionRestoreRetryAfterMs: vi.fn(() => 2_000),
@@ -72,6 +80,7 @@ vi.mock('../lib/sharedIdentityBrowserSync', () => ({
 
 vi.mock('../lib/supabase', () => ({
   activateSharedIdentitySupabaseSession: vi.fn(async (token: string) => {
+    if (shared.activationError) throw shared.activationError
     shared.activeAccessToken = token
   }),
   deactivateSharedIdentitySupabaseSession: vi.fn(() => {
@@ -79,24 +88,48 @@ vi.mock('../lib/supabase', () => ({
   }),
   getSupabaseClient: vi.fn(() => ({
     auth: {
-      getSession: vi.fn(async () => ({
+      getSession: vi.fn(async () => shared.authGetSessionPromise ?? {
         data: {
           session: shared.activeAccessToken ? { access_token: shared.activeAccessToken } : null,
         },
-      })),
+        error: null,
+      }),
       onAuthStateChange: vi.fn((listener: (event: string, session: { access_token: string } | null) => void) => {
         shared.authListener = listener
         return { data: { subscription: { unsubscribe: vi.fn() } } }
       }),
     },
   })),
+  isConfirmedInvalidSharedIdentitySupabaseSessionError: vi.fn((error: unknown) => (
+    error === shared.activationError && shared.activationFailureKind === 'invalid'
+  )),
+  isActiveSupabaseClient: vi.fn(() => shared.authSourceActive),
   isSupabaseConfigured: true,
+  isTransientSharedIdentitySupabaseSessionError: vi.fn((error: unknown) => (
+    error === shared.activationError && shared.activationFailureKind === 'transient'
+  )),
 }))
 
 vi.mock('../data/auth', () => ({
   SESSION_CONTEXT_REFRESH_EVENT: 'sygshift:session-context-refresh',
   authSessionIdFromAccessToken: vi.fn(() => '7c21701a-56ed-4c64-8c47-c9dc516e4398'),
   getSessionContext: vi.fn(async () => {
+    if (shared.sessionContextError) throw shared.sessionContextError
+    return {
+      displayName: 'Shared User',
+      employeeId,
+      hasMfa: false,
+      mfaEnrolledAt: null,
+      mfaRequired: true,
+      mustChangePassword: false,
+      passwordChangedAt: null,
+      permissions: ['apps.sygilant.access', 'operations.view', 'time.view'],
+      role: 'guard',
+      timeZone: 'America/Denver',
+      username: 'shareduser',
+    }
+  }),
+  getSessionContextWithSignal: vi.fn(async () => {
     if (shared.sessionContextError) throw shared.sessionContextError
     return {
       displayName: 'Shared User',
@@ -168,9 +201,14 @@ vi.mock('./LiveNotifications', () => ({ LiveNotifications: () => null }))
 
 beforeEach(() => {
   shared.activeAccessToken = null
+  shared.activationError = null
+  shared.activationFailureKind = 'transient'
+  shared.authGetSessionPromise = null
   shared.authListener = null
+  shared.authSourceActive = true
   shared.browserListener = null
   shared.hydrateError = null
+  shared.hydrateTransient = true
   shared.hydrateResult = null
   shared.operationalWorkspace = { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' }
   shared.scope = null
@@ -224,6 +262,325 @@ describe('AppShell shared-session lifecycle', () => {
 
     expect(await screen.findByText('Platform home')).toBeInTheDocument()
     expect(screen.queryByText('Account security')).not.toBeInTheDocument()
+  })
+
+  it('replaces a bounded cold-start check with a fail-closed recovery card and keeps retries single-flight', async () => {
+    vi.useFakeTimers()
+    const timeoutError = new Error('secure access request timed out')
+    shared.hydrateError = timeoutError
+    const sharedSession = await import('../lib/sharedIdentitySession')
+    const hydrate = vi.mocked(sharedSession.hydrateSharedIdentitySession)
+    const waitForAbort = (signal?: AbortSignal) => new Promise<never>((_resolve, reject) => {
+      if (!signal) {
+        reject(timeoutError)
+        return
+      }
+      signal.addEventListener('abort', () => reject(timeoutError), { once: true })
+    })
+    hydrate
+      .mockImplementationOnce(waitForAbort)
+      .mockImplementationOnce(waitForAbort)
+
+    const view = renderShell('/')
+    expect(screen.getByText('Checking secure access…')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(11_999)
+    })
+    expect(screen.getByText('Checking secure access…')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(screen.getByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+    expect(screen.queryByText('Native login')).not.toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+    expect(hydrate).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(hydrate).toHaveBeenCalledTimes(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry secure access' }))
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      await Promise.resolve()
+    })
+
+    expect(hydrate).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('button', { name: 'Retrying secure access…' })).toBeDisabled()
+    view.unmount()
+  })
+
+  it('advances beyond secure access when a background cold-start retry completes verification', async () => {
+    vi.useFakeTimers()
+    const timeoutError = new Error('secure access request timed out')
+    shared.hydrateError = timeoutError
+    const sharedSession = await import('../lib/sharedIdentitySession')
+    const hydrate = vi.mocked(sharedSession.hydrateSharedIdentitySession)
+    hydrate.mockImplementationOnce((signal?: AbortSignal) => new Promise<never>((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(timeoutError), { once: true })
+    }))
+
+    const view = renderShell('/')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000)
+    })
+    expect(screen.getByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+
+    shared.hydrateError = null
+    prepareSharedSession('platform')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+      await vi.advanceTimersByTimeAsync(100)
+    })
+
+    expect(screen.getByText('Checking required actions…')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Secure access is temporarily unavailable' })).not.toBeInTheDocument()
+    view.unmount()
+  })
+
+  it('bounds a stalled session-context check and keeps the cold-start workspace closed', async () => {
+    vi.useFakeTimers()
+    const timeoutError = new Error('session context timed out')
+    shared.sessionContextError = timeoutError
+    prepareSharedSession('platform')
+    const auth = await import('../data/auth')
+    const getContext = vi.mocked(auth.getSessionContextWithSignal)
+    getContext.mockImplementationOnce((signal: AbortSignal) => new Promise<never>((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(timeoutError), { once: true })
+    }))
+
+    const view = renderShell('/')
+    expect(screen.getByText('Checking secure access…')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000)
+    })
+
+    expect(screen.getByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+    expect(screen.queryByText('Native login')).not.toBeInTheDocument()
+    expect(getContext).toHaveBeenCalledTimes(1)
+    expect(getContext.mock.calls[0]?.[0]).toHaveProperty('aborted', true)
+    view.unmount()
+  })
+
+  it('preserves the shared session and retries when Supabase activation fails transiently', async () => {
+    shared.activationError = new TypeError('network unavailable')
+    shared.activationFailureKind = 'transient'
+    prepareSharedSession('platform')
+    renderShell('/')
+
+    expect(await screen.findByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+    expect(shared.scope).toBe('platform')
+    const sharedSession = await import('../lib/sharedIdentitySession')
+    expect(sharedSession.clearSharedIdentityServerSession).not.toHaveBeenCalled()
+    expect(sharedSession.clearSharedIdentitySession).not.toHaveBeenCalled()
+  })
+
+  it('bounds stalled Supabase activation without clearing a valid shared session', async () => {
+    vi.useFakeTimers()
+    prepareSharedSession('platform')
+    const supabase = await import('../lib/supabase')
+    const activate = vi.mocked(supabase.activateSharedIdentitySupabaseSession)
+    let activationSignal: AbortSignal | undefined
+    activate.mockImplementationOnce((_token, _refreshToken, signal) => {
+      activationSignal = signal
+      return new Promise<never>(() => undefined)
+    })
+
+    const view = renderShell('/')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000)
+    })
+
+    expect(screen.getByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+    expect(activationSignal).toHaveProperty('aborted', true)
+    expect(shared.scope).toBe('platform')
+    const sharedSession = await import('../lib/sharedIdentitySession')
+    expect(sharedSession.clearSharedIdentityServerSession).not.toHaveBeenCalled()
+    expect(sharedSession.clearSharedIdentitySession).not.toHaveBeenCalled()
+    view.unmount()
+  })
+
+  it('bounds stalled Supabase session acquisition and releases the cold-start check', async () => {
+    vi.useFakeTimers()
+    prepareSharedSession('platform')
+    shared.authGetSessionPromise = new Promise(() => undefined)
+
+    const view = renderShell('/')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000)
+    })
+
+    expect(screen.getByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+    expect(shared.scope).toBe('platform')
+    view.unmount()
+  })
+
+  it('does not commit delayed session context after another tab clears the shared session', async () => {
+    prepareSharedSession('platform')
+    const auth = await import('../data/auth')
+    const getContext = vi.mocked(auth.getSessionContextWithSignal)
+    let resolveContext: ((context: Awaited<ReturnType<typeof auth.getSessionContextWithSignal>>) => void) | undefined
+    getContext.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveContext = resolve
+    }))
+
+    const { queryClient } = renderShell('/')
+    await waitFor(() => expect(getContext).toHaveBeenCalledTimes(1))
+    act(() => shared.browserListener?.('cleared'))
+    expect(await screen.findByText('Native login')).toBeInTheDocument()
+
+    await act(async () => {
+      resolveContext?.({
+        displayName: 'Stale Shared User',
+        employeeId,
+        hasMfa: false,
+        mfaEnrolledAt: null,
+        mfaRequired: true,
+        mustChangePassword: false,
+        passwordChangedAt: null,
+        permissions: ['operations.view'],
+        role: 'guard',
+        timeZone: 'America/Denver',
+        username: 'stale-shared-user',
+      })
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('Native login')).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+    expect(queryClient.getQueryData(['session-context'])).toBeUndefined()
+  })
+
+  it('does not recommit delayed session context after Supabase signs out', async () => {
+    prepareSharedSession('platform')
+    const { queryClient } = renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+
+    const auth = await import('../data/auth')
+    const getContext = vi.mocked(auth.getSessionContextWithSignal)
+    let resolveContext: ((context: Awaited<ReturnType<typeof auth.getSessionContextWithSignal>>) => void) | undefined
+    getContext.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveContext = resolve
+    }))
+    window.dispatchEvent(new Event('sygshift:session-context-refresh'))
+    await waitFor(() => expect(getContext).toHaveBeenCalledTimes(2))
+
+    act(() => shared.authListener?.('SIGNED_OUT', null))
+    expect(await screen.findByText('Native login')).toBeInTheDocument()
+    await act(async () => {
+      resolveContext?.({
+        displayName: 'Stale Signed-out User',
+        employeeId,
+        hasMfa: false,
+        mfaEnrolledAt: null,
+        mfaRequired: true,
+        mustChangePassword: false,
+        passwordChangedAt: null,
+        permissions: ['operations.view'],
+        role: 'guard',
+        timeZone: 'America/Denver',
+        username: 'stale-signed-out-user',
+      })
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('Native login')).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+    expect(queryClient.getQueryData(['session-context'])).toBeUndefined()
+  })
+
+  it('ignores SIGNED_OUT emitted by the retired native client after a shared handoff', async () => {
+    prepareSharedSession('platform')
+    renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    await waitFor(() => expect(shared.authListener).not.toBeNull())
+    const { deactivateSharedIdentitySupabaseSession } = await import('../lib/supabase')
+    vi.mocked(deactivateSharedIdentitySupabaseSession).mockClear()
+
+    shared.authSourceActive = false
+    act(() => shared.authListener?.('SIGNED_OUT', null))
+
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+    expect(screen.queryByText('Native login')).not.toBeInTheDocument()
+    expect(shared.activeAccessToken).toBe(accessToken)
+    expect(shared.scope).toBe('platform')
+    expect(deactivateSharedIdentitySupabaseSession).not.toHaveBeenCalled()
+  })
+
+  it('runs a queued shared restore when it collides with a weaker context refresh', async () => {
+    prepareSharedSession('platform')
+    renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    const auth = await import('../data/auth')
+    const sharedSession = await import('../lib/sharedIdentitySession')
+    const browserSync = await import('../lib/sharedIdentityBrowserSync')
+    const getContext = vi.mocked(auth.getSessionContextWithSignal)
+    const hydrate = vi.mocked(sharedSession.hydrateSharedIdentitySession)
+    const publish = vi.mocked(browserSync.publishSharedIdentityBrowserEvent)
+    hydrate.mockClear()
+    publish.mockClear()
+    let resolveContext: ((context: Awaited<ReturnType<typeof auth.getSessionContextWithSignal>>) => void) | undefined
+    getContext.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveContext = resolve
+    }))
+
+    window.dispatchEvent(new Event('sygshift:session-context-refresh'))
+    await waitFor(() => expect(resolveContext).toBeTypeOf('function'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(hydrate).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveContext?.({
+        displayName: 'Shared User',
+        employeeId,
+        hasMfa: false,
+        mfaEnrolledAt: null,
+        mfaRequired: true,
+        mustChangePassword: false,
+        passwordChangedAt: null,
+        permissions: ['apps.sygilant.access', 'operations.view', 'time.view'],
+        role: 'guard',
+        timeZone: 'America/Denver',
+        username: 'shareduser',
+      })
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(hydrate).toHaveBeenCalledOnce())
+    await waitFor(() => expect(publish).toHaveBeenCalledWith('updated'))
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+  })
+
+  it('clears a stale recovery card when a retry reaches a terminal restore response', async () => {
+    vi.useFakeTimers()
+    shared.scope = 'platform'
+    shared.hydrateError = new Error('temporary restore failure')
+    const view = renderShell('/')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+
+    shared.hydrateError = new Error('deterministic restore failure')
+    shared.hydrateTransient = false
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+
+    expect(screen.queryByRole('heading', { name: 'Secure access is temporarily unavailable' })).not.toBeInTheDocument()
+    expect(screen.getByText('Native login')).toBeInTheDocument()
+    expect(shared.scope).toBe('platform')
+    const sharedSession = await import('../lib/sharedIdentitySession')
+    expect(sharedSession.clearSharedIdentityServerSession).not.toHaveBeenCalled()
+    expect(sharedSession.clearSharedIdentitySession).not.toHaveBeenCalled()
+    view.unmount()
   })
 
   it('keeps the shell alert count limited to current operational alerts', async () => {

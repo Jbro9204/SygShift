@@ -17,7 +17,7 @@ import { getTimekeepingOperationsWorkspace, isOperationalAlertLive } from '../da
 import { getRequiredActionCheckpoint } from '../data/actionCenter'
 import {
   authSessionIdFromAccessToken,
-  getSessionContext,
+  getSessionContextWithSignal,
   isTransientSessionContextError,
   recordCompletedSignInWithRetry,
   SESSION_CONTEXT_REFRESH_EVENT,
@@ -29,7 +29,10 @@ import {
   activateSharedIdentitySupabaseSession,
   deactivateSharedIdentitySupabaseSession,
   getSupabaseClient,
+  isActiveSupabaseClient,
+  isConfirmedInvalidSharedIdentitySupabaseSessionError,
   isSupabaseConfigured,
+  isTransientSharedIdentitySupabaseSessionError,
 } from '../lib/supabase'
 import { lastCompletedPayrollWeek } from '../lib/time'
 import { personalDisplayTimeZone } from '../lib/usTimeZones'
@@ -73,9 +76,24 @@ const INACTIVITY_WARNING_MS = 55 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 60 * 60 * 1000
 const SESSION_ACTIVITY_STORAGE_PREFIX = 'sygshift.session.activity.v1'
 const SESSION_ACTIVITY_THROTTLE_MS = 5_000
+const SECURE_ACCESS_REQUEST_TIMEOUT_MS = 12_000
 const WORKSPACE_ALERT_ROTATE_MS = 9_000
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sygshift.sidebar.collapsed'
 const SIDEBAR_GROUP_STORAGE_KEY = 'sygshift.sidebar.open-group'
+
+class SecureAccessRequestTimeoutError extends Error {
+  constructor() {
+    super('The secure-access request timed out.')
+    this.name = 'SecureAccessRequestTimeoutError'
+  }
+}
+
+class SecureAccessRequestCancelledError extends Error {
+  constructor() {
+    super('The secure-access request was cancelled.')
+    this.name = 'SecureAccessRequestCancelledError'
+  }
+}
 const COMPACT_NAVIGATION_QUERY = '(max-width: 1280px), (max-width: 1366px) and (max-height: 800px)'
 const SESSION_SCOPED_QUERY_ROOTS = [
   'support',
@@ -193,6 +211,8 @@ export function AppShell() {
   const [authSessionId, setAuthSessionId] = useState<string | null>(null)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [authMessage, setAuthMessage] = useState<string | null>(null)
+  const [authRecoveryRequired, setAuthRecoveryRequired] = useState(false)
+  const [authRecoveryRetrying, setAuthRecoveryRetrying] = useState(false)
   const [logoutWarningRemaining, setLogoutWarningRemaining] = useState<number | null>(null)
   const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(null)
   const [accountSummary, setAccountSummary] = useState<MyAccount | null>(null)
@@ -201,6 +221,8 @@ export function AppShell() {
   const activeMutationCount = useIsMutating()
   const location = useLocation()
   const internalHistoryRef = useRef<InternalNavigationEntry[]>(parseInternalHistory(window.sessionStorage.getItem(INTERNAL_NAVIGATION_STORAGE_KEY)))
+  const authRecoveryRetryRef = useRef<(() => Promise<void>) | null>(null)
+  const authSessionInvalidationRef = useRef<(() => void) | null>(null)
   const previousScrollRef = useRef(0)
   const navigate = useNavigate()
   const payrollReminderWeek = lastCompletedPayrollWeek()
@@ -456,6 +478,11 @@ export function AppShell() {
     })
   }
 
+  function retrySecureAccess() {
+    if (authRecoveryRetrying) return
+    void authRecoveryRetryRef.current?.()
+  }
+
   useEffect(() => {
     document.documentElement.toggleAttribute('data-sygshift-busy', activeMutationCount > 0)
 
@@ -474,15 +501,33 @@ export function AppShell() {
   }, [sessionContext])
 
   useEffect(() => {
+    type SessionLoadIntent = {
+      notifyOtherTabs: boolean
+      restoreSharedSession: boolean
+      showLoading: boolean
+    }
+    type SessionLoadFlightState = {
+      currentIntent: SessionLoadIntent
+      pendingIntent: SessionLoadIntent | null
+    }
+
     let active = true
     let authSubscription: { unsubscribe: () => void } | null = null
+    let activeSecureRequestController: AbortController | null = null
     let sharedIdentityRefreshTimer: number | undefined
+    let sessionGeneration = 0
+    let sessionLoadInFlight: {
+      generation: number
+      promise: Promise<void>
+      state: SessionLoadFlightState
+    } | null = null
     let sessionRecoveryAttempt = 0
     let sessionRecoveryTimer: number | undefined
     let unsubscribeSharedBrowserEvents: () => void = () => undefined
 
     if (!isSupabaseConfigured) {
       setAuthLoading(false)
+      setAuthRecoveryRequired(false)
       setSessionContext(null)
       return () => {
         active = false
@@ -500,7 +545,45 @@ export function AppShell() {
       if (resetAttempt) sessionRecoveryAttempt = 0
     }
 
+    function isCurrentSessionGeneration(generation: number): boolean {
+      return active && generation === sessionGeneration
+    }
+
+    function invalidateSessionLoads() {
+      sessionGeneration += 1
+      activeSecureRequestController?.abort(new SecureAccessRequestCancelledError())
+      activeSecureRequestController = null
+      sessionLoadInFlight = null
+      clearSharedIdentityRefreshTimer()
+      clearSessionRecoveryTimer(true)
+      setAuthRecoveryRetrying(false)
+    }
+
+    authSessionInvalidationRef.current = invalidateSessionLoads
+
+    async function runSecureAccessRequest<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T> {
+      const controller = new AbortController()
+      activeSecureRequestController = controller
+      const timeout = window.setTimeout(() => {
+        controller.abort(new SecureAccessRequestTimeoutError())
+      }, SECURE_ACCESS_REQUEST_TIMEOUT_MS)
+      const interrupted = new Promise<never>((_resolve, reject) => {
+        controller.signal.addEventListener('abort', () => {
+          reject(controller.signal.reason instanceof Error
+            ? controller.signal.reason
+            : new SecureAccessRequestCancelledError())
+        }, { once: true })
+      })
+      try {
+        return await Promise.race([request(controller.signal), interrupted])
+      } finally {
+        window.clearTimeout(timeout)
+        if (activeSecureRequestController === controller) activeSecureRequestController = null
+      }
+    }
+
     function tearDownSharedIdentitySession(message: string | null, notifyOtherTabs: boolean) {
+      invalidateSessionLoads()
       clearSharedIdentityRefreshTimer()
       clearSessionRecoveryTimer(true)
       clearSessionScopedQueryCaches(queryClient)
@@ -510,10 +593,12 @@ export function AppShell() {
       setSessionContext(null)
       setAuthMessage(message)
       setAuthLoading(false)
+      setAuthRecoveryRequired(false)
       if (notifyOtherTabs) publishSharedIdentityBrowserEvent('cleared')
     }
 
     function scheduleSharedIdentityRestore(accessToken: string) {
+      if (!active) return
       clearSharedIdentityRefreshTimer()
       sharedIdentityRefreshTimer = window.setTimeout(() => {
         void loadSessionContext(false, true, true)
@@ -521,6 +606,7 @@ export function AppShell() {
     }
 
     function scheduleSessionRecovery(restoreSharedSession: boolean, retryAfterMs: number | null = null) {
+      if (!active) return
       if (sessionRecoveryTimer !== undefined) return
       const delayMs = sharedIdentityRecoveryDelayMs(sessionRecoveryAttempt, retryAfterMs)
       sessionRecoveryAttempt += 1
@@ -530,72 +616,143 @@ export function AppShell() {
       }, delayMs)
     }
 
+    function showTransientSecureAccessRecovery(message: string) {
+      setAuthMessage(message)
+      setAuthRecoveryRequired(true)
+      setAuthLoading(false)
+    }
+
+    function showTerminalSecureAccessFailure(message: string) {
+      clearSessionRecoveryTimer(true)
+      setAuthMessage(message)
+      setAuthRecoveryRequired(false)
+      setAuthLoading(false)
+    }
+
     async function restoreSharedIdentitySession(
       notifyOtherTabs: boolean,
-    ): Promise<'missing' | 'preserved' | 'restored' | 'retrying'> {
+      generation: number,
+    ): Promise<'missing' | 'preserved' | 'restored' | 'retrying' | 'stale'> {
       const previouslyShared = getSharedIdentitySessionScope() !== null
       let restored
       try {
-        restored = await hydrateSharedIdentitySession()
+        restored = await runSecureAccessRequest((signal) => hydrateSharedIdentitySession(signal))
       } catch (error) {
-        if (shouldPreserveSharedIdentitySessionOnRestoreError(error)) {
-          if (isTransientSharedIdentitySessionRestoreError(error)) {
-            scheduleSessionRecovery(true, sharedIdentitySessionRestoreRetryAfterMs(error))
-            setAuthMessage('SygShift is reconnecting to your secure session. Your sign-in has been preserved.')
-            return 'retrying'
-          }
-          clearSessionRecoveryTimer(true)
-          setAuthMessage('The shared-session service returned an unexpected response. Your current sign-in has not been cleared.')
-          return 'preserved'
-        }
-        if (previouslyShared) {
-          tearDownSharedIdentitySession(
-            'Your secure shared session could not be renewed. Open SygShift from Sygilant again or sign in directly.',
-            notifyOtherTabs,
+        if (!isCurrentSessionGeneration(generation)) return 'stale'
+        const retryable = error instanceof SecureAccessRequestTimeoutError
+          || (shouldPreserveSharedIdentitySessionOnRestoreError(error)
+            && isTransientSharedIdentitySessionRestoreError(error))
+        if (retryable) {
+          scheduleSessionRecovery(true, sharedIdentitySessionRestoreRetryAfterMs(error))
+          showTransientSecureAccessRecovery(
+            'SygShift is reconnecting to your secure session. Your sign-in has been preserved.',
           )
+          return 'retrying'
         }
-        return 'missing'
+        showTerminalSecureAccessFailure(
+          'The shared-session service returned an unexpected response. Your current sign-in has not been cleared.',
+        )
+        return 'preserved'
       }
-      if (!active) return 'missing'
+      if (!isCurrentSessionGeneration(generation)) return 'stale'
       if (!restored) {
         if (previouslyShared) tearDownSharedIdentitySession(null, notifyOtherTabs)
         return 'missing'
       }
       if (restored.scope === 'sygsphere' && !isSygSpherePath(window.location.pathname)) {
-        await clearSharedIdentityServerSession(restored.accessToken)
+        void clearSharedIdentityServerSession(restored.accessToken)
         tearDownSharedIdentitySession(null, notifyOtherTabs)
         return 'missing'
       }
       try {
-        await activateSharedIdentitySupabaseSession(restored.accessToken, restored.refreshToken)
-      } catch {
-        await clearSharedIdentityServerSession(restored.accessToken)
-        tearDownSharedIdentitySession(
-          'The shared SygShift session could not be established. Sign in directly or retry from Sygilant.',
-          notifyOtherTabs,
+        await runSecureAccessRequest((signal) => activateSharedIdentitySupabaseSession(
+          restored.accessToken,
+          restored.refreshToken,
+          signal,
+        ))
+      } catch (error) {
+        if (!isCurrentSessionGeneration(generation)) return 'stale'
+        if (
+          error instanceof SecureAccessRequestTimeoutError
+          || isTransientSharedIdentitySupabaseSessionError(error)
+        ) {
+          scheduleSessionRecovery(true)
+          showTransientSecureAccessRecovery(
+            'SygShift is reconnecting to secure authentication services. Your sign-in has been preserved.',
+          )
+          return 'retrying'
+        }
+        if (isConfirmedInvalidSharedIdentitySupabaseSessionError(error)) {
+          void clearSharedIdentityServerSession(restored.accessToken)
+          tearDownSharedIdentitySession(
+            'Your secure shared session is no longer valid. Open SygShift from Sygilant again or sign in directly.',
+            notifyOtherTabs,
+          )
+          return 'missing'
+        }
+        showTerminalSecureAccessFailure(
+          'Secure authentication returned an unexpected response. Your current sign-in has not been cleared.',
         )
-        return 'missing'
+        return 'preserved'
       }
+      if (!isCurrentSessionGeneration(generation)) return 'stale'
       clearSessionRecoveryTimer()
       scheduleSharedIdentityRestore(restored.accessToken)
       if (notifyOtherTabs) publishSharedIdentityBrowserEvent('updated')
       return 'restored'
     }
 
-    async function loadSessionContext(
+    async function performSessionContextLoad(
+      generation: number,
       showLoading = true,
       restoreSharedSession = false,
       notifyOtherTabs = false,
     ) {
+      if (!isCurrentSessionGeneration(generation)) return
       if (showLoading) setAuthLoading(true)
       setAuthMessage(null)
 
-      let sharedRestoreOutcome: 'missing' | 'preserved' | 'restored' | 'retrying' = 'missing'
+      let sharedRestoreOutcome: 'missing' | 'preserved' | 'restored' | 'retrying' | 'stale' = 'missing'
       if (restoreSharedSession) {
-        sharedRestoreOutcome = await restoreSharedIdentitySession(notifyOtherTabs)
+        sharedRestoreOutcome = await restoreSharedIdentitySession(notifyOtherTabs, generation)
       }
-      const { data } = await getSupabaseClient().auth.getSession()
-      if (!active) return
+      if (!isCurrentSessionGeneration(generation) || sharedRestoreOutcome === 'stale') return
+
+      let data
+      try {
+        const result = await runSecureAccessRequest(() => getSupabaseClient().auth.getSession())
+        if (result.error) throw result.error
+        data = result.data
+      } catch (error) {
+        if (!isCurrentSessionGeneration(generation)) return
+        const sharedSessionExpected = getSharedIdentitySessionScope() !== null
+          || sharedRestoreOutcome === 'preserved'
+          || sharedRestoreOutcome === 'restored'
+          || sharedRestoreOutcome === 'retrying'
+        if (sharedSessionExpected && isConfirmedInvalidSharedIdentitySupabaseSessionError(error)) {
+          void clearSharedIdentityServerSession()
+          tearDownSharedIdentitySession(
+            'Your secure shared session is no longer valid. Open SygShift from Sygilant again or sign in directly.',
+            notifyOtherTabs,
+          )
+          return
+        }
+        if (
+          error instanceof SecureAccessRequestTimeoutError
+          || isTransientSharedIdentitySupabaseSessionError(error)
+        ) {
+          scheduleSessionRecovery(sharedSessionExpected)
+          showTransientSecureAccessRecovery(
+            'SygShift is reconnecting to secure authentication services. Your sign-in has been preserved.',
+          )
+          return
+        }
+        showTerminalSecureAccessFailure(
+          'Secure authentication returned an unexpected response. Your current sign-in has not been cleared.',
+        )
+        return
+      }
+      if (!isCurrentSessionGeneration(generation)) return
       setAuthSessionId(data.session ? authSessionIdFromAccessToken(data.session.access_token) : null)
 
       if (!data.session) {
@@ -608,61 +765,152 @@ export function AppShell() {
         deactivateSharedIdentitySupabaseSession()
         clearSharedIdentitySession()
         setSessionContext(null)
+        setAuthRecoveryRequired(false)
         setAuthLoading(false)
         return
       }
 
-      let preserveSessionForRetry = false
       try {
-        const context = await getSessionContext()
-        if (active) {
-          if (sharedRestoreOutcome !== 'retrying') clearSessionRecoveryTimer(true)
-          queryClient.setQueryData(['session-context'], context)
-          setSessionContext(context)
-        }
+        const context = await runSecureAccessRequest((signal) => getSessionContextWithSignal(signal))
+        if (!isCurrentSessionGeneration(generation)) return
+        if (sharedRestoreOutcome !== 'retrying') clearSessionRecoveryTimer(true)
+        queryClient.setQueryData(['session-context'], context)
+        setSessionContext(context)
+        setAuthMessage(null)
+        setAuthRecoveryRequired(false)
       } catch (error) {
-        if (isTransientSessionContextError(error)) {
-          preserveSessionForRetry = true
+        if (!isCurrentSessionGeneration(generation)) return
+        if (error instanceof SecureAccessRequestTimeoutError || isTransientSessionContextError(error)) {
           scheduleSessionRecovery(getSharedIdentitySessionScope() !== null)
-          if (active) {
-            setAuthMessage('SygShift is reconnecting to secure account services. Your sign-in has been preserved.')
-          }
+          showTransientSecureAccessRecovery(
+            'SygShift is reconnecting to secure account services. Your sign-in has been preserved.',
+          )
           return
         }
         const wasShared = getSharedIdentitySessionScope() !== null
         if (wasShared) {
-          await clearSharedIdentityServerSession(data.session.access_token)
+          void clearSharedIdentityServerSession(data.session.access_token)
           tearDownSharedIdentitySession(null, true)
         } else {
           await signOut()
           clearSessionScopedQueryCaches(queryClient)
         }
-        if (active) {
+        if (isCurrentSessionGeneration(generation)) {
           setSessionContext(null)
+          setAuthRecoveryRequired(false)
           setAuthMessage('Your account is not linked to an active SygShift employee record.')
         }
       } finally {
-        if (active && !preserveSessionForRetry) setAuthLoading(false)
+        if (isCurrentSessionGeneration(generation)) setAuthLoading(false)
+      }
+    }
+
+    async function loadSessionContext(
+      showLoading = true,
+      restoreSharedSession = false,
+      notifyOtherTabs = false,
+    ): Promise<void> {
+      const generation = sessionGeneration
+      const requestedIntent = { notifyOtherTabs, restoreSharedSession, showLoading }
+      if (sessionLoadInFlight?.generation === generation) {
+        const state = sessionLoadInFlight.state
+        const strongestIntent = state.pendingIntent
+          ? mergeSessionLoadIntents(state.currentIntent, state.pendingIntent)
+          : state.currentIntent
+        if (!sessionLoadIntentCovers(strongestIntent, requestedIntent)) {
+          state.pendingIntent = mergeSessionLoadIntents(strongestIntent, requestedIntent)
+        }
+        return sessionLoadInFlight.promise
+      }
+      const state: SessionLoadFlightState = {
+        currentIntent: requestedIntent,
+        pendingIntent: null,
+      }
+      const request = runSessionLoadFlight(generation, state)
+      const inFlight = { generation, promise: request, state }
+      sessionLoadInFlight = inFlight
+      try {
+        await request
+      } finally {
+        if (sessionLoadInFlight === inFlight) sessionLoadInFlight = null
+      }
+    }
+
+    async function runSessionLoadFlight(
+      generation: number,
+      state: SessionLoadFlightState,
+    ): Promise<void> {
+      let intent = state.currentIntent
+      while (isCurrentSessionGeneration(generation)) {
+        state.currentIntent = intent
+        await performSessionContextLoad(
+          generation,
+          intent.showLoading,
+          intent.restoreSharedSession,
+          intent.notifyOtherTabs,
+        )
+        if (!isCurrentSessionGeneration(generation)) return
+        const nextIntent = state.pendingIntent
+        state.pendingIntent = null
+        if (!nextIntent) return
+        intent = nextIntent
+      }
+    }
+
+    function mergeSessionLoadIntents(
+      left: SessionLoadIntent,
+      right: SessionLoadIntent,
+    ): SessionLoadIntent {
+      return {
+        notifyOtherTabs: left.notifyOtherTabs || right.notifyOtherTabs,
+        restoreSharedSession: left.restoreSharedSession || right.restoreSharedSession,
+        showLoading: left.showLoading || right.showLoading,
+      }
+    }
+
+    function sessionLoadIntentCovers(
+      available: SessionLoadIntent,
+      requested: SessionLoadIntent,
+    ): boolean {
+      return (!requested.notifyOtherTabs || available.notifyOtherTabs)
+        && (!requested.restoreSharedSession || available.restoreSharedSession)
+        && (!requested.showLoading || available.showLoading)
+    }
+
+    authRecoveryRetryRef.current = async () => {
+      if (!active) return
+      setAuthRecoveryRetrying(true)
+      try {
+        await loadSessionContext(false, true, true)
+      } finally {
+        if (active) setAuthRecoveryRetrying(false)
       }
     }
 
     void (async () => {
       await loadSessionContext(true, true)
       if (!active) return
-      const { data: { subscription } } = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
-        if (getSharedIdentitySessionScope()) return
-        setAuthSessionId(session ? authSessionIdFromAccessToken(session.access_token) : null)
+      const authClient = getSupabaseClient()
+      const { data: { subscription } } = authClient.auth.onAuthStateChange((_event, session) => {
+        if (!isActiveSupabaseClient(authClient)) return
         if (!session) {
+          invalidateSessionLoads()
           clearSessionScopedQueryCaches(queryClient)
           void clearPushSession()
-          clearSharedIdentitySession()
+          if (!getSharedIdentitySessionScope()) clearSharedIdentitySession()
           deactivateSharedIdentitySupabaseSession()
+          setAuthSessionId(null)
           setSessionContext(null)
+          setAuthRecoveryRequired(false)
           setAuthLoading(false)
           return
         }
 
+        if (getSharedIdentitySessionScope()) return
+        setAuthSessionId(authSessionIdFromAccessToken(session.access_token))
+
         if (_event === 'SIGNED_IN') {
+          invalidateSessionLoads()
           clearSessionScopedQueryCaches(queryClient)
           void loadSessionContext(true)
           return
@@ -677,9 +925,19 @@ export function AppShell() {
 
     unsubscribeSharedBrowserEvents = subscribeToSharedIdentityBrowserEvents((action) => {
       if (action === 'cleared') {
-        if (getSharedIdentitySessionScope()) tearDownSharedIdentitySession(null, false)
+        if (getSharedIdentitySessionScope()) {
+          tearDownSharedIdentitySession(null, false)
+        } else {
+          invalidateSessionLoads()
+          clearSharedIdentityRefreshTimer()
+          clearSessionRecoveryTimer(true)
+          clearSessionScopedQueryCaches(queryClient)
+          setAuthRecoveryRequired(false)
+          void loadSessionContext(true)
+        }
         return
       }
+      invalidateSessionLoads()
       clearSessionScopedQueryCaches(queryClient)
       void loadSessionContext(true, true)
     })
@@ -699,6 +957,9 @@ export function AppShell() {
 
     return () => {
       active = false
+      activeSecureRequestController?.abort(new SecureAccessRequestCancelledError())
+      authRecoveryRetryRef.current = null
+      authSessionInvalidationRef.current = null
       clearSharedIdentityRefreshTimer()
       clearSessionRecoveryTimer()
       authSubscription?.unsubscribe()
@@ -735,6 +996,7 @@ export function AppShell() {
   }, [accountRefreshVersion, sessionContext?.employeeId])
 
   async function handleSignOut() {
+    authSessionInvalidationRef.current?.()
     setAuthMessage(null)
 
     try {
@@ -770,6 +1032,7 @@ export function AppShell() {
     const autoSignOut = async () => {
       clearTimers()
       setLogoutWarningRemaining(null)
+      authSessionInvalidationRef.current?.()
       try {
         await signOut()
       } finally {
@@ -839,6 +1102,24 @@ export function AppShell() {
           <ShieldCheck aria-hidden="true" size={36} />
           <h1>Checking secure access…</h1>
           <p>SygShift is verifying your session before opening the workspace.</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (isSupabaseConfigured && authRecoveryRequired && !sessionContext) {
+    return (
+      <main className="security-page">
+        <section className="security-card" role="alert">
+          <ShieldAlert aria-hidden="true" size={36} />
+          <h1>Secure access is temporarily unavailable</h1>
+          <p>Your sign-in is still protected, but SygShift could not verify your account services within 12 seconds. The workspace remains closed until that verification succeeds.</p>
+          <p>SygShift will keep retrying safely in the background. You can also retry now without signing in again.</p>
+          <div className="security-card__actions">
+            <button className="primary-action" disabled={authRecoveryRetrying} onClick={retrySecureAccess} type="button">
+              {authRecoveryRetrying ? 'Retrying secure access…' : 'Retry secure access'}
+            </button>
+          </div>
         </section>
       </main>
     )

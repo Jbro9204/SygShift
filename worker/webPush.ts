@@ -24,22 +24,23 @@ export async function validPushHook(provided: string | null, expected: string): 
 }
 export async function deliverPushBatch(config: PushConfiguration, rpc: PushRpc): Promise<number> {
   const jobs = z.array(jobSchema).parse(await rpc('service_claim_employee_push', { target_limit: 25 }))
-  for (let offset = 0; offset < jobs.length; offset += 5) {
-    await Promise.all(jobs.slice(offset, offset + 5).map(async (job) => {
-      let outcome = 'expired'
-      if (job.eligible && allowedPushEndpoint(job.subscription.endpoint)) {
-        try {
-          const path = job.path.startsWith('/') && !job.path.startsWith('//') && !/[\\\r\n]/.test(job.path) ? job.path : '/notifications'
-          const payload = await buildPushPayload({ data: JSON.stringify({ id: job.notificationId, employeeId: job.employeeId, createdAt: job.createdAt, path }), options: { ttl: 120 } },
-            job.subscription, { publicKey: config.publicKey, privateKey: config.privateKey, subject: 'mailto:scheduling@sygilant.us' })
-          const response = await fetch(job.subscription.endpoint, { ...payload, redirect: 'error', signal: AbortSignal.timeout(4000) })
-          outcome = response.ok ? 'delivered' : response.status === 404 || response.status === 410 ? 'unavailable'
-            : response.status === 429 || response.status >= 500 ? 'retry' : 'failed'
-          await response.body?.cancel()
-        } catch { outcome = 'retry' }
-      }
-      await rpc('service_complete_employee_push', { target_id: job.id, target_claim_token: job.claimToken, target_outcome: outcome })
-    }))
+  // Scheduled database containment relies on one in-flight RPC at a time. A
+  // transient completion failure must stop the batch before four sibling
+  // completion calls are already competing for the same constrained pool.
+  for (const job of jobs) {
+    let outcome = 'expired'
+    if (job.eligible && allowedPushEndpoint(job.subscription.endpoint)) {
+      try {
+        const path = job.path.startsWith('/') && !job.path.startsWith('//') && !/[\\\r\n]/.test(job.path) ? job.path : '/notifications'
+        const payload = await buildPushPayload({ data: JSON.stringify({ id: job.notificationId, employeeId: job.employeeId, createdAt: job.createdAt, path }), options: { ttl: 120 } },
+          job.subscription, { publicKey: config.publicKey, privateKey: config.privateKey, subject: 'mailto:scheduling@sygilant.us' })
+        const response = await fetch(job.subscription.endpoint, { ...payload, redirect: 'error', signal: AbortSignal.timeout(4000) })
+        outcome = response.ok ? 'delivered' : response.status === 404 || response.status === 410 ? 'unavailable'
+          : response.status === 429 || response.status >= 500 ? 'retry' : 'failed'
+        await response.body?.cancel()
+      } catch { outcome = 'retry' }
+    }
+    await rpc('service_complete_employee_push', { target_id: job.id, target_claim_token: job.claimToken, target_outcome: outcome })
   }
   return jobs.length
 }

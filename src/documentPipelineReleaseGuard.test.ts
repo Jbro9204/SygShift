@@ -68,7 +68,9 @@ describe('protected document immediate availability', () => {
     )
     expect(workerRecoveryStart).toBeGreaterThanOrEqual(0)
     expect(workerRecovery).toContain("'service_list_hr_document_availability_recovery'")
-    expect(workerRecovery).toContain('await verifyPrivateStorageObjectChecksum(config, bucket, objectKey, sizeBytes, expectedChecksum)')
+    expect(workerRecovery).toMatch(
+      /await verifyPrivateStorageObjectChecksum\(\s*config,\s*bucket,\s*objectKey,\s*sizeBytes,\s*expectedChecksum,\s*scheduledSignal,?\s*\)/,
+    )
     expect(workerRecovery).toContain("'service_mark_hr_document_upload_stored'")
     expect(workerRecovery.indexOf('await verifyPrivateStorageObjectChecksum')).toBeLessThan(
       workerRecovery.indexOf("'service_mark_hr_document_upload_stored'"),

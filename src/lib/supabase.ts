@@ -37,7 +37,29 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKe
 
 let client: SupabaseClient | undefined
 let sharedIdentityClient: SupabaseClient | undefined
-const sharedIdentityAuthStorage = createMemoryOnlyAuthStorage()
+let sharedIdentityAuthStorage = createMemoryOnlyAuthStorage()
+
+export type SharedIdentitySupabaseSessionFailureKind = 'invalid' | 'terminal' | 'transient'
+
+export class SharedIdentitySupabaseSessionError extends Error {
+  readonly kind: SharedIdentitySupabaseSessionFailureKind
+
+  constructor(message: string, kind: SharedIdentitySupabaseSessionFailureKind) {
+    super(message)
+    this.name = 'SharedIdentitySupabaseSessionError'
+    this.kind = kind
+  }
+}
+
+const confirmedInvalidAuthCodes = new Set([
+  'bad_jwt',
+  'invalid_credentials',
+  'invalid_refresh_token',
+  'refresh_token_already_used',
+  'refresh_token_not_found',
+  'session_not_found',
+])
+const transientAuthStatuses = new Set([0, 408, 425, 429, 500, 502, 503, 504])
 
 export function createMemoryOnlyAuthStorage() {
   const values = new Map<string, string>()
@@ -104,6 +126,10 @@ export function getSupabaseClient(): SupabaseClient {
   return getNativeSupabaseClient()
 }
 
+export function isActiveSupabaseClient(candidate: SupabaseClient): boolean {
+  return candidate === getSupabaseClient()
+}
+
 function getNativeSupabaseClient(): SupabaseClient {
   client ??= createClient(supabaseUrl, supabasePublishableKey, {
     auth: {
@@ -119,40 +145,166 @@ function getNativeSupabaseClient(): SupabaseClient {
   return client
 }
 
-export async function activateSharedIdentitySupabaseSession(accessToken: string, refreshToken: string): Promise<void> {
+export async function activateSharedIdentitySupabaseSession(
+  accessToken: string,
+  refreshToken: string,
+  signal?: AbortSignal,
+): Promise<void> {
   if (!supabaseUrl || !supabasePublishableKey) {
     throw new Error('The secure data connection has not been configured.')
   }
-  if (!sharedIdentityClient) {
-    await getNativeSupabaseClient().auth.signOut({ scope: 'local' })
-    sharedIdentityAuthStorage.clear()
-    sharedIdentityClient = createClient(supabaseUrl, supabasePublishableKey, {
-      auth: {
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-        persistSession: true,
-        storage: sharedIdentityAuthStorage,
-        storageKey: 'sygshift-shared-identity-memory-session',
-      },
-      global: {
-        fetch: (input, init) => fetch(input, attachTrustedDeviceHeader(input, init)),
-      },
-    })
-  }
-  const { error } = await sharedIdentityClient.auth.setSession({
-    access_token: accessToken,
-    refresh_token: refreshToken,
+  const existingSharedIdentityClient = sharedIdentityClient
+  const candidateStorage = existingSharedIdentityClient
+    ? sharedIdentityAuthStorage
+    : createMemoryOnlyAuthStorage()
+  const candidateClient = existingSharedIdentityClient ?? createClient(supabaseUrl, supabasePublishableKey, {
+    auth: {
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      persistSession: true,
+      storage: candidateStorage,
+      storageKey: 'sygshift-shared-identity-memory-session',
+    },
+    global: {
+      fetch: (input, init) => fetch(input, attachTrustedDeviceHeader(input, init)),
+    },
   })
-  if (error) {
-    deactivateSharedIdentitySupabaseSession()
-    throw new Error('The SygShift session could not be established.')
+  const candidateIsPartial = !existingSharedIdentityClient
+  let candidateCommitted = false
+  let setSessionOperation: PromiseLike<unknown> | null = null
+  let setSessionSettled = false
+  try {
+    throwIfSecureAccessAborted(signal)
+    const operation = candidateClient.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    })
+    const trackedOperation = Promise.resolve(operation).then(
+      (result) => {
+        setSessionSettled = true
+        return result
+      },
+      (error) => {
+        setSessionSettled = true
+        throw error
+      },
+    )
+    setSessionOperation = trackedOperation
+    const { error } = await waitForAuthOperation(trackedOperation, signal)
+    if (error) {
+      throw new SharedIdentitySupabaseSessionError(
+        'The SygShift session could not be established.',
+        sharedIdentitySupabaseSessionFailureKind(error),
+      )
+    }
+    throwIfSecureAccessAborted(signal)
+
+    if (candidateIsPartial) {
+      sharedIdentityClient = candidateClient
+      sharedIdentityAuthStorage = candidateStorage
+      candidateCommitted = true
+      try {
+        void Promise.resolve(getNativeSupabaseClient().auth.signOut({ scope: 'local' })).catch(() => undefined)
+      } catch {
+        // Native-session cleanup must not roll back a validated shared session.
+      }
+    } else {
+      candidateCommitted = true
+    }
+  } catch (error) {
+    if (candidateIsPartial && !candidateCommitted) {
+      retireSharedIdentitySupabaseClient(candidateClient, candidateStorage)
+      if (setSessionOperation && !setSessionSettled) {
+        void Promise.resolve(setSessionOperation).then(
+          () => retireSharedIdentitySupabaseClient(candidateClient, candidateStorage),
+          () => retireSharedIdentitySupabaseClient(candidateClient, candidateStorage),
+        )
+      }
+    }
+    if (error instanceof SharedIdentitySupabaseSessionError) throw error
+    throw new SharedIdentitySupabaseSessionError(
+      'The SygShift session could not be established.',
+      sharedIdentitySupabaseSessionFailureKind(error),
+    )
   }
 }
 
 export function deactivateSharedIdentitySupabaseSession(): void {
   const retiringClient = sharedIdentityClient
+  const retiringStorage = sharedIdentityAuthStorage
   sharedIdentityClient = undefined
-  retiringClient?.auth.stopAutoRefresh()
-  void retiringClient?.auth.signOut({ scope: 'local' }).catch(() => undefined)
-  sharedIdentityAuthStorage.clear()
+  sharedIdentityAuthStorage = createMemoryOnlyAuthStorage()
+  if (retiringClient) retireSharedIdentitySupabaseClient(retiringClient, retiringStorage)
+  else retiringStorage.clear()
+}
+
+export function isConfirmedInvalidSharedIdentitySupabaseSessionError(error: unknown): boolean {
+  return sharedIdentitySupabaseSessionFailureKind(error) === 'invalid'
+}
+
+export function isTransientSharedIdentitySupabaseSessionError(error: unknown): boolean {
+  return sharedIdentitySupabaseSessionFailureKind(error) === 'transient'
+}
+
+function sharedIdentitySupabaseSessionFailureKind(error: unknown): SharedIdentitySupabaseSessionFailureKind {
+  if (error instanceof SharedIdentitySupabaseSessionError) return error.kind
+  if (error instanceof DOMException && error.name === 'AbortError') return 'transient'
+
+  const candidate = error as {
+    code?: unknown
+    message?: unknown
+    status?: unknown
+  } | null
+  const code = typeof candidate?.code === 'string' ? candidate.code.toLowerCase() : ''
+  const message = typeof candidate?.message === 'string' ? candidate.message.toLowerCase() : ''
+  const status = typeof candidate?.status === 'number' ? candidate.status : null
+
+  if (
+    status === 401
+    || status === 403
+    || confirmedInvalidAuthCodes.has(code)
+    || message.includes('invalid refresh token')
+    || message.includes('refresh token not found')
+    || message.includes('session has been revoked')
+  ) return 'invalid'
+
+  if (
+    error instanceof TypeError
+    || (status !== null && (transientAuthStatuses.has(status) || status >= 500))
+    || code.startsWith('08')
+    || message.includes('aborted')
+    || message.includes('connection')
+    || message.includes('failed to fetch')
+    || message.includes('network')
+    || message.includes('timed out')
+    || message.includes('timeout')
+  ) return 'transient'
+
+  return 'terminal'
+}
+
+function throwIfSecureAccessAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  throw new DOMException('The secure-access request was interrupted.', 'AbortError')
+}
+
+async function waitForAuthOperation<T>(operation: PromiseLike<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return operation
+  throwIfSecureAccessAborted(signal)
+  return new Promise<T>((resolve, reject) => {
+    const handleAbort = () => reject(new DOMException('The secure-access request was interrupted.', 'AbortError'))
+    signal.addEventListener('abort', handleAbort, { once: true })
+    void Promise.resolve(operation).then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', handleAbort)
+    })
+  })
+}
+
+function retireSharedIdentitySupabaseClient(
+  retiringClient: SupabaseClient,
+  retiringStorage: ReturnType<typeof createMemoryOnlyAuthStorage>,
+): void {
+  retiringClient.auth.stopAutoRefresh()
+  void retiringClient.auth.signOut({ scope: 'local' }).catch(() => undefined)
+  retiringStorage.clear()
 }

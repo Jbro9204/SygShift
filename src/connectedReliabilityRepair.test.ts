@@ -42,9 +42,14 @@ describe('connected reliability repair', () => {
     expect(boundedRefreshMigration).toContain("alert.lifecycle_state = 'active_operations'")
     expect(boundedRefreshMigration).toContain('target_full_reconciliation')
     expect(boundedRefreshMigration).toContain("exception.detected_at >= clock_timestamp() - interval '14 days'")
-    expect(worker).toContain('Number(denverMinute) % 5 === 0')
+    expect(worker).toContain('const attendanceSafetyRefreshDue = fullReconciliation || minute % 5 === 0')
     expect(worker).toContain("reason: 'five_minute_safety_interval'")
-    expect(worker.indexOf("'service_run_timekeeping_automation'")).toBeLessThan(worker.indexOf('attendanceSafetyRefreshDue'))
+    const scheduledCycleStart = worker.indexOf('async function runScheduledWorkerCycle')
+    const scheduledCycle = worker.slice(scheduledCycleStart)
+    expect(scheduledCycleStart).toBeGreaterThanOrEqual(0)
+    expect(scheduledCycle.indexOf("'service_run_timekeeping_automation'")).toBeLessThan(
+      scheduledCycle.indexOf('if (attendanceSafetyRefreshDue)'),
+    )
   })
 
   it('retains an Accountability event when only its nested reconciliation is malformed', () => {

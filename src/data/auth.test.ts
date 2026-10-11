@@ -3,6 +3,7 @@ import {
   AUTH_EMAIL_DOMAIN,
   authSessionIdFromAccessToken,
   getSessionContext,
+  getSessionContextWithSignal,
   isTransientSessionContextError,
   isValidUsername,
   normalizeUsername,
@@ -111,6 +112,36 @@ describe('session context verification', () => {
     supabaseMock.client.rpc.mockRejectedValueOnce(new TypeError('Failed to fetch'))
     const networkFailure = await getSessionContext().catch((error: unknown) => error)
     expect(isTransientSessionContextError(networkFailure)).toBe(true)
+  })
+
+  it('passes the secure-access abort signal to the session-context RPC', async () => {
+    const controller = new AbortController()
+    const abortSignal = vi.fn().mockResolvedValueOnce({
+      data: {
+        display_name: 'Jordan Brown',
+        employee_id: 'a25a5f5f-45b6-4e43-87a6-79298ed9347f',
+        has_mfa: true,
+        mfa_enrolled_at: '2026-01-01T00:00:00.000Z',
+        mfa_required: true,
+        must_change_password: false,
+        password_changed_at: '2026-01-01T00:00:00.000Z',
+        permissions: ['operations.view'],
+        role: 'admin',
+        time_zone: 'America/New_York',
+        username: 'jbrown',
+      },
+      error: null,
+      status: 200,
+    })
+    supabaseMock.client.rpc.mockReturnValueOnce({ abortSignal })
+
+    await expect(getSessionContextWithSignal(controller.signal)).resolves.toMatchObject({
+      employeeId: 'a25a5f5f-45b6-4e43-87a6-79298ed9347f',
+      username: 'jbrown',
+    })
+
+    expect(supabaseMock.client.rpc).toHaveBeenCalledWith('get_session_context')
+    expect(abortSignal).toHaveBeenCalledWith(controller.signal)
   })
 
   it('does not classify a rejected session as transient', async () => {
