@@ -20,8 +20,13 @@
   tests / 1 skipped, strict TypeScript, zero-warning lint, production Worker/client builds, and the static-asset
   contract. The mandatory desktop/mobile Time Clock workflow passed 42/42, followed by a fresh production build.
 - Independent final review found no remaining release blocker.
-- No deployment, database migration, production write, schedule, timekeeping, payroll, or employee-data change was
-  made.
+- Promoted source `bd48ed9` and deployed Cloudflare Worker version
+  `dae186ae-f699-42f0-a30f-e01a18c9e6f2` through deployment
+  `d2a71634-9ee0-478c-b645-778d1666b5c6`. Production root, login, health, and readiness all returned `200`; every
+  readiness binding passed, all six entry assets matched the verified build byte-for-byte, the live login rendered,
+  and repeated smoke traffic produced no Worker exception.
+- No database migration, production configuration change, schedule, timekeeping, payroll, notification, or
+  employee-data change was made.
 - Full implementation and verification record:
   `docs/changelogs/CHANGELOG_10-11-2026_SHARED_SESSION_OUTAGE_HARDENING.md`.
 

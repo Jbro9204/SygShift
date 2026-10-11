@@ -1,7 +1,7 @@
 # Shared-Session Outage Hardening
 
 Date: 10/11/2026  
-Status: Implemented and verified; awaiting deployment
+Status: Released to production
 
 ## Incident
 
@@ -80,5 +80,18 @@ failure path so a repeat transient outage does not sign employees out.
 
 ## Release boundary
 
-No deployment, production configuration change, database migration, or GitHub publication was performed as part of
-this hotfix preparation. Production promotion requires the normal reviewed release workflow.
+Source commit `bd48ed9` was promoted to `main` and released as Cloudflare deployment
+`d2a71634-9ee0-478c-b645-778d1666b5c6`, Worker version
+`dae186ae-f699-42f0-a30f-e01a18c9e6f2`.
+
+Post-release verification confirmed:
+
+- `https://app.sygilant.us/`, `/login`, `/api/v1/health`, and `/api/v1/ready` all returned HTTP `200`.
+- Readiness reported every required binding ready.
+- The six entry assets referenced by the live index matched the verified local build byte-for-byte by SHA-256.
+- A real browser rendered the complete production sign-in interface.
+- Twelve repeated production route checks returned `200`, with no Worker exception observed during the live error
+  tail.
+
+No production configuration, database migration, employee record, schedule, timekeeping, payroll, or notification
+data changed in this release.
