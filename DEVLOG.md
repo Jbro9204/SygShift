@@ -1,6 +1,6 @@
 # SygShift Development Log
 
-## 10/11/2026 - Secure Access and Scheduled Work Containment (Validated Release Candidate)
+## 10/11/2026 - Secure Access and Scheduled Work Containment
 
 - Traced the production `Checking Secure Access...` stall to Supabase/PostgREST pool exhaustion amplified by
   overlapping minute-triggered Worker branches and contained the incident by temporarily removing the cron trigger
@@ -19,8 +19,13 @@
   `pnpm check` passed 370 test files / 1 skipped and 2,135 tests / 1 skipped, strict TypeScript, zero-warning lint,
   production builds, and the static-asset contract. The mandatory desktop/mobile Time Clock workflow passed 42/42,
   followed by a fresh production build. Independent final review found no remaining P0, P1, or P2 blocker.
-- Commit, deployment, trigger reactivation, live endpoint/asset checks, and coordinated-cron observation remain
-  pending. This entry does not claim the validated release candidate is deployed.
+- Promoted source `265e9d4` and deployed Cloudflare Worker version
+  `db86f26d-7bec-4528-8007-027fc88ae53c` through deployment
+  `5d9aab38-3672-4f71-820e-a5b9a5c1ee00`; the intended minute trigger was restored by the deployment.
+- Production root, login, health, and readiness returned `200`; the same-origin unauthenticated shared-session probe
+  returned the expected `204`, all six entry assets matched the verified build byte-for-byte, and the complete login
+  form rendered in the live browser. Four consecutive coordinated cron cycles, including the five-minute attendance
+  safety pass, completed in approximately 3.8 to 4.9 seconds with no exception or multi-minute overlap.
 - Release-candidate record:
   `docs/changelogs/CHANGELOG_10-11-2026_SECURE_ACCESS_AND_SCHEDULER_CONTAINMENT.md`.
 

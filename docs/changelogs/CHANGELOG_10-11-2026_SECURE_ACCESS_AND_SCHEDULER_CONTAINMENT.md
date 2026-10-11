@@ -1,7 +1,7 @@
 # Secure Access and Scheduled Work Containment
 
 Date: 10/11/2026
-Status: Release candidate validated; production deployment pending
+Status: Released to production
 
 ## Incident
 
@@ -82,14 +82,21 @@ Final source validation passed before release:
 - fresh production build completed after the last browser test; and
 - independent final authentication/session review found no remaining P0, P1, or P2 blocker.
 
-This update is **not yet released**. Source commit and promotion to `origin/main`, Cloudflare Worker deployment with
-the intended minute trigger, production root/login/health/readiness/exact-asset/secure-access verification, and
-observation of the first live coordinated cron cycles remain pending. Commit, deployment, and Worker version
-identifiers will be added only after those steps succeed.
+Source commit `265e9d4` was promoted to `origin/main` and deployed through Cloudflare deployment
+`5d9aab38-3672-4f71-820e-a5b9a5c1ee00` as Worker version
+`db86f26d-7bec-4528-8007-027fc88ae53c`. The intended `* * * * *` trigger was restored as part of that deployment.
+
+Post-deployment verification passed:
+
+- production root, `/login`, `/api/v1/health`, and `/api/v1/ready` returned `200`;
+- an unauthenticated, same-origin shared-session check returned the expected `204` without delay;
+- all six production entry assets matched the final local build byte-for-byte;
+- the clean production login rendered its complete username/password form in the browser; and
+- four consecutive coordinated scheduled cycles, including the five-minute attendance safety cycle, completed in
+  approximately 3.8 to 4.9 seconds with `outcome: ok`, no exception, and no overlapping multi-minute work.
 
 ## Release and rollback boundary
 
-The current production backend has recovered, but the source hardening described above remains a release candidate.
-If validation finds a blocker, the cron trigger can remain contained while the current production application stays
-available. Because this change has no migration or data rewrite, rollback does not require restoring database data
-or reversing schema state.
+The backend recovery and source hardening are live. Because this change has no migration or data rewrite, rollback
+does not require restoring database data or reversing schema state. If the scheduler regresses, the minute trigger
+can be contained independently while the production application remains available.
