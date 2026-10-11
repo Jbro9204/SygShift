@@ -43,6 +43,21 @@ export type SessionContext = {
   permissions: string[]
 }
 
+class SessionContextError extends Error {
+  readonly transient: boolean
+
+  constructor(transient: boolean) {
+    super('Your secure session could not be verified.')
+    this.name = 'SessionContextError'
+    this.transient = transient
+  }
+}
+
+const transientSessionErrorCodes = new Set([
+  '40001', '40P01', '53300', '57014', '57P01', '57P02', '57P03',
+  'PGRST000', 'PGRST001', 'PGRST002', 'PGRST003', 'PGRST202',
+])
+
 export type PasswordPolicyResult = {
   valid: boolean
   failures: string[]
@@ -150,10 +165,34 @@ export async function signOut(): Promise<void> {
 }
 
 export async function getSessionContext(): Promise<SessionContext> {
-  const { data, error } = await getSupabaseClient().rpc('get_session_context')
-  if (error) throw new Error('Your secure session could not be verified.')
+  let response
+  try {
+    response = await getSupabaseClient().rpc('get_session_context')
+  } catch {
+    throw new SessionContextError(true)
+  }
+  const { data, error, status } = response
+  if (error) {
+    const responseStatus = status ?? -1
+    const normalizedMessage = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase()
+    const transient = responseStatus === 0
+      || transientSessionErrorCodes.has(error.code ?? '')
+      || (error.code ?? '').startsWith('08')
+      || responseStatus === 408
+      || responseStatus === 425
+      || responseStatus === 429
+      || responseStatus >= 500
+      || normalizedMessage.includes('connection pool')
+      || normalizedMessage.includes('failed to fetch')
+      || normalizedMessage.includes('network')
+      || normalizedMessage.includes('timed out')
+      || normalizedMessage.includes('timeout')
+    throw new SessionContextError(transient)
+  }
 
-  const parsed = sessionContextSchema.parse(Array.isArray(data) ? data[0] : data)
+  const parsedResult = sessionContextSchema.safeParse(Array.isArray(data) ? data[0] : data)
+  if (!parsedResult.success) throw new SessionContextError(false)
+  const parsed = parsedResult.data
 
   return {
     employeeId: parsed.employee_id,
@@ -168,6 +207,10 @@ export async function getSessionContext(): Promise<SessionContext> {
     timeZone: parsed.time_zone,
     permissions: parsed.permissions,
   }
+}
+
+export function isTransientSessionContextError(error: unknown): boolean {
+  return error instanceof SessionContextError && error.transient
 }
 
 export type CompletedSignInKind = 'native' | 'platform' | 'sygsphere'

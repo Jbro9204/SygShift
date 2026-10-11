@@ -33,9 +33,11 @@ const shared = vi.hoisted(() => ({
   activeAccessToken: null as string | null,
   authListener: null as null | ((event: string, session: { access_token: string } | null) => void),
   browserListener: null as ((action: 'cleared' | 'updated') => void) | null,
+  hydrateError: null as Error | null,
   hydrateResult: null as null | { accessToken: string; expiresAt: number; refreshToken: string; scope: 'platform' | 'sygsphere' },
   operationalWorkspace: { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' } as OperationalWorkspaceFixture,
   scope: null as null | 'platform' | 'sygsphere',
+  sessionContextError: null as Error | null,
 }))
 
 vi.mock('../lib/sharedIdentitySession', () => ({
@@ -49,10 +51,15 @@ vi.mock('../lib/sharedIdentitySession', () => ({
   }),
   getSharedIdentitySessionScope: vi.fn(() => shared.scope),
   hydrateSharedIdentitySession: vi.fn(async () => {
+    if (shared.hydrateError) throw shared.hydrateError
     if (shared.hydrateResult) shared.scope = shared.hydrateResult.scope
     return shared.hydrateResult
   }),
+  isTransientSharedIdentitySessionRestoreError: vi.fn((error: unknown) => error === shared.hydrateError),
+  sharedIdentityRecoveryDelayMs: vi.fn(() => 5_000),
   sharedIdentityRefreshDelayMs: vi.fn(() => 60_000),
+  sharedIdentitySessionRestoreRetryAfterMs: vi.fn(() => 2_000),
+  shouldPreserveSharedIdentitySessionOnRestoreError: vi.fn((error: unknown) => error === shared.hydrateError),
 }))
 
 vi.mock('../lib/sharedIdentityBrowserSync', () => ({
@@ -89,19 +96,23 @@ vi.mock('../lib/supabase', () => ({
 vi.mock('../data/auth', () => ({
   SESSION_CONTEXT_REFRESH_EVENT: 'sygshift:session-context-refresh',
   authSessionIdFromAccessToken: vi.fn(() => '7c21701a-56ed-4c64-8c47-c9dc516e4398'),
-  getSessionContext: vi.fn(async () => ({
-    displayName: 'Shared User',
-    employeeId,
-    hasMfa: false,
-    mfaEnrolledAt: null,
-    mfaRequired: true,
-    mustChangePassword: false,
-    passwordChangedAt: null,
-    permissions: ['apps.sygilant.access', 'operations.view', 'time.view'],
-    role: 'guard',
-    timeZone: 'America/Denver',
-    username: 'shareduser',
-  })),
+  getSessionContext: vi.fn(async () => {
+    if (shared.sessionContextError) throw shared.sessionContextError
+    return {
+      displayName: 'Shared User',
+      employeeId,
+      hasMfa: false,
+      mfaEnrolledAt: null,
+      mfaRequired: true,
+      mustChangePassword: false,
+      passwordChangedAt: null,
+      permissions: ['apps.sygilant.access', 'operations.view', 'time.view'],
+      role: 'guard',
+      timeZone: 'America/Denver',
+      username: 'shareduser',
+    }
+  }),
+  isTransientSessionContextError: vi.fn((error: unknown) => error === shared.sessionContextError),
   recordCompletedSignInWithRetry: vi.fn(async () => undefined),
   signOut: vi.fn(async () => undefined),
 }))
@@ -159,9 +170,11 @@ beforeEach(() => {
   shared.activeAccessToken = null
   shared.authListener = null
   shared.browserListener = null
+  shared.hydrateError = null
   shared.hydrateResult = null
   shared.operationalWorkspace = { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' }
   shared.scope = null
+  shared.sessionContextError = null
   localStorage.clear()
   sessionStorage.clear()
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
@@ -170,6 +183,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.clearAllMocks()
   vi.unstubAllGlobals()
 })
@@ -269,6 +283,135 @@ describe('AppShell shared-session lifecycle', () => {
     expect(shared.activeAccessToken).toBeNull()
     const { deactivateSharedIdentitySupabaseSession } = await import('../lib/supabase')
     expect(deactivateSharedIdentitySupabaseSession).toHaveBeenCalled()
+  })
+
+  it('keeps an active shared session when Worker restoration is temporarily unavailable', async () => {
+    prepareSharedSession('sygsphere')
+    renderShell('/sygsphere')
+    await screen.findByText('SygSphere workspace')
+    vi.clearAllMocks()
+    shared.hydrateError = new Error('temporary restore failure')
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(screen.getByText('SygSphere workspace')).toBeInTheDocument()
+    expect(shared.activeAccessToken).toBe(accessToken)
+    const { clearSharedIdentityServerSession, clearSharedIdentitySession } = await import('../lib/sharedIdentitySession')
+    const { deactivateSharedIdentitySupabaseSession } = await import('../lib/supabase')
+    expect(clearSharedIdentityServerSession).not.toHaveBeenCalled()
+    expect(clearSharedIdentitySession).not.toHaveBeenCalled()
+    expect(deactivateSharedIdentitySupabaseSession).not.toHaveBeenCalled()
+  })
+
+  it('keeps the shared restore retry scheduled after context succeeds and resets backoff after recovery', async () => {
+    vi.useFakeTimers()
+    prepareSharedSession('sygsphere')
+    const view = renderShell('/sygsphere')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100)
+    })
+    expect(shared.activeAccessToken).toBe(accessToken)
+
+    const sharedSession = await import('../lib/sharedIdentitySession')
+    const hydrate = vi.mocked(sharedSession.hydrateSharedIdentitySession)
+    const recoveryDelay = vi.mocked(sharedSession.sharedIdentityRecoveryDelayMs)
+    hydrate.mockClear()
+    recoveryDelay.mockClear()
+    shared.hydrateError = new Error('temporary restore failure')
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(hydrate).toHaveBeenCalledTimes(1)
+    expect(recoveryDelay).toHaveBeenLastCalledWith(0, 2_000)
+
+    shared.hydrateError = null
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_999)
+    })
+    expect(hydrate).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(hydrate).toHaveBeenCalledTimes(2)
+
+    shared.hydrateError = new Error('second temporary restore failure')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(59_999)
+    })
+    expect(hydrate).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(hydrate).toHaveBeenCalledTimes(3)
+    expect(recoveryDelay).toHaveBeenLastCalledWith(0, 2_000)
+
+    view.unmount()
+  })
+
+  it('advances recovery backoff when restore succeeds but session context remains transiently unavailable', async () => {
+    vi.useFakeTimers()
+    prepareSharedSession('sygsphere')
+    const view = renderShell('/sygsphere')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100)
+    })
+    expect(shared.activeAccessToken).toBe(accessToken)
+
+    const sharedSession = await import('../lib/sharedIdentitySession')
+    const hydrate = vi.mocked(sharedSession.hydrateSharedIdentitySession)
+    const recoveryDelay = vi.mocked(sharedSession.sharedIdentityRecoveryDelayMs)
+    hydrate.mockClear()
+    recoveryDelay.mockClear()
+    shared.sessionContextError = new Error('connection pool timeout')
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(hydrate).toHaveBeenCalledTimes(1)
+    expect(recoveryDelay).toHaveBeenLastCalledWith(0, null)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(hydrate).toHaveBeenCalledTimes(2)
+    expect(recoveryDelay).toHaveBeenLastCalledWith(1, null)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(hydrate).toHaveBeenCalledTimes(3)
+    expect(recoveryDelay).toHaveBeenLastCalledWith(2, null)
+
+    view.unmount()
+  })
+
+  it('does not sign out an authenticated user when session context has a transient connection failure', async () => {
+    prepareSharedSession('platform')
+    renderShell('/')
+    await screen.findByText('Platform home')
+    vi.clearAllMocks()
+    shared.sessionContextError = new Error('connection pool timeout')
+
+    await act(async () => {
+      window.dispatchEvent(new Event('sygshift:session-context-refresh'))
+    })
+
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+    expect(shared.activeAccessToken).toBe(accessToken)
+    const { signOut } = await import('../data/auth')
+    const { clearSharedIdentityServerSession } = await import('../lib/sharedIdentitySession')
+    const { deactivateSharedIdentitySupabaseSession } = await import('../lib/supabase')
+    expect(signOut).not.toHaveBeenCalled()
+    expect(clearSharedIdentityServerSession).not.toHaveBeenCalled()
+    expect(deactivateSharedIdentitySupabaseSession).not.toHaveBeenCalled()
   })
 
   it('purges Client Communications and session context caches when the authenticated session ends', async () => {

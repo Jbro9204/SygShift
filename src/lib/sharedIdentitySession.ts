@@ -31,6 +31,27 @@ export type HydratedSharedIdentitySession = {
   scope: SharedIdentityScope
 }
 
+export class SharedIdentitySessionRestoreError extends Error {
+  readonly retryAfterMs: number | null
+  readonly status: number | null
+  readonly transient: boolean
+
+  constructor(
+    message: string,
+    options: { retryAfterMs?: number | null, status?: number | null, transient: boolean },
+  ) {
+    super(message)
+    this.name = 'SharedIdentitySessionRestoreError'
+    this.retryAfterMs = options.retryAfterMs ?? null
+    this.status = options.status ?? null
+    this.transient = options.transient
+  }
+}
+
+const retryableRestoreStatuses = new Set([408, 425, 429])
+const sessionRecoveryBaseDelayMs = 2_000
+const sessionRecoveryMaximumDelayMs = 60_000
+
 let currentSession: SharedIdentitySession | null = null
 
 function purgeLegacySharedIdentityStorage(): void {
@@ -96,18 +117,21 @@ export function sharedIdentityRefreshDelayMs(accessToken: string, now = Date.now
 }
 
 export async function hydrateSharedIdentitySession(): Promise<HydratedSharedIdentitySession | null> {
-  const response = await fetch('/api/v1/auth/shared-identity/session', {
-    cache: 'no-store',
-    credentials: 'same-origin',
-    method: 'POST',
-  })
-  if (response.status === 204) {
+  const response = await requestSharedIdentitySession()
+  if (response.status === 204 || response.status === 401 || response.status === 403) {
     clearSharedIdentitySession()
     return null
   }
   if (!response.ok) {
-    clearSharedIdentitySession()
-    throw new Error('The shared SygShift session could not be restored.')
+    const failure = await response.json().catch(() => null) as { error?: unknown } | null
+    throw new SharedIdentitySessionRestoreError(
+      'The shared SygShift session could not be restored.',
+      {
+        retryAfterMs: retryAfterMilliseconds(response.headers.get('retry-after')),
+        status: response.status,
+        transient: isRetryableRestoreFailure(response.status, failure?.error),
+      },
+    )
   }
   const payload = await response.json().catch(() => null) as SharedIdentitySessionResponse | null
   const scope = sharedIdentityResponseScope(payload)
@@ -130,6 +154,70 @@ export async function hydrateSharedIdentitySession(): Promise<HydratedSharedIden
     refreshToken: payload.supabaseSession.refreshToken,
     scope,
   }
+}
+
+export function shouldPreserveSharedIdentitySessionOnRestoreError(error: unknown): boolean {
+  return error instanceof SharedIdentitySessionRestoreError
+}
+
+export function isTransientSharedIdentitySessionRestoreError(error: unknown): boolean {
+  return error instanceof SharedIdentitySessionRestoreError && error.transient
+}
+
+export function sharedIdentitySessionRestoreRetryAfterMs(error: unknown): number | null {
+  return error instanceof SharedIdentitySessionRestoreError ? error.retryAfterMs : null
+}
+
+export function sharedIdentityRecoveryDelayMs(
+  attempt: number,
+  retryAfterMs: number | null = null,
+  random = Math.random(),
+): number {
+  const normalizedAttempt = Math.max(0, Math.min(20, Math.floor(attempt)))
+  const exponentialDelay = Math.min(
+    sessionRecoveryMaximumDelayMs,
+    sessionRecoveryBaseDelayMs * 2 ** normalizedAttempt,
+  )
+  const normalizedRandom = Math.max(0, Math.min(1, random))
+  const jitteredDelay = Math.min(
+    sessionRecoveryMaximumDelayMs,
+    Math.round(exponentialDelay * (1 + normalizedRandom * 0.25)),
+  )
+  const requestedDelay = retryAfterMs === null
+    ? 0
+    : Math.max(0, Number.isFinite(retryAfterMs) ? retryAfterMs : 0)
+  return Math.max(jitteredDelay, requestedDelay)
+}
+
+async function requestSharedIdentitySession(): Promise<Response> {
+  try {
+    return await fetch('/api/v1/auth/shared-identity/session', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      method: 'POST',
+    })
+  } catch {
+    throw new SharedIdentitySessionRestoreError(
+      'The shared SygShift session is temporarily unavailable.',
+      { transient: true },
+    )
+  }
+}
+
+function retryAfterMilliseconds(value: string | null, now = Date.now()): number | null {
+  if (!value) return null
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000)
+  const date = Date.parse(value)
+  return Number.isFinite(date) ? Math.max(0, date - now) : null
+}
+
+function isRetryableRestoreFailure(status: number, code: unknown): boolean {
+  const retryableStatus = status >= 500 || retryableRestoreStatuses.has(status)
+  if (!retryableStatus) return false
+  return code !== 'shared_identity_not_configured'
+    && code !== 'shared_identity_disabled'
+    && code !== 'shared_identity_upstream_rejected'
 }
 
 function isSharedIdentityScope(value: unknown): value is SharedIdentityScope {

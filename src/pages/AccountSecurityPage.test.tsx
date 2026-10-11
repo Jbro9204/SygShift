@@ -9,6 +9,7 @@ const authMock = vi.hoisted(() => ({
   getSessionContext: vi.fn(),
   notifySessionContextChanged: vi.fn(),
   signOut: vi.fn(),
+  transientError: new Error('connection pool timeout'),
 }))
 
 const supabaseMock = vi.hoisted(() => ({
@@ -27,6 +28,7 @@ vi.mock('../data/auth', async () => {
   return {
     ...actual,
     getSessionContext: authMock.getSessionContext,
+    isTransientSessionContextError: vi.fn((error: unknown) => error === authMock.transientError),
     notifySessionContextChanged: authMock.notifySessionContextChanged,
     signOut: authMock.signOut,
   }
@@ -90,6 +92,29 @@ describe('AccountSecurityPage', () => {
       pilotEligible: true,
       requestId: 'request-1',
     })
+  })
+
+  it('keeps the authenticated session and offers retry when the security checkpoint is temporarily unavailable', async () => {
+    authMock.getSessionContext.mockReset()
+    authMock.getSessionContext
+      .mockRejectedValueOnce(authMock.transientError)
+      .mockResolvedValue(sessionContext())
+
+    render(
+      <MemoryRouter>
+        <AccountSecurityPage />
+      </MemoryRouter>,
+    )
+
+    const retry = await screen.findByRole('button', { name: 'Retry secure session check' })
+    expect(screen.getByText(/Your sign-in was kept/i)).toBeInTheDocument()
+    expect(authMock.signOut).not.toHaveBeenCalled()
+
+    fireEvent.click(retry)
+
+    expect(await screen.findByLabelText('New password')).toBeInTheDocument()
+    expect(authMock.getSessionContext).toHaveBeenCalledTimes(2)
+    expect(authMock.signOut).not.toHaveBeenCalled()
   })
 
   it('submits the actual password field values even when browser autofill bypasses React change state', async () => {

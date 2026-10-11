@@ -2,7 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Eye, EyeOff, KeyRound, LockKeyhole, MailCheck, ShieldCheck } from 'lucide-react'
-import { getSessionContext, requestPasswordReset, requestUsernameReminder, signInWithUsername, signOut } from '../data/auth'
+import {
+  getSessionContext,
+  isTransientSessionContextError,
+  requestPasswordReset,
+  requestUsernameReminder,
+  signInWithUsername,
+  signOut,
+} from '../data/auth'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { beginLoginSound, cancelLoginSound } from '../lib/notificationSounds'
 
@@ -24,6 +31,8 @@ export function LoginPage() {
   const [checkingSession, setCheckingSession] = useState(isSupabaseConfigured)
   const [alreadySignedIn, setAlreadySignedIn] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [sessionCheckVersion, setSessionCheckVersion] = useState(0)
+  const [sessionRetryAvailable, setSessionRetryAvailable] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [recoveryMode, setRecoveryMode] = useState<'password' | 'username' | null>(null)
   const [recoveryEmail, setRecoveryEmail] = useState('')
@@ -49,14 +58,25 @@ export function LoginPage() {
       if (!active) return
 
       if (!data.session) {
+        setSessionRetryAvailable(false)
         setCheckingSession(false)
         return
       }
 
       try {
         await getSessionContext()
-        if (active) setAlreadySignedIn(true)
-      } catch {
+        if (active) {
+          setSessionRetryAvailable(false)
+          setAlreadySignedIn(true)
+        }
+      } catch (error) {
+        if (isTransientSessionContextError(error)) {
+          if (active) {
+            setErrorMessage('SygShift could not verify your secure session yet. Your sign-in was kept; retry the check when the connection recovers.')
+            setSessionRetryAvailable(true)
+          }
+          return
+        }
         await signOut()
       } finally {
         if (active) setCheckingSession(false)
@@ -68,7 +88,14 @@ export function LoginPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [sessionCheckVersion])
+
+  function retrySessionCheck() {
+    setErrorMessage(null)
+    setSessionRetryAvailable(false)
+    setCheckingSession(true)
+    setSessionCheckVersion((current) => current + 1)
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -203,7 +230,7 @@ export function LoginPage() {
               <input
                 autoCapitalize="none"
                 autoComplete="email"
-                disabled={!isSupabaseConfigured || checkingSession || loading}
+                disabled={!isSupabaseConfigured || checkingSession || loading || sessionRetryAvailable}
                 inputMode="email"
                 maxLength={254}
                 onChange={(event) => setRecoveryEmail(event.target.value)}
@@ -219,7 +246,7 @@ export function LoginPage() {
               <input
                 autoCapitalize="none"
                 autoComplete="username"
-                disabled={!isSupabaseConfigured || checkingSession || loading}
+                disabled={!isSupabaseConfigured || checkingSession || loading || sessionRetryAvailable}
                 inputMode="text"
                 onChange={(event) => setUsername(event.target.value)}
                 placeholder="Username"
@@ -236,7 +263,7 @@ export function LoginPage() {
               <span className="password-input">
                 <input
                   autoComplete="current-password"
-                  disabled={!isSupabaseConfigured || checkingSession || loading}
+                  disabled={!isSupabaseConfigured || checkingSession || loading || sessionRetryAvailable}
                   id="login-password"
                   onChange={(event) => setPassword(event.target.value)}
                   required
@@ -264,7 +291,14 @@ export function LoginPage() {
           {errorMessage ? (
             <div className="auth-notice auth-notice--error" role="alert">
               <LockKeyhole aria-hidden="true" size={21} />
-              <span>{errorMessage}</span>
+              <div>
+                <span>{errorMessage}</span>
+                {sessionRetryAvailable ? (
+                  <button className="login-recovery__link" onClick={retrySessionCheck} type="button">
+                    Retry secure session check
+                  </button>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -277,7 +311,7 @@ export function LoginPage() {
 
           <button
             className="primary-action login-submit"
-            disabled={!isSupabaseConfigured || checkingSession || loading}
+            disabled={!isSupabaseConfigured || checkingSession || loading || sessionRetryAvailable}
             type="submit"
           >
             {recoveryMode ? <MailCheck aria-hidden="true" size={20} /> : <KeyRound aria-hidden="true" size={20} />}

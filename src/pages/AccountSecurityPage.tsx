@@ -4,6 +4,7 @@ import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-route
 import { CheckCircle2, Copy, Download, Eye, EyeOff, KeyRound, Loader2, MessageSquareText, QrCode, ShieldCheck, Usb } from 'lucide-react'
 import {
   getSessionContext,
+  isTransientSessionContextError,
   notifySessionContextChanged,
   signOut,
   type SessionContext,
@@ -128,6 +129,8 @@ export function AccountSecurityPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [checkpointVersion, setCheckpointVersion] = useState(0)
+  const [sessionCheckVersion, setSessionCheckVersion] = useState(0)
+  const [sessionRetryAvailable, setSessionRetryAvailable] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false)
   const [rememberDevice, setRememberDevice] = useState(true)
@@ -204,13 +207,21 @@ export function AccountSecurityPage() {
           nextSecurityKeyLoadError = 'Your registered security key could not be checked. Retry the key check or use your authenticator.'
         }
         if (active) {
+          setSessionRetryAvailable(false)
           setContext(nextContext)
           setFactors(nextFactors)
           setRawAuthenticatorLevel(level.currentLevel)
           setSecurityKeys(nextSecurityKeys)
           setSecurityKeyLoadError(nextSecurityKeyLoadError)
         }
-      } catch {
+      } catch (error) {
+        if (isTransientSessionContextError(error)) {
+          if (active) {
+            setErrorMessage('SygShift could not verify your secure session yet. Your sign-in was kept; retry the check when the connection recovers.')
+            setSessionRetryAvailable(true)
+          }
+          return
+        }
         await signOut()
         if (active) setContext(null)
       } finally {
@@ -223,7 +234,14 @@ export function AccountSecurityPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [sessionCheckVersion])
+
+  function retrySessionCheck() {
+    setErrorMessage(null)
+    setSessionRetryAvailable(false)
+    setLoading(true)
+    setSessionCheckVersion((current) => current + 1)
+  }
 
   async function refreshContext(): Promise<SessionContext> {
     const nextContext = await getSessionContext()
@@ -681,7 +699,7 @@ export function AccountSecurityPage() {
   }
 
   if (!isSupabaseConfigured) return <Navigate to="/login" replace />
-  if (!loading && !context) return <Navigate to="/login" replace />
+  if (!loading && !context && !sessionRetryAvailable) return <Navigate to="/login" replace />
 
   return (
     <main className="security-page">
@@ -705,6 +723,18 @@ export function AccountSecurityPage() {
           <div className="security-loading" role="status">
             <Loader2 aria-hidden="true" size={26} />
             Checking your secure session…
+          </div>
+        ) : null}
+
+        {sessionRetryAvailable ? (
+          <div className="auth-notice auth-notice--warning" role="alert">
+            <ShieldCheck aria-hidden="true" size={21} />
+            <div>
+              <span>{errorMessage}</span>
+              <button className="primary-action" onClick={retrySessionCheck} type="button">
+                Retry secure session check
+              </button>
+            </div>
           </div>
         ) : null}
 
@@ -763,7 +793,7 @@ export function AccountSecurityPage() {
           </div>
         ) : null}
 
-        {errorMessage ? (
+        {errorMessage && !sessionRetryAvailable ? (
           <div className="auth-notice auth-notice--error" role="alert">
             <ShieldCheck aria-hidden="true" size={21} />
             <span>{errorMessage}</span>

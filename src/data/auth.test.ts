@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AUTH_EMAIL_DOMAIN,
   authSessionIdFromAccessToken,
+  getSessionContext,
+  isTransientSessionContextError,
   isValidUsername,
   normalizeUsername,
   recordCompletedSignIn,
@@ -88,6 +90,38 @@ describe('password recovery verification', () => {
   it('rejects malformed recovery tokens without calling Supabase', async () => {
     await expect(verifyPasswordRecoveryToken('not a token')).rejects.toThrow('invalid or has expired')
     expect(supabaseMock.client.auth.verifyOtp).not.toHaveBeenCalled()
+  })
+})
+
+describe('session context verification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('classifies connection-pool and network failures as transient', async () => {
+    supabaseMock.client.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'PGRST003', details: 'Timed out acquiring connection from connection pool.', message: 'Database unavailable' },
+      status: 503,
+    })
+
+    const poolFailure = await getSessionContext().catch((error: unknown) => error)
+    expect(isTransientSessionContextError(poolFailure)).toBe(true)
+
+    supabaseMock.client.rpc.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    const networkFailure = await getSessionContext().catch((error: unknown) => error)
+    expect(isTransientSessionContextError(networkFailure)).toBe(true)
+  })
+
+  it('does not classify a rejected session as transient', async () => {
+    supabaseMock.client.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42501', details: null, message: 'permission denied' },
+      status: 403,
+    })
+
+    const rejection = await getSessionContext().catch((error: unknown) => error)
+    expect(isTransientSessionContextError(rejection)).toBe(false)
   })
 })
 

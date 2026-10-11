@@ -1,5 +1,30 @@
 # SygShift Development Log
 
+## 10/11/2026 - Shared-Session Outage Hardening
+
+- Diagnosed the production outage path as Supabase connection-pool acquisition timeouts reaching
+  `POST /api/v1/auth/shared-identity/session` as retryable `503` responses.
+- Repaired the Worker so transient network, `408`/`425`/`429`, and upstream `5xx` restore failures preserve the
+  protected HttpOnly session cookie and return `Retry-After`, while confirmed `204`/`401`/`403`, invalid envelopes,
+  and explicit sign-out retain their destructive behavior.
+- Added one-request-per-cycle browser recovery with capped exponential jitter, `Retry-After` support, and success
+  cancellation; deterministic contract/configuration failures do not enter a retry loop. The active AppShell and
+  Supabase client remain mounted during transient restore or session-context failures.
+- Preserved rotated single-use refresh tokens by returning the newly encrypted protected cookie when downstream
+  verification temporarily fails, and stopped Login and Account Security from signing out on transient context
+  failures by presenting an explicit retry state.
+- Added regressions for the observed PGRST003 connection-pool path, strict refresh rotation continuity, auth
+  upstream failure, network timeout, staggered backoff, terminal responses, non-retryable contract errors,
+  active-workspace preservation, and Login/Account Security recovery.
+- Final verification passed 6 focused files / 75 tests; the full gate passed 369 test files / 1 skipped with 2,105
+  tests / 1 skipped, strict TypeScript, zero-warning lint, production Worker/client builds, and the static-asset
+  contract. The mandatory desktop/mobile Time Clock workflow passed 42/42, followed by a fresh production build.
+- Independent final review found no remaining release blocker.
+- No deployment, database migration, production write, schedule, timekeeping, payroll, or employee-data change was
+  made.
+- Full implementation and verification record:
+  `docs/changelogs/CHANGELOG_10-11-2026_SHARED_SESSION_OUTAGE_HARDENING.md`.
+
 ## 10/08/2026 - Payroll Week-Boundary Allocation Without Timekeeping Rewrite
 
 - Added versioned payroll-only allocation for worked occurrences that cross the configured Sunday 12:00 AM

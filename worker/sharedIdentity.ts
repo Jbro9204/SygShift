@@ -17,6 +17,7 @@ const ticketPattern = /^sygsso_v1\.[A-Za-z0-9_-]{20,3000}\.[a-f0-9]{64}$/i
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const assuranceLevels = new Set(['aal1', 'aal2', 'security_key', 'trusted_device', 'external_mfa'])
 const redirectStatuses = new Set([301, 302, 303, 307, 308])
+const retryableUpstreamStatuses = new Set([408, 425, 429])
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
@@ -108,12 +109,20 @@ type SharedIdentitySessionEnvelope = {
 class SharedIdentityError extends Error {
   readonly code: string
   readonly diagnostic?: string
+  readonly responseSessionCookie?: string
   readonly status: number
 
-  constructor(code: string, status: number, message: string, diagnostic?: string) {
+  constructor(
+    code: string,
+    status: number,
+    message: string,
+    diagnostic?: string,
+    responseSessionCookie?: string,
+  ) {
     super(message)
     this.code = code
     this.diagnostic = diagnostic
+    this.responseSessionCookie = responseSessionCookie
     this.status = status
   }
 }
@@ -165,7 +174,13 @@ export async function handleSharedIdentityRequest(
       return response
     }
     const response = responseJson({ error: failure.code, detail: failure.message, requestId }, failure.status)
-    return path === sessionPath || path === sessionLogoutPath
+    if (isRetryableSharedIdentityFailure(failure)) response.headers.set('retry-after', '2')
+    if (path === sessionPath && failure.responseSessionCookie && isRetryableSharedIdentityFailure(failure)) {
+      response.headers.append('set-cookie', failure.responseSessionCookie)
+    }
+    if (path === sessionLogoutPath) return clearAllSharedIdentityCookies(response)
+    return path === sessionPath
+      && (failure.status === 401 || failure.status === 403)
       ? clearAllSharedIdentityCookies(response)
       : response
   }
@@ -374,20 +389,57 @@ async function restoreSharedSession(request: Request, config: SharedIdentityConf
     refreshToken: shared.refreshToken,
   }
   let refreshed = false
+  let rotatedSessionCookie: string | null = null
   if (Date.parse(authSession.expiresAt) <= Date.now() + 60_000) {
     try {
       authSession = await refreshSupabaseSession(authSession.refreshToken, shared.authUserId, config)
       refreshed = true
-    } catch {
+    } catch (error) {
+      if (!(error instanceof SharedIdentityError) || isRetryableUpstreamStatus(error.status)) throw error
       const response = responseEmpty(204)
       response.headers.append('set-cookie', clearCookie(sessionCookie))
       return response
     }
+    rotatedSessionCookie = protectedCookie(
+      sessionCookie,
+      await encryptEnvelope({
+        ...shared,
+        accessToken: authSession.accessToken,
+        accessTokenExpiresAt: authSession.expiresAt,
+        refreshToken: authSession.refreshToken,
+      } satisfies SharedIdentitySessionEnvelope, config.sessionSecret),
+      shared.persistent ? secondsUntil(shared.expiresAt) : undefined,
+    )
   }
   const token = authSession.accessToken
   const claims = accessTokenClaims(token)
-  const authUser = await verifyAuthUser(token, config)
-  const local = await loadLocalIdentity(shared.employeeId, config)
+  let authUser: { id: string }
+  let local: LocalIdentity
+  let sessionVerified: boolean
+  try {
+    authUser = await verifyAuthUser(token, config)
+    local = await loadLocalIdentity(shared.employeeId, config)
+    sessionVerified = await verifySharedSession(shared.sessionToken, token, scope, config)
+  } catch (error) {
+    if (!refreshed || !rotatedSessionCookie) throw error
+    if (error instanceof SharedIdentityError && !isRetryableSharedIdentityFailure(error)) throw error
+    if (error instanceof SharedIdentityError) {
+      throw new SharedIdentityError(
+        error.code,
+        error.status,
+        error.message,
+        error.diagnostic,
+        rotatedSessionCookie,
+      )
+    }
+    throw new SharedIdentityError(
+      'shared_identity_unavailable',
+      503,
+      'Shared access is temporarily unavailable.',
+      unexpectedErrorCategory(error),
+      rotatedSessionCookie,
+    )
+  }
   if (
     authUser.id !== shared.authUserId
     || claims.sub !== shared.authUserId
@@ -398,7 +450,7 @@ async function restoreSharedSession(request: Request, config: SharedIdentityConf
     || local.username !== shared.username
     || local.role !== shared.roleId
     || !localAssuranceAllowed(shared.assuranceLevel, local)
-    || !await verifySharedSession(shared.sessionToken, token, scope, config)
+    || !sessionVerified
   ) {
     const response = responseEmpty(204)
     response.headers.append('set-cookie', clearCookie(sessionCookie))
@@ -415,18 +467,7 @@ async function restoreSharedSession(request: Request, config: SharedIdentityConf
       refreshToken: authSession.refreshToken,
     },
   }, 200)
-  if (refreshed) {
-    response.headers.append('set-cookie', protectedCookie(
-      sessionCookie,
-      await encryptEnvelope({
-        ...shared,
-        accessToken: authSession.accessToken,
-        accessTokenExpiresAt: authSession.expiresAt,
-        refreshToken: authSession.refreshToken,
-      } satisfies SharedIdentitySessionEnvelope, config.sessionSecret),
-      shared.persistent ? secondsUntil(shared.expiresAt) : undefined,
-    ))
-  }
+  if (rotatedSessionCookie) response.headers.append('set-cookie', rotatedSessionCookie)
   return response
 }
 
@@ -596,6 +637,13 @@ async function verifySessionLink(
   const expiresAtMs = typeof payload?.expires_at === 'number'
     ? payload.expires_at * 1000
     : Date.now() + Number(payload?.expires_in ?? 0) * 1000
+  if (isRetryableUpstreamStatus(response.status)) {
+    throw new SharedIdentityError(
+      'shared_identity_upstream_unavailable',
+      503,
+      'The shared SygShift session is temporarily unavailable.',
+    )
+  }
   if (
     !response.ok
     || payload?.user?.id !== expectedAuthUserId
@@ -636,6 +684,13 @@ async function refreshSupabaseSession(
   const expiresAtMs = typeof payload?.expires_at === 'number'
     ? payload.expires_at * 1000
     : Date.now() + Number(payload?.expires_in ?? 0) * 1000
+  if (isRetryableUpstreamStatus(response.status)) {
+    throw new SharedIdentityError(
+      'shared_identity_upstream_unavailable',
+      503,
+      'The shared SygShift session is temporarily unavailable.',
+    )
+  }
   if (
     !response.ok
     || payload?.user?.id !== expectedAuthUserId
@@ -670,7 +725,22 @@ async function verifySharedSession(
     method: 'POST',
   })
   const payload = await response.json().catch(() => false)
-  return response.ok && payload === true
+  if (isRetryableUpstreamStatus(response.status)) {
+    throw new SharedIdentityError(
+      'shared_identity_upstream_unavailable',
+      503,
+      'The shared SygShift session is temporarily unavailable.',
+    )
+  }
+  if (response.status === 401 || response.status === 403) return false
+  if (!response.ok || typeof payload !== 'boolean') {
+    throw new SharedIdentityError(
+      'shared_identity_upstream_rejected',
+      502,
+      'The shared SygShift session could not be verified.',
+    )
+  }
+  return payload
 }
 
 async function verifyAuthUser(token: string, config: SharedIdentityConfiguration): Promise<{ id: string }> {
@@ -680,8 +750,22 @@ async function verifyAuthUser(token: string, config: SharedIdentityConfiguration
     method: 'GET',
   })
   const payload = await response.json().catch(() => null) as { id?: unknown } | null
-  if (!response.ok || typeof payload?.id !== 'string' || !uuidPattern.test(payload.id)) {
+  if (isRetryableUpstreamStatus(response.status)) {
+    throw new SharedIdentityError(
+      'shared_identity_upstream_unavailable',
+      503,
+      'The shared SygShift session is temporarily unavailable.',
+    )
+  }
+  if (response.status === 401 || response.status === 403) {
     throw new SharedIdentityError('shared_identity_auth_required', 401, 'The SygShift session could not be verified.')
+  }
+  if (!response.ok || typeof payload?.id !== 'string' || !uuidPattern.test(payload.id)) {
+    throw new SharedIdentityError(
+      'shared_identity_upstream_rejected',
+      502,
+      'The shared SygShift session could not be verified.',
+    )
   }
   return { id: payload.id }
 }
@@ -698,9 +782,25 @@ async function upstreamJson(url: string, init: RequestInit): Promise<unknown> {
   const response = await fetchWithProtectedRedirect(url, init)
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
-    throw new SharedIdentityError('shared_identity_upstream_rejected', response.status === 409 ? 409 : 502, 'The shared session could not be completed.')
+    const status = isRetryableUpstreamStatus(response.status) ? 503 : response.status === 409 ? 409 : 502
+    throw new SharedIdentityError(
+      status === 503 ? 'shared_identity_upstream_unavailable' : 'shared_identity_upstream_rejected',
+      status,
+      status === 503
+        ? 'The shared SygShift session is temporarily unavailable.'
+        : 'The shared session could not be completed.',
+    )
   }
   return payload
+}
+
+function isRetryableUpstreamStatus(status: number): boolean {
+  return status >= 500 || retryableUpstreamStatuses.has(status)
+}
+
+function isRetryableSharedIdentityFailure(error: SharedIdentityError): boolean {
+  return error.code === 'shared_identity_upstream_unavailable'
+    || error.code === 'shared_identity_unavailable'
 }
 
 async function fetchWithProtectedRedirect(url: string, init: RequestInit): Promise<Response> {

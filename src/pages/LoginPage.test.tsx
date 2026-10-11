@@ -1,9 +1,38 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LoginPage } from './LoginPage'
 
+const loginMocks = vi.hoisted(() => ({
+  getSession: vi.fn(),
+  getSessionContext: vi.fn(),
+  signOut: vi.fn(),
+  transientError: new Error('connection pool timeout'),
+}))
+
+vi.mock('../data/auth', async () => {
+  const actual = await vi.importActual<typeof import('../data/auth')>('../data/auth')
+  return {
+    ...actual,
+    getSessionContext: loginMocks.getSessionContext,
+    isTransientSessionContextError: vi.fn((error: unknown) => error === loginMocks.transientError),
+    signOut: loginMocks.signOut,
+  }
+})
+
+vi.mock('../lib/supabase', () => ({
+  getSupabaseClient: () => ({ auth: { getSession: loginMocks.getSession } }),
+  isSupabaseConfigured: true,
+}))
+
 describe('LoginPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    loginMocks.getSession.mockResolvedValue({ data: { session: null } })
+    loginMocks.getSessionContext.mockResolvedValue({})
+    loginMocks.signOut.mockResolvedValue(undefined)
+  })
+
   it('uses a generic username placeholder', () => {
     render(
       <MemoryRouter>
@@ -76,5 +105,27 @@ describe('LoginPage', () => {
     )
 
     expect(screen.getByText('Password reset complete. Sign in with your new password.')).toBeInTheDocument()
+  })
+
+  it('keeps the authenticated session and offers retry when account verification is temporarily unavailable', async () => {
+    loginMocks.getSession.mockResolvedValue({ data: { session: { access_token: 'active-session' } } })
+    loginMocks.getSessionContext
+      .mockRejectedValueOnce(loginMocks.transientError)
+      .mockResolvedValueOnce({})
+
+    render(
+      <MemoryRouter>
+        <LoginPage />
+      </MemoryRouter>,
+    )
+
+    const retry = await screen.findByRole('button', { name: 'Retry secure session check' })
+    expect(screen.getByText(/Your sign-in was kept/i)).toBeInTheDocument()
+    expect(loginMocks.signOut).not.toHaveBeenCalled()
+
+    fireEvent.click(retry)
+
+    await waitFor(() => expect(loginMocks.getSessionContext).toHaveBeenCalledTimes(2))
+    expect(loginMocks.signOut).not.toHaveBeenCalled()
   })
 })
