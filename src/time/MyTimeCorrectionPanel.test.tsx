@@ -48,6 +48,7 @@ describe('My Time correction status identity', () => {
     render(
       <CorrectionPanel
         corrections={[correction]}
+        employeeTimeZone="America/New_York"
         employeeUsername="zward"
         loading={false}
         missingRequests={[missingRequest]}
@@ -62,6 +63,7 @@ describe('My Time correction status identity', () => {
       expect(within(card as HTMLElement).getByText('@zward')).toBeInTheDocument()
     }
     expect(screen.getByText('Clocked in')).toBeInTheDocument()
+    expect(screen.getByText('09/16/2026, 9:00 AM (09:00) EDT')).toBeInTheDocument()
     expect(screen.getByText('Missing worked time')).toBeInTheDocument()
   })
 })

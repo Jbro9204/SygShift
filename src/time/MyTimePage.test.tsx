@@ -6,8 +6,11 @@ import { MyTimePage } from './MyTimePage'
 
 const mocks = vi.hoisted(() => ({
   dashboardOperationalDate: '2026-09-06',
+  employeeTimeZone: 'America/Denver',
   payrollFromDate: '2026-09-06',
   payrollThroughDate: '2026-09-19',
+  recentEvents: [] as Array<Record<string, unknown>>,
+  requestCorrection: vi.fn(),
   review: vi.fn(),
   serverTimestamp: '2026-09-06T16:00:00Z',
 }))
@@ -15,10 +18,10 @@ vi.mock('../lib/supabase', () => ({ isSupabaseConfigured: true }))
 vi.mock('../data/auth', () => ({ getSessionContext: async () => ({ permissions: ['time.self.view'] }) }))
 vi.mock('../data/timekeeping', async (original) => ({ ...await original<typeof import('../data/timekeeping')>(),
   getTimekeepingDashboard: async () => ({
-    employee: { id: 'employee', displayName: 'Test Employee' },
+    employee: { id: 'employee', displayName: 'Test Employee', timeZone: mocks.employeeTimeZone, username: 'test.employee' },
     operationalDate: mocks.dashboardOperationalDate,
     serverTimestamp: mocks.serverTimestamp,
-    recentEvents: [],
+    recentEvents: mocks.recentEvents,
     eligibleShifts: [{
       assignmentId: '10000000-0000-4000-8000-000000000001',
       shiftId: '20000000-0000-4000-8000-000000000001',
@@ -56,15 +59,19 @@ vi.mock('../data/timekeeping', async (original) => ({ ...await original<typeof i
   }),
   getPayrollPeriodContext: async () => ({ serverTimestamp: mocks.serverTimestamp, fromDate: mocks.payrollFromDate, throughDate: mocks.payrollThroughDate, timeZone: 'America/Denver', weekStartsOn: 0, availablePeriods: [
     { offset: 0, fromDate: mocks.payrollFromDate, throughDate: mocks.payrollThroughDate }, { offset: 1, fromDate: '2026-08-23', throughDate: '2026-09-05' }, { offset: 2, fromDate: '2026-08-09', throughDate: '2026-08-22' },
-  ] }), getOwnTimekeepingReview: mocks.review,
+  ] }), getOwnTimekeepingReview: mocks.review, requestTimeEventCorrection: mocks.requestCorrection,
 }))
 vi.mock('../data/timeOperations', async (original) => ({ ...await original<typeof import('../data/timeOperations')>(), getMissingTimeRequestWorkspace: async () => ({ requests: [], posts: [] }) }))
 
 describe('My Time pay-period history', () => {
   beforeEach(() => {
     mocks.dashboardOperationalDate = '2026-09-06'
+    mocks.employeeTimeZone = 'America/Denver'
     mocks.payrollFromDate = '2026-09-06'
     mocks.payrollThroughDate = '2026-09-19'
+    mocks.recentEvents = []
+    mocks.requestCorrection.mockReset()
+    mocks.requestCorrection.mockResolvedValue({})
     mocks.serverTimestamp = '2026-09-06T16:00:00Z'
   })
 
@@ -244,5 +251,152 @@ describe('My Time pay-period history', () => {
 
     await screen.findByText('Eastern employee shift')
     expect(screen.getByText('This Week').closest('article')).toHaveTextContent('1.00 hrs')
+  })
+
+  it('renders, groups, and round-trips punches in the employee profile time zone', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) { this.open = true })
+    HTMLDialogElement.prototype.close = vi.fn(function close(this: HTMLDialogElement) { this.open = false })
+    mocks.dashboardOperationalDate = '2026-10-12'
+    mocks.employeeTimeZone = 'America/New_York'
+    mocks.payrollFromDate = '2026-10-04'
+    mocks.payrollThroughDate = '2026-10-17'
+    mocks.serverTimestamp = '2026-10-12T17:00:00.000Z'
+    mocks.recentEvents = [{
+      effectiveAt: '2026-10-12T13:00:00.000Z',
+      id: '30000000-0000-4000-8000-000000000001',
+      kind: 'clock_in',
+      recordedAt: '2026-10-12T13:00:00.000Z',
+      shiftId: '20000000-0000-4000-8000-000000000001',
+      source: 'web',
+      voided: false,
+      workType: 'post',
+    }, {
+      effectiveAt: '2026-10-12T04:30:00.000Z',
+      id: '30000000-0000-4000-8000-000000000002',
+      kind: 'clock_out',
+      recordedAt: '2026-10-12T04:30:00.000Z',
+      shiftId: '20000000-0000-4000-8000-000000000002',
+      source: 'web',
+      voided: false,
+      workType: 'post',
+    }]
+    mocks.review.mockResolvedValue({
+      fromDate: mocks.payrollFromDate,
+      pendingCorrections: [],
+      rows: [],
+      serverTimestamp: mocks.serverTimestamp,
+      throughDate: mocks.payrollThroughDate,
+    })
+
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><MyTimePage /></MemoryRouter></QueryClientProvider>)
+
+    const nineAmPunch = await screen.findByText('10/12/2026, 9:00 AM (09:00) EDT')
+    expect(screen.getByText('10/12/2026, 12:30 AM (00:30) EDT')).toBeVisible()
+    expect(screen.getByRole('tab', { name: /Today.*2 punches/ })).toBeVisible()
+
+    fireEvent.click(within(nineAmPunch.closest('li')!).getByRole('button', { name: 'Request correction' }))
+    const dialog = screen.getByRole('dialog', { name: 'Request a time-card correction' })
+    expect(within(dialog).getByLabelText('Correct date')).toHaveValue('2026-10-12')
+    expect(within(dialog).getByLabelText('Correct time / Eastern Time')).toHaveValue('09:00')
+    fireEvent.change(within(dialog).getByLabelText(/Explain the request/), { target: { value: 'Confirm the profile-zone punch time.' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send correction request' }))
+
+    await waitFor(() => expect(mocks.requestCorrection).toHaveBeenCalledWith({
+      reason: 'Employee requested time correction: Confirm the profile-zone punch time.',
+      replacementTime: '2026-10-12T13:00:00.000Z',
+      timeEventId: '30000000-0000-4000-8000-000000000001',
+      voided: false,
+    }))
+  })
+
+  it('matches a near-midnight punch to its timecard by shift identity before comparing local dates', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) { this.open = true })
+    HTMLDialogElement.prototype.close = vi.fn(function close(this: HTMLDialogElement) { this.open = false })
+    mocks.dashboardOperationalDate = '2026-10-12'
+    mocks.employeeTimeZone = 'America/New_York'
+    mocks.payrollFromDate = '2026-10-04'
+    mocks.payrollThroughDate = '2026-10-17'
+    mocks.serverTimestamp = '2026-10-12T17:00:00.000Z'
+    mocks.recentEvents = [{
+      effectiveAt: '2026-10-12T04:30:00.000Z',
+      id: '30000000-0000-4000-8000-000000000002',
+      kind: 'clock_out',
+      recordedAt: '2026-10-12T04:30:00.000Z',
+      shiftId: '20000000-0000-4000-8000-000000000002',
+      source: 'web',
+      voided: false,
+      workType: 'post',
+    }]
+    mocks.review.mockResolvedValue({
+      fromDate: mocks.payrollFromDate,
+      pendingCorrections: [],
+      rows: [{
+        breakMinutes: 0,
+        employeeId: 'employee',
+        exceptionCodes: [],
+        firstClockIn: '2026-10-12T03:30:00.000Z',
+        lastClockOut: '2026-10-12T04:30:00.000Z',
+        locationName: 'Cross-zone overnight shift',
+        operationalDate: '2026-10-11',
+        overtimeMinutes: 0,
+        paidMinutes: 60,
+        payrollReady: true,
+        regularMinutes: 60,
+        rowKind: 'time_event',
+        shiftId: '20000000-0000-4000-8000-000000000002',
+        unpaidGapMinutes: 0,
+      }],
+      serverTimestamp: mocks.serverTimestamp,
+      throughDate: mocks.payrollThroughDate,
+    })
+
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><MyTimePage /></MemoryRouter></QueryClientProvider>)
+
+    const timecard = (await screen.findByText('Cross-zone overnight shift')).closest('article')!
+    expect(timecard).toHaveTextContent('10/11/2026, 11:30 PM (23:30) EDT - 10/12/2026, 12:30 AM (00:30) EDT')
+    fireEvent.click(within(timecard).getByRole('button', { name: 'Request correction' }))
+    const dialog = screen.getByRole('dialog', { name: 'Request a time-card correction' })
+    expect(within(dialog).getByText('10/12/2026, 12:30 AM (00:30) EDT')).toBeVisible()
+    expect(within(dialog).getByLabelText('Correct date')).toHaveValue('2026-10-12')
+    expect(within(dialog).getByLabelText('Correct time / Eastern Time')).toHaveValue('00:30')
+  })
+
+  it('keeps an invalid Eastern daylight-saving correction in the modal with clear guidance', async () => {
+    HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) { this.open = true })
+    HTMLDialogElement.prototype.close = vi.fn(function close(this: HTMLDialogElement) { this.open = false })
+    mocks.dashboardOperationalDate = '2026-03-08'
+    mocks.employeeTimeZone = 'America/New_York'
+    mocks.payrollFromDate = '2026-03-01'
+    mocks.payrollThroughDate = '2026-03-14'
+    mocks.serverTimestamp = '2026-03-08T12:00:00.000Z'
+    mocks.recentEvents = [{
+      effectiveAt: '2026-03-08T06:30:00.000Z',
+      id: '30000000-0000-4000-8000-000000000003',
+      kind: 'clock_in',
+      recordedAt: '2026-03-08T06:30:00.000Z',
+      shiftId: '20000000-0000-4000-8000-000000000003',
+      source: 'web',
+      voided: false,
+      workType: 'post',
+    }]
+    mocks.review.mockResolvedValue({
+      fromDate: mocks.payrollFromDate,
+      pendingCorrections: [],
+      rows: [],
+      serverTimestamp: mocks.serverTimestamp,
+      throughDate: mocks.payrollThroughDate,
+    })
+
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><MyTimePage /></MemoryRouter></QueryClientProvider>)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Request correction' }))
+    const dialog = screen.getByRole('dialog', { name: 'Request a time-card correction' })
+    fireEvent.change(within(dialog).getByLabelText('Correct time / Eastern Time'), { target: { value: '02:30' } })
+    fireEvent.change(within(dialog).getByLabelText(/Explain the request/), { target: { value: 'Correct this daylight-saving punch.' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send correction request' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('That local time does not exist in the selected time zone because of daylight-saving time.')
+    expect(mocks.requestCorrection).not.toHaveBeenCalled()
+    expect(dialog).toBeVisible()
   })
 })

@@ -42,6 +42,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { dateKeyInTimeZone, formatDualTimeRange, formatOperationalDateTime } from '../lib/time'
+import { continentalUsTimeZoneLabel, continentalUsTimeZoneShortLabel } from '../lib/usTimeZones'
 import { canViewOwnTime } from './timePermissions'
 import { isActiveInProgressTimeRow } from './timePayroll'
 import {
@@ -64,8 +65,6 @@ import {
 
 type AttendanceIssueType = 'called_in_sick' | 'call_off'
 type TimeCorrectionMode = 'change_time' | 'void' | 'review_note'
-
-const OPERATIONAL_TIME_ZONE = 'America/Denver'
 
 const eventLabels: Record<TimeEventKind, string> = {
   break_end: 'Break ended',
@@ -347,6 +346,7 @@ export function MyTimePage() {
       </section>
 
       {!reviewQuery.isError ? <MyTimeRows
+        employeeTimeZone={dashboard.employee.timeZone}
         loading={reviewQuery.isPending}
         onRequestCorrection={setCorrectionEvent}
         recentEvents={dashboard.recentEvents}
@@ -358,6 +358,7 @@ export function MyTimePage() {
         <RecentPunchesPanel dashboard={dashboard} onRequestCorrection={setCorrectionEvent} />
         <CorrectionPanel
           corrections={reviewQuery.data?.pendingCorrections ?? []}
+          employeeTimeZone={dashboard.employee.timeZone}
           employeeUsername={dashboard.employee.username}
           loading={reviewQuery.isPending || missingTimeWorkspaceQuery.isPending}
           missingRequests={missingTimeWorkspaceQuery.data?.requests ?? []}
@@ -378,10 +379,12 @@ export function MyTimePage() {
           pending={attendanceReportMutation.isPending}
           selectedShiftId={attendanceReportShiftId}
           shifts={dashboard.eligibleShifts}
+          timeZone={dashboard.employee.timeZone}
         />
       ) : null}
       {correctionEvent ? (
         <TimeCorrectionRequestModal
+          employeeTimeZone={dashboard.employee.timeZone}
           event={correctionEvent}
           onClose={() => setCorrectionEvent(null)}
           onSubmit={(input) => correctionMutation.mutate(input)}
@@ -427,6 +430,7 @@ function AttendanceReportModal({
   pending,
   selectedShiftId,
   shifts,
+  timeZone,
 }: {
   date: string
   eventType: AttendanceIssueType
@@ -440,6 +444,7 @@ function AttendanceReportModal({
   pending: boolean
   selectedShiftId: string
   shifts: TimekeepingShift[]
+  timeZone: string
 }) {
   const noteReady = note.trim().length > 0
   const canSubmit = noteReady && (selectedShiftId || date)
@@ -500,7 +505,7 @@ function AttendanceReportModal({
               <option value="">No specific shift / date only</option>
               {shifts.map((shift) => (
                 <option key={shift.assignmentId} value={shift.shiftId}>
-                  {formatShiftDate(shift.startsAt, shift.timeZone)} - {shiftTitle(shift)} - {shiftRequirementLabel(shift.requiresArmed)} - {shiftLocation(shift)} - {formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}
+                  {formatShiftDate(shift.startsAt, timeZone)} - {shiftTitle(shift)} - {shiftRequirementLabel(shift.requiresArmed)} - {shiftLocation(shift)} - {employeeShiftTimeLabel(shift, timeZone)}
                 </option>
               ))}
             </select>
@@ -542,7 +547,11 @@ function RecentPunchesPanel({
   dashboard: TimekeepingDashboard
   onRequestCorrection: (event: TimekeepingEvent) => void
 }) {
-  const recentPunchDays = useMemo(() => groupRecentPunchesByDay(dashboard.recentEvents), [dashboard.recentEvents])
+  const employeeTimeZone = dashboard.employee.timeZone
+  const recentPunchDays = useMemo(
+    () => groupRecentPunchesByDay(dashboard.recentEvents, employeeTimeZone),
+    [dashboard.recentEvents, employeeTimeZone],
+  )
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
   const selectedDay = recentPunchDays.find((day) => day.dateKey === selectedDateKey) ?? recentPunchDays[0] ?? null
 
@@ -550,7 +559,7 @@ function RecentPunchesPanel({
     <section className="time-card">
       <TimeSectionHeader
         eyebrow="Recent activity"
-        summary={`Updated ${formatOperationalDateTime(dashboard.serverTimestamp, { includeTimeZoneName: true })}`}
+        summary={`Updated ${formatOperationalDateTime(dashboard.serverTimestamp, { includeTimeZoneName: true, timeZone: employeeTimeZone })}`}
         title="Recent Punches"
       />
       {recentPunchDays.length > 0 && selectedDay ? (
@@ -579,7 +588,7 @@ function RecentPunchesPanel({
                 <span><History aria-hidden="true" size={18} /></span>
                 <div>
                   <strong>{eventLabels[event.kind]}</strong>
-                  <small>{formatOperationalDateTime(event.effectiveAt ?? event.recordedAt, { includeTimeZoneName: true })}</small>
+                  <small>{formatOperationalDateTime(event.effectiveAt ?? event.recordedAt, { includeTimeZoneName: true, timeZone: employeeTimeZone })}</small>
                   <small>{event.workType === 'training' ? 'Paid training' : 'Worked time'}</small>
                 </div>
                 {event.voided ? <em>Voided</em> : null}
@@ -609,11 +618,11 @@ type RecentPunchDay = {
   events: TimekeepingEvent[]
 }
 
-function groupRecentPunchesByDay(events: TimekeepingEvent[]): RecentPunchDay[] {
+function groupRecentPunchesByDay(events: TimekeepingEvent[], timeZone: string): RecentPunchDay[] {
   const grouped = new Map<string, TimekeepingEvent[]>()
 
   for (const event of events) {
-    const dateKey = operationalDateKey(event.effectiveAt ?? event.recordedAt)
+    const dateKey = operationalDateKey(event.effectiveAt ?? event.recordedAt, timeZone)
     const dayEvents = grouped.get(dateKey) ?? []
     dayEvents.push(event)
     grouped.set(dateKey, dayEvents)
@@ -628,11 +637,11 @@ function groupRecentPunchesByDay(events: TimekeepingEvent[]): RecentPunchDay[] {
     .slice(0, 7)
 }
 
-function operationalDateKey(value: string): string {
+function operationalDateKey(value: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     day: '2-digit',
     month: '2-digit',
-    timeZone: OPERATIONAL_TIME_ZONE,
+    timeZone,
     year: 'numeric',
   }).formatToParts(new Date(value))
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? ''
@@ -648,11 +657,13 @@ function recentPunchDayLabel(dateKey: string, operationalToday: string): string 
 
 export function CorrectionPanel({
   corrections,
+  employeeTimeZone,
   employeeUsername,
   loading,
   missingRequests,
 }: {
   corrections: PendingCorrection[]
+  employeeTimeZone: string
   employeeUsername: string
   loading: boolean
   missingRequests: TimeAdjustmentRequest[]
@@ -681,7 +692,7 @@ export function CorrectionPanel({
               </div>
               <TimeStatusBadge tone="warning">Pending</TimeStatusBadge>
               <strong>{eventLabels[correction.kind]}</strong>
-              <span>{formatOperationalDateTime(correction.replacementTime ?? correction.recordedAt, { includeTimeZoneName: true })}</span>
+              <span>{formatOperationalDateTime(correction.replacementTime ?? correction.recordedAt, { includeTimeZoneName: true, timeZone: employeeTimeZone })}</span>
               <p>{correction.reason}</p>
             </article>
           ))}
@@ -696,9 +707,9 @@ export function CorrectionPanel({
               <span>{formatUsDateKey(request.workDate)} · {request.requestedLocation ?? 'Site/Post pending'}</span>
               <p>{request.reason}</p>
               <small>
-                {request.requestedClockInAt ? formatOperationalDateTime(request.requestedClockInAt, { timeZone: request.requestedTimeZone ?? OPERATIONAL_TIME_ZONE }) : 'Clock-in pending'}
+                {request.requestedClockInAt ? formatOperationalDateTime(request.requestedClockInAt, { timeZone: request.requestedTimeZone ?? employeeTimeZone }) : 'Clock-in pending'}
                 {' – '}
-                {request.requestedClockOutAt ? formatOperationalDateTime(request.requestedClockOutAt, { timeZone: request.requestedTimeZone ?? OPERATIONAL_TIME_ZONE }) : 'Clock-out pending'}
+                {request.requestedClockOutAt ? formatOperationalDateTime(request.requestedClockOutAt, { timeZone: request.requestedTimeZone ?? employeeTimeZone }) : 'Clock-out pending'}
                 {request.requestedUnpaidBreakMinutes > 0 ? ` · ${request.requestedUnpaidBreakMinutes} unpaid break min` : ''}
               </small>
             </article>
@@ -846,12 +857,14 @@ function MissingTimeRequestModal({
 }
 
 function MyTimeRows({
+  employeeTimeZone,
   loading,
   onRequestCorrection,
   recentEvents,
   rows,
   serverTimestamp,
 }: {
+  employeeTimeZone: string
   loading: boolean
   onRequestCorrection: (event: TimekeepingEvent) => void
   recentEvents: TimekeepingEvent[]
@@ -878,6 +891,7 @@ function MyTimeRows({
           {rows.map((row) => (
             <MyTimecardRow
               key={row.payrollOccurrenceKey || `${row.rowKind}-${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.locationName}`}
+              employeeTimeZone={employeeTimeZone}
               onRequestCorrection={onRequestCorrection}
               recentEvents={recentEvents}
               row={row}
@@ -895,11 +909,13 @@ function MyTimeRows({
 }
 
 function MyTimecardRow({
+  employeeTimeZone,
   onRequestCorrection,
   recentEvents,
   row,
   serverNow,
 }: {
+  employeeTimeZone: string
   onRequestCorrection: (event: TimekeepingEvent) => void
   recentEvents: TimekeepingEvent[]
   row: TimekeepingReviewRow
@@ -910,7 +926,7 @@ function MyTimecardRow({
     ? row.exceptionCodes.filter((code) => code !== 'missing_clock_out' && code !== 'zero_paid_minutes')
     : row.exceptionCodes
   const ready = row.payrollReady || activeInProgress
-  const correctionEvent = findCorrectionEventForRow(row, recentEvents)
+  const correctionEvent = findCorrectionEventForRow(row, recentEvents, employeeTimeZone)
   const occurrenceMinutes = payrollOccurrenceMinutes(row)
   const allocationNote = myTimePayrollAllocationNote(row)
 
@@ -923,7 +939,7 @@ function MyTimecardRow({
       <div>
         <strong>{row.locationName}</strong>
         <span>{[row.siteCode, row.siteName, row.postName, row.eventName].filter(Boolean).join(' - ') || 'Location pending'}</span>
-        <small>{formatRowWindow(row, activeInProgress)}{row.mixedWorkTypes ? ' · Needs classification review' : row.workType === 'training' ? ' · Paid training' : ''}</small>
+        <small>{formatRowWindow(row, employeeTimeZone, activeInProgress)}{row.mixedWorkTypes ? ' · Needs classification review' : row.workType === 'training' ? ' · Paid training' : ''}</small>
         {allocationNote ? <small><strong>Payroll allocation:</strong> {allocationNote}</small> : null}
       </div>
       <div className="my-time-row__hours">
@@ -952,14 +968,12 @@ function MyTimecardRow({
   )
 }
 
-function findCorrectionEventForRow(row: TimekeepingReviewRow, events: TimekeepingEvent[]): TimekeepingEvent | null {
+function findCorrectionEventForRow(row: TimekeepingReviewRow, events: TimekeepingEvent[], timeZone: string): TimekeepingEvent | null {
   if (row.rowKind !== 'time_event') return null
   const rowDate = row.operationalDate
   const candidates = events.filter((event) => {
-    const eventDate = dateInputValue(event.effectiveAt ?? event.recordedAt)
-    if (eventDate !== rowDate) return false
-    if (row.shiftId && event.shiftId === row.shiftId) return true
-    return !row.shiftId
+    if (row.shiftId) return event.shiftId === row.shiftId
+    return dateInputValue(event.effectiveAt ?? event.recordedAt, timeZone) === rowDate
   })
   return candidates.find((event) => event.kind === 'clock_out')
     ?? candidates.find((event) => event.kind === 'clock_in')
@@ -968,29 +982,43 @@ function findCorrectionEventForRow(row: TimekeepingReviewRow, events: Timekeepin
 }
 
 function TimeCorrectionRequestModal({
+  employeeTimeZone,
   event,
   onClose,
   onSubmit,
   pending,
 }: {
+  employeeTimeZone: string
   event: TimekeepingEvent
   onClose: () => void
   onSubmit: (input: { timeEventId: string; replacementTime: string | null; voided: boolean; reason: string }) => void
   pending: boolean
 }) {
   const [mode, setMode] = useState<TimeCorrectionMode>('change_time')
-  const [date, setDate] = useState(dateInputValue(event.effectiveAt ?? event.recordedAt))
-  const [time, setTime] = useState(timeInputValue(event.effectiveAt ?? event.recordedAt))
+  const [date, setDate] = useState(dateInputValue(event.effectiveAt ?? event.recordedAt, employeeTimeZone))
+  const [time, setTime] = useState(timeInputValue(event.effectiveAt ?? event.recordedAt, employeeTimeZone))
   const [reason, setReason] = useState('')
+  const [conversionError, setConversionError] = useState<string | null>(null)
   const reasonReady = reason.trim().length >= 8
   const canSubmit = reasonReady && !pending
 
   function submit(formEvent: FormEvent<HTMLFormElement>) {
     formEvent.preventDefault()
     if (!canSubmit) return
+    let replacementTime: string | null = event.effectiveAt ?? event.recordedAt
+    if (mode === 'void') replacementTime = null
+    if (mode === 'change_time') {
+      try {
+        replacementTime = zonedLocalDateTimeToUtc(`${date}T${time}`, employeeTimeZone)
+      } catch (error) {
+        setConversionError(error instanceof Error ? error.message : 'Enter a valid date and time for your time zone.')
+        return
+      }
+    }
+    setConversionError(null)
     onSubmit({
       reason: correctionReason(mode, reason),
-      replacementTime: mode === 'void' ? null : mode === 'review_note' ? (event.effectiveAt ?? event.recordedAt) : zonedDateTimeToIso(date, time),
+      replacementTime: mode === 'void' ? null : replacementTime,
       timeEventId: event.id,
       voided: mode === 'void',
     })
@@ -1008,7 +1036,7 @@ function TimeCorrectionRequestModal({
       <form className="time-correction-request-form" onSubmit={submit}>
         <article className="time-correction-request-punch">
           <span>{eventLabels[event.kind]}</span>
-          <strong>{formatOperationalDateTime(event.effectiveAt ?? event.recordedAt, { includeTimeZoneName: true })}</strong>
+          <strong>{formatOperationalDateTime(event.effectiveAt ?? event.recordedAt, { includeTimeZoneName: true, timeZone: employeeTimeZone })}</strong>
           <small>Original punch remains protected while this request is reviewed.</small>
         </article>
 
@@ -1032,14 +1060,16 @@ function TimeCorrectionRequestModal({
           <div className="time-correction-request-fields">
             <label>
               <span>Correct date</span>
-              <input disabled={pending} onChange={(inputEvent) => setDate(inputEvent.target.value)} required type="date" value={date} />
+              <input disabled={pending} onChange={(inputEvent) => { setConversionError(null); setDate(inputEvent.target.value) }} required type="date" value={date} />
             </label>
             <label>
-              <span>Correct time / Mountain</span>
-              <input disabled={pending} onChange={(inputEvent) => setTime(inputEvent.target.value)} required type="time" value={time} />
+              <span>Correct time / {continentalUsTimeZoneLabel(employeeTimeZone)}</span>
+              <input disabled={pending} onChange={(inputEvent) => { setConversionError(null); setTime(inputEvent.target.value) }} required type="time" value={time} />
             </label>
           </div>
         ) : null}
+
+        {conversionError ? <p className="form-feedback form-feedback--error" role="alert">{conversionError}</p> : null}
 
         <label className="time-correction-request-reason">
           <span>Explain the request</span>
@@ -1083,65 +1113,34 @@ function correctionReason(mode: TimeCorrectionMode, reason: string): string {
   return `${prefix}: ${reason.trim()}`
 }
 
-function dateInputValue(value: string): string {
+function dateInputValue(value: string, timeZone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
     day: '2-digit',
     month: '2-digit',
-    timeZone: OPERATIONAL_TIME_ZONE,
+    timeZone,
     year: 'numeric',
   }).format(new Date(value))
 }
 
-function timeInputValue(value: string): string {
+function timeInputValue(value: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     hour: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
     minute: '2-digit',
-    timeZone: OPERATIONAL_TIME_ZONE,
+    timeZone,
   }).formatToParts(new Date(value))
   const hour = parts.find((part) => part.type === 'hour')?.value ?? '00'
   const minute = parts.find((part) => part.type === 'minute')?.value ?? '00'
   return `${hour}:${minute}`
 }
 
-function zonedDateTimeToIso(dateKey: string, timeValue: string): string {
-  const [year, month, day] = dateKey.split('-').map(Number)
-  const [hour, minute] = timeValue.split(':').map(Number)
-  const targetUtc = Date.UTC(year, month - 1, day, hour, minute)
-  let guess = targetUtc
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    hour: '2-digit',
-    hour12: false,
-    minute: '2-digit',
-    month: '2-digit',
-    timeZone: OPERATIONAL_TIME_ZONE,
-    year: 'numeric',
-  })
-
-  for (let index = 0; index < 3; index += 1) {
-    const parts = formatter.formatToParts(new Date(guess))
-    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? '0'
-    const renderedUtc = Date.UTC(
-      Number(part('year')),
-      Number(part('month')) - 1,
-      Number(part('day')),
-      Number(part('hour')),
-      Number(part('minute')),
-    )
-    guess += targetUtc - renderedUtc
-  }
-
-  return new Date(guess).toISOString()
-}
-
-function formatRowWindow(row: TimekeepingReviewRow, activeInProgress = false): string {
+function formatRowWindow(row: TimekeepingReviewRow, timeZone: string, activeInProgress = false): string {
   if (row.firstClockIn || row.lastClockOut) {
-    const clockIn = row.firstClockIn ? formatOperationalDateTime(row.firstClockIn, { includeTimeZoneName: true }) : 'Missing clock-in'
-    const clockOut = row.lastClockOut ? formatOperationalDateTime(row.lastClockOut, { includeTimeZoneName: true }) : activeInProgress ? 'Clocked in now' : 'Missing clock-out'
+    const clockIn = row.firstClockIn ? formatOperationalDateTime(row.firstClockIn, { includeTimeZoneName: true, timeZone }) : 'Missing clock-in'
+    const clockOut = row.lastClockOut ? formatOperationalDateTime(row.lastClockOut, { includeTimeZoneName: true, timeZone }) : activeInProgress ? 'Clocked in now' : 'Missing clock-out'
     return `${clockIn} - ${clockOut}`
   }
-  if (row.scheduledStartsAt && row.scheduledEndsAt) return formatDualTimeRange(row.scheduledStartsAt, row.scheduledEndsAt, row.timeZone)
+  if (row.scheduledStartsAt && row.scheduledEndsAt) return formatDualTimeRange(row.scheduledStartsAt, row.scheduledEndsAt, timeZone)
   return 'No punch window recorded yet.'
 }
 
@@ -1151,6 +1150,12 @@ function shiftLocation(shift: TimekeepingShift): string {
 
 function shiftTitle(shift: TimekeepingShift): string {
   return shiftDisplayTitle(shift)
+}
+
+function employeeShiftTimeLabel(shift: TimekeepingShift, employeeTimeZone: string): string {
+  const employeeTime = `Employee Time — ${continentalUsTimeZoneShortLabel(employeeTimeZone)}: ${formatDualTimeRange(shift.startsAt, shift.endsAt, employeeTimeZone)}`
+  if (shift.timeZone === employeeTimeZone) return employeeTime
+  return `${employeeTime} · Site Time — ${continentalUsTimeZoneShortLabel(shift.timeZone)}: ${formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}`
 }
 
 function myTimePayrollAllocationNote(row: TimekeepingReviewRow): string | null {

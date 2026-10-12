@@ -15,6 +15,8 @@ const scheduleData = readFileSync(join(root, 'src', 'data', 'schedule.ts'), 'utf
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
 const overviewPage = readFileSync(join(root, 'src', 'pages', 'OverviewPage.tsx'), 'utf8')
 const timePage = readFileSync(join(root, 'src', 'pages', 'TimePage.tsx'), 'utf8')
+const myTimePage = readFileSync(join(root, 'src', 'time', 'MyTimePage.tsx'), 'utf8')
+const timeWorkspace = readFileSync(join(root, 'src', 'time', 'TimeWorkspace.tsx'), 'utf8')
 
 describe('continental employee time-zone release guard', () => {
   it('supports the approved employee profile zones, including non-DST Arizona time', () => {
@@ -72,5 +74,13 @@ describe('continental employee time-zone release guard', () => {
     expect(timePage).toContain('queryFn: () => getTimekeepingDashboard()')
     expect(timePage).toContain('defaultDate={dashboard.operationalDate}')
     expect(timePage).toContain('Official server time')
+    expect(myTimePage).toContain('employeeTimeZone={dashboard.employee.timeZone}')
+    expect(myTimePage).toContain('groupRecentPunchesByDay(dashboard.recentEvents, employeeTimeZone)')
+    expect(myTimePage).toContain('zonedLocalDateTimeToUtc(`${date}T${time}`, employeeTimeZone)')
+    expect(myTimePage).not.toContain("const OPERATIONAL_TIME_ZONE = 'America/Denver'")
+    expect(timeWorkspace).toContain('const employeeTimeZone = dashboard?.employee.timeZone')
+    expect(timeWorkspace).toContain('employeeShiftTimeLabel(shift, employeeTimeZone)')
+    expect(timeWorkspace).toContain('Employee Time —')
+    expect(timeWorkspace).toContain('Site Time —')
   })
 })

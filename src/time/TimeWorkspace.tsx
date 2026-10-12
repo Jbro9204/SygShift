@@ -35,6 +35,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { formatDualTimeRange } from '../lib/time'
+import { continentalUsTimeZoneShortLabel } from '../lib/usTimeZones'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from './timeQuerySync'
 import { useEarlyClockInRestriction } from './useEarlyClockInRestriction'
 import {
@@ -52,6 +53,12 @@ const actionLabels: Record<TimeEventKind, string> = {
 
 function shiftLabel(shift: TimekeepingShift): string {
   return [shift.siteName, shiftDisplayTitle(shift, ''), shiftRequirementLabel(shift.requiresArmed)].filter(Boolean).join(' · ')
+}
+
+function employeeShiftTimeLabel(shift: TimekeepingShift, employeeTimeZone: string): string {
+  const employeeTime = `Employee Time — ${continentalUsTimeZoneShortLabel(employeeTimeZone)}: ${formatDualTimeRange(shift.startsAt, shift.endsAt, employeeTimeZone)}`
+  if (shift.timeZone === employeeTimeZone) return employeeTime
+  return `${employeeTime} · Site Time — ${continentalUsTimeZoneShortLabel(shift.timeZone)}: ${formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}`
 }
 
 function activeShift(dashboard: Awaited<ReturnType<typeof getTimekeepingDashboard>>): TimekeepingShift | null {
@@ -85,6 +92,7 @@ export function TimeWorkspace() {
     refetchInterval: 15_000,
   })
   const dashboard = dashboardQuery.data
+  const employeeTimeZone = dashboard?.employee.timeZone
   const state = activeTimeState(dashboard?.lastEvent ?? null)
   const resumeShiftId = dashboard?.lastEvent?.kind === 'clock_out' ? dashboard.lastEvent.shiftId : null
   const choices = useMemo(
@@ -157,7 +165,7 @@ export function TimeWorkspace() {
                 {state === 'working' ? 'Working' : state === 'on_break' ? 'Break' : 'Ready'}
               </TimeStatusBadge>
             </div>
-            {state === 'off_clock' && choices && choices.shifts.length > 0 ? (
+            {state === 'off_clock' && choices && choices.shifts.length > 0 && employeeTimeZone ? (
               <label className="time-workspace-clock__shift">
                 <span>Clock into</span>
                 <select
@@ -168,7 +176,7 @@ export function TimeWorkspace() {
                 >
                   {choices.shifts.map((shift) => (
                     <option key={shift.assignmentId} value={shift.shiftId}>
-                      {shiftLabel(shift)} · {formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}
+                      {shiftLabel(shift)} · {employeeShiftTimeLabel(shift, employeeTimeZone)}
                     </option>
                   ))}
                 </select>
