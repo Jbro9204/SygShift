@@ -12,6 +12,7 @@ const dashboardQueryPrefixes = [
 ] as const
 
 const dependentQueryPrefixes = [
+  ['live-time-roster'],
   ['overview-metrics'],
   ['my-time-review'],
   ['my-timekeeping-review'],

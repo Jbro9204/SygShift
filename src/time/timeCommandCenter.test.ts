@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionContext } from '../data/auth'
-import type { TeamAttendanceSummary, TimekeepingDashboard, TimekeepingReview } from '../data/timekeeping'
+import type { LiveTimeRoster, TimekeepingDashboard, TimekeepingReview } from '../data/timekeeping'
 import type { TimeOperationsWorkspace } from '../data/timeOperations'
 import { buildTimeCommandCenterModel, canViewTeamTime } from './timeCommandCenter'
 import { canResolveTimeExceptions, canUseOwnTimeClock, canViewOwnTime } from './timePermissions'
@@ -147,43 +147,30 @@ const review: TimekeepingReview = {
   throughDate: '2026-08-08',
 }
 
-const attendanceSummary: TeamAttendanceSummary = {
-  fromDate: '2026-07-26',
-  operationalTimeZone: 'America/Denver',
+const liveRoster: LiveTimeRoster = {
+  breakCount: 0,
   rows: [{
+    assignedSupervisor: null,
+    clockedInAt: '2026-07-30T14:00:00.000Z',
+    elapsedMinutes: 120,
     employeeId: dashboard.employee.id,
     employeeName: 'Zach Ward',
     employmentType: 'flex',
-    eventCount: 1,
-    firstClockIn: '2026-07-30T14:00:00.000Z',
-    lastClockOut: null,
-    latestEffectiveAt: '2026-07-30T14:00:00.000Z',
-    latestEventName: null,
-    latestKind: 'clock_in',
-    latestLocationName: 'Administrative',
-    latestPostName: null,
-    latestSiteCode: null,
-    latestSiteName: null,
-    latestTimeZone: 'America/Denver',
-    breakMinutes: 0,
-    overtimeMinutes: 0,
-    paidMinutes: 0,
-    pendingCorrectionCount: 0,
+    eventName: null,
+    locationName: 'Administrative',
+    postName: null,
     role: 'guard',
     scheduledEndsAt: null,
-    scheduledEventName: null,
-    scheduledLocationName: null,
-    scheduledPostName: null,
-    scheduledShiftCount: 0,
-    scheduledSiteCode: null,
-    scheduledSiteName: null,
-    scheduledStartsAt: null,
-    scheduledTimeZone: 'America/Denver',
+    siteCode: null,
+    siteName: null,
+    status: 'working',
+    statusSince: '2026-07-30T14:00:00.000Z',
+    timeZone: 'America/Denver',
     username: 'zward',
-    workedSegmentCount: 0,
   }],
   serverTimestamp: '2026-07-30T16:00:00.000Z',
-  throughDate: '2026-08-08',
+  totalCount: 1,
+  workingCount: 1,
 }
 
 const operationsWorkspace: TimeOperationsWorkspace = {
@@ -223,8 +210,8 @@ const operationsWorkspace: TimeOperationsWorkspace = {
 }
 
 describe('time command center model', () => {
-  it('summarizes real review and team attendance data without depending on raw maintenance punches', () => {
-    const model = buildTimeCommandCenterModel({ attendanceSummary, dashboard, review })
+  it('summarizes real review and live-roster data without depending on historical attendance status', () => {
+    const model = buildTimeCommandCenterModel({ dashboard, liveRoster, review })
 
     expect(model.self.clockState).toBe('working')
     expect(model.clockedIn.count).toBe(1)
@@ -235,21 +222,47 @@ describe('time command center model', () => {
   })
 
   it('only warns for active clock-ins once they reach the fourteen-hour guardrail', () => {
-    const thirteenHourSummary: TeamAttendanceSummary = {
-      ...attendanceSummary,
-      serverTimestamp: '2026-07-31T03:00:00.000Z',
+    const thirteenHourRoster: LiveTimeRoster = {
+      ...liveRoster,
+      rows: liveRoster.rows.map((row) => ({ ...row, elapsedMinutes: 13 * 60 + 59 })),
     }
-    const fourteenHourSummary: TeamAttendanceSummary = {
-      ...attendanceSummary,
-      serverTimestamp: '2026-07-31T04:00:00.000Z',
+    const fourteenHourRoster: LiveTimeRoster = {
+      ...liveRoster,
+      rows: liveRoster.rows.map((row) => ({ ...row, elapsedMinutes: 14 * 60 })),
     }
 
-    expect(buildTimeCommandCenterModel({ attendanceSummary: thirteenHourSummary, dashboard, review }).clockedIn.longShiftCount).toBe(0)
-    expect(buildTimeCommandCenterModel({ attendanceSummary: fourteenHourSummary, dashboard, review }).clockedIn.longShiftCount).toBe(1)
+    expect(buildTimeCommandCenterModel({ dashboard, liveRoster: thirteenHourRoster, review }).clockedIn.longShiftCount).toBe(0)
+    expect(buildTimeCommandCenterModel({ dashboard, liveRoster: fourteenHourRoster, review }).clockedIn.longShiftCount).toBe(1)
+  })
+
+  it('does not turn a historical final-day clock-in into a current live employee', () => {
+    const historicalReview: TimekeepingReview = {
+      ...review,
+      rows: review.rows.map((row) => ({
+        ...row,
+        firstClockIn: '2026-10-18T02:00:59.000Z',
+        lastClockOut: '2026-10-18T10:00:05.000Z',
+        operationalDate: '2026-10-17',
+      })),
+    }
+    const emptyLiveRoster: LiveTimeRoster = {
+      breakCount: 0,
+      rows: [],
+      serverTimestamp: '2026-10-18T18:00:00.000Z',
+      totalCount: 0,
+      workingCount: 0,
+    }
+
+    expect(buildTimeCommandCenterModel({ dashboard, liveRoster: emptyLiveRoster, review: historicalReview }).clockedIn).toEqual({
+      atScheduledLocation: 0,
+      atUnexpectedLocation: 0,
+      count: 0,
+      longShiftCount: 0,
+    })
   })
 
   it('shows an unresolved scheduled no-show while the shift is in progress', () => {
-    const model = buildTimeCommandCenterModel({ attendanceSummary, dashboard, operationsWorkspace, review })
+    const model = buildTimeCommandCenterModel({ dashboard, liveRoster, operationsWorkspace, review })
 
     expect(model.missingPunches.missingClockIns).toBe(1)
     expect(model.missingPunches.incompleteShifts).toBe(1)
@@ -263,7 +276,7 @@ describe('time command center model', () => {
 
   it('keeps a past missed start in operations history without showing it as a current dispatch no-show', () => {
     const pastWorkspace = { ...operationsWorkspace, serverTimestamp: '2026-07-30T23:00:00.000Z' }
-    const model = buildTimeCommandCenterModel({ attendanceSummary, dashboard, operationsWorkspace: pastWorkspace, review })
+    const model = buildTimeCommandCenterModel({ dashboard, liveRoster, operationsWorkspace: pastWorkspace, review })
 
     expect(model.missingPunches.missingClockIns).toBe(0)
     expect(model.missingPunches.liveMissingClockIns).toEqual([])

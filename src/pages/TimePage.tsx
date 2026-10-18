@@ -34,6 +34,7 @@ import {
   correctTimeRecordPayrollCategory,
   correctTimeRecordWorkType,
   getClockableShiftChoices,
+  getLiveTimeRoster,
   minutesUntilClockInOpens,
   nextUpcomingClockInShift,
   getOwnTimekeepingReview,
@@ -54,6 +55,7 @@ import {
   reviewRowsToPayrollSummaryCsv,
   reviewTimeEventCorrection,
   sortTimeMaintenanceEmployees,
+  summarizeOperationalRowsByEmployee,
   summarizePayrollRowsByEmployee,
   supervisorCorrectTimeEvent,
   supervisorRecordTimeEvent,
@@ -61,6 +63,7 @@ import {
   supervisorUpdateTimeEventLocation,
   verifiedTimekeepingBaseline,
   type PendingCorrection,
+  type LiveTimeRosterRow,
   type PayrollCategory,
   type PayrollExportBatch,
   type PayrollEmployeeSummary,
@@ -316,8 +319,8 @@ interface TimeMaintenanceOverviewRow {
   username: string
   employmentType: TeamAttendanceSummaryRow['employmentType']
   role: TeamAttendanceSummaryRow['role']
-  latestKind: TeamAttendanceSummaryRow['latestKind']
-  latestEffectiveAt: string | null
+  clockState: TimekeepingState
+  liveStatusSince: string | null
   currentLocation: string
   firstClockIn: string | null
   lastClockOut: string | null
@@ -332,23 +335,16 @@ interface TimeMaintenanceOverviewRow {
   pendingCorrectionCount: number
 }
 
-function maintenanceClockState(kind: TeamAttendanceSummaryRow['latestKind']): TimekeepingState {
-  if (!kind || kind === 'clock_out') return 'off_clock'
-  if (kind === 'break_start') return 'on_break'
-  return 'working'
-}
-
-function maintenanceClockLabel(kind: TeamAttendanceSummaryRow['latestKind']): string {
-  const state = maintenanceClockState(kind)
+function maintenanceClockLabel(state: TimekeepingState): string {
   if (state === 'working') return 'Clocked in'
   if (state === 'on_break') return 'On break'
   return 'Off clock'
 }
 
-function maintenanceSummaryLocation(row: TeamAttendanceSummaryRow): string {
-  const liveLocation = row.latestKind && row.latestKind !== 'clock_out'
-    ? [row.latestSiteCode, row.latestSiteName, row.latestPostName ?? row.latestEventName].filter(Boolean).join(' / ')
-      || row.latestLocationName
+function maintenanceSummaryLocation(row: TeamAttendanceSummaryRow, live: LiveTimeRosterRow | undefined): string {
+  const liveLocation = live
+    ? [live.siteCode, live.siteName, live.postName ?? live.eventName].filter(Boolean).join(' / ')
+      || live.locationName
     : null
 
   return liveLocation
@@ -369,9 +365,11 @@ function buildTimeMaintenanceOverviewRows(
   attendanceRows: TeamAttendanceSummaryRow[],
   payrollSummaries: PayrollEmployeeSummary[],
   pendingCorrections: PendingCorrection[],
+  liveRosterRows: LiveTimeRosterRow[],
 ): TimeMaintenanceOverviewRow[] {
   const payrollByEmployee = new Map(payrollSummaries.map((summary) => [summary.employeeId, summary]))
   const attendanceByEmployee = new Map(attendanceRows.map((row) => [row.employeeId, row]))
+  const liveByEmployee = new Map(liveRosterRows.map((row) => [row.employeeId, row]))
   const pendingByEmployee = new Map<string, number>()
 
   for (const correction of pendingCorrections) {
@@ -382,9 +380,11 @@ function buildTimeMaintenanceOverviewRows(
 
   for (const attendance of attendanceRows) {
     const payroll = payrollByEmployee.get(attendance.employeeId)
+    const live = liveByEmployee.get(attendance.employeeId)
     rows.set(attendance.employeeId, {
       breakMinutes: payroll?.breakMinutes ?? 0,
-      currentLocation: maintenanceSummaryLocation(attendance),
+      clockState: live?.status ?? 'off_clock',
+      currentLocation: maintenanceSummaryLocation(attendance, live),
       employeeId: attendance.employeeId,
       employeeName: attendance.employeeName,
       employmentType: attendance.employmentType,
@@ -392,8 +392,7 @@ function buildTimeMaintenanceOverviewRows(
       exceptionCount: payroll?.exceptionCount ?? 0,
       firstClockIn: attendance.firstClockIn,
       lastClockOut: attendance.lastClockOut,
-      latestEffectiveAt: attendance.latestEffectiveAt,
-      latestKind: attendance.latestKind,
+      liveStatusSince: live?.statusSince ?? null,
       overtimeMinutes: payroll?.overtimeMinutes ?? 0,
       paidMinutes: payroll?.paidMinutes ?? 0,
       pendingCorrectionCount: pendingByEmployee.get(attendance.employeeId) ?? 0,
@@ -408,9 +407,11 @@ function buildTimeMaintenanceOverviewRows(
   for (const payroll of payrollSummaries) {
     if (rows.has(payroll.employeeId)) continue
     const attendance = attendanceByEmployee.get(payroll.employeeId)
+    const live = liveByEmployee.get(payroll.employeeId)
     rows.set(payroll.employeeId, {
       breakMinutes: payroll.breakMinutes,
-      currentLocation: attendance ? maintenanceSummaryLocation(attendance) : 'Time clock activity',
+      clockState: live?.status ?? 'off_clock',
+      currentLocation: attendance ? maintenanceSummaryLocation(attendance, live) : live?.locationName ?? 'Time clock activity',
       employeeId: payroll.employeeId,
       employeeName: payroll.employeeName,
       employmentType: payroll.employmentType,
@@ -418,8 +419,7 @@ function buildTimeMaintenanceOverviewRows(
       exceptionCount: payroll.exceptionCount,
       firstClockIn: attendance?.firstClockIn ?? null,
       lastClockOut: attendance?.lastClockOut ?? null,
-      latestEffectiveAt: attendance?.latestEffectiveAt ?? null,
-      latestKind: attendance?.latestKind ?? null,
+      liveStatusSince: live?.statusSince ?? null,
       overtimeMinutes: payroll.overtimeMinutes,
       paidMinutes: payroll.paidMinutes,
       pendingCorrectionCount: pendingByEmployee.get(payroll.employeeId) ?? 0,
@@ -433,7 +433,7 @@ function buildTimeMaintenanceOverviewRows(
 
   return [...rows.values()].sort((left, right) => {
     const stateWeight: Record<TimekeepingState, number> = { working: 0, on_break: 1, off_clock: 2 }
-    const stateCompare = stateWeight[maintenanceClockState(left.latestKind)] - stateWeight[maintenanceClockState(right.latestKind)]
+    const stateCompare = stateWeight[left.clockState] - stateWeight[right.clockState]
     if (stateCompare !== 0) return stateCompare
     return left.employeeName.localeCompare(right.employeeName, undefined, { sensitivity: 'base' })
   })
@@ -503,6 +503,12 @@ export function TimeMaintenanceWorkbench({
     queryFn: () => getTeamAttendanceSummary({ fromDate, throughDate }),
     refetchInterval: 30_000,
   })
+  const liveRosterQuery = useQuery({
+    enabled: isSupabaseConfigured && showOverview,
+    queryKey: ['live-time-roster'],
+    queryFn: getLiveTimeRoster,
+    refetchInterval: 15_000,
+  })
   const overviewReviewQuery = useQuery({
     enabled: isSupabaseConfigured,
     queryKey: ['time-maintenance-review-summary', fromDate, throughDate],
@@ -551,7 +557,7 @@ export function TimeMaintenanceWorkbench({
       queryClient.invalidateQueries({ queryKey: ['timekeeping-review'] }),
       queryClient.invalidateQueries({ queryKey: ['my-time-review'] }),
       queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
-      queryClient.invalidateQueries({ queryKey: ['time-command-attendance-summary'] }),
+      queryClient.invalidateQueries({ queryKey: ['live-time-roster'] }),
       queryClient.invalidateQueries({ queryKey: ['time-team-review'] }),
       queryClient.invalidateQueries({ queryKey: ['time-team-summary'] }),
       queryClient.invalidateQueries({ queryKey: ['time-exceptions-review'] }),
@@ -654,14 +660,23 @@ export function TimeMaintenanceWorkbench({
     const workedReview = workedTimePayrollReview(overviewReviewQuery.data)
     return summarizePayrollRowsByEmployee(workedReview?.rows ?? [])
   }, [overviewReviewQuery.data])
+  const overviewOperationalSummaries = useMemo(() => {
+    const workedReview = workedTimePayrollReview(overviewReviewQuery.data)
+    return summarizeOperationalRowsByEmployee(workedReview?.rows ?? [], { fromDate, throughDate })
+  }, [fromDate, overviewReviewQuery.data, throughDate])
   const overviewRows = useMemo(() => buildTimeMaintenanceOverviewRows(
     overviewSummaryQuery.data?.rows ?? [],
-    overviewPayrollSummaries,
+    overviewOperationalSummaries,
     overviewReviewQuery.data?.pendingCorrections ?? [],
-  ), [overviewPayrollSummaries, overviewReviewQuery.data?.pendingCorrections, overviewSummaryQuery.data?.rows])
+    liveRosterQuery.data?.rows ?? [],
+  ), [liveRosterQuery.data?.rows, overviewOperationalSummaries, overviewReviewQuery.data?.pendingCorrections, overviewSummaryQuery.data?.rows])
   const selectedAttendanceSummary = useMemo(
     () => overviewSummaryQuery.data?.rows.find((row) => row.employeeId === employeeId) ?? null,
     [employeeId, overviewSummaryQuery.data?.rows],
+  )
+  const selectedOperationalSummary = useMemo(
+    () => overviewOperationalSummaries.find((row) => row.employeeId === employeeId) ?? null,
+    [employeeId, overviewOperationalSummaries],
   )
   const selectedPayrollSummary = useMemo(
     () => overviewPayrollSummaries.find((row) => row.employeeId === employeeId) ?? null,
@@ -672,9 +687,13 @@ export function TimeMaintenanceWorkbench({
     [employeeId, overviewReviewQuery.data?.pendingCorrections],
   )
   const selectedScheduledMinutes = selectedAttendanceSummary?.scheduledMinutes ?? 0
-  const selectedWorkedMinutes = selectedPayrollSummary?.paidMinutes
+  const selectedWorkedMinutes = selectedOperationalSummary?.paidMinutes
+  const selectedPayrollAllocatedMinutes = selectedPayrollSummary?.paidMinutes
   const selectedDifferenceMinutes = selectedWorkedMinutes === undefined ? null : selectedWorkedMinutes - selectedScheduledMinutes
-  const selectedNeedsAttention = (selectedPayrollSummary?.exceptionCount ?? 0) + selectedPendingCorrections
+  const selectedNeedsAttention = (selectedOperationalSummary?.exceptionCount ?? 0) + selectedPendingCorrections
+  const selectedHasDifferentPayrollAllocation = selectedWorkedMinutes !== undefined
+    && selectedPayrollAllocatedMinutes !== undefined
+    && selectedWorkedMinutes !== selectedPayrollAllocatedMinutes
   const visibleEvents = showOverview ? [] : events
   const overviewEventCount = overviewRows.reduce((total, row) => total + row.eventCount, 0)
   const overviewPendingCount = overviewRows.reduce((total, row) => total + row.pendingCorrectionCount, 0)
@@ -822,7 +841,7 @@ export function TimeMaintenanceWorkbench({
             ) : (
               <>
                 <article><span>Scheduled</span><strong>{payrollHours(selectedScheduledMinutes)} hr</strong><small>Published schedule in this range</small></article>
-                <article><span>Worked</span><strong>{selectedWorkedMinutes === undefined ? '—' : `${payrollHours(selectedWorkedMinutes)} hr`}</strong><small>{overviewReviewQuery.isPending ? 'Loading verified payroll total…' : overviewReviewQuery.isError ? 'Verified payroll total unavailable' : 'Paid time from completed punches'}</small></article>
+                <article><span>Worked</span><strong>{selectedWorkedMinutes === undefined ? '—' : `${payrollHours(selectedWorkedMinutes)} hr`}</strong><small>{overviewReviewQuery.isPending ? 'Loading verified worked total…' : overviewReviewQuery.isError ? 'Verified worked total unavailable' : 'Complete paid occurrences owned by a workday in this range'}</small></article>
                 <article className={selectedDifferenceMinutes !== null && selectedDifferenceMinutes !== 0 ? 'import-metric--attention' : ''}>
                   <span>Worked vs schedule</span>
                   <strong>{selectedDifferenceMinutes === null ? '—' : `${selectedDifferenceMinutes > 0 ? '+' : ''}${payrollHours(selectedDifferenceMinutes)} hr`}</strong>
@@ -846,7 +865,7 @@ export function TimeMaintenanceWorkbench({
           </section>
 
           {!showOverview && overviewReviewQuery.isError ? (
-            <DataStatePanel icon={ShieldAlert} title="Verified payroll total unavailable" tone="error">
+            <DataStatePanel icon={ShieldAlert} title="Verified worked total unavailable" tone="error">
               <p>{overviewReviewQuery.error.message}</p>
               <button className="secondary-button" onClick={() => void overviewReviewQuery.refetch()} type="button">Try again</button>
             </DataStatePanel>
@@ -856,16 +875,21 @@ export function TimeMaintenanceWorkbench({
             <details className="time-maintenance-breakdown">
               <summary>View hours breakdown</summary>
               <div className="time-maintenance-breakdown__grid">
-                <span><small>Regular</small><strong>{payrollHours(selectedPayrollSummary?.regularCategoryMinutes ?? 0)} hr</strong></span>
-                <span><small>EP</small><strong>{payrollHours(selectedPayrollSummary?.epMinutes ?? 0)} hr</strong></span>
-                <span><small>TRUEP</small><strong>{payrollHours(selectedPayrollSummary?.truepMinutes ?? 0)} hr</strong></span>
-                {(selectedPayrollSummary?.unclassifiedCategoryMinutes ?? 0) > 0 ? <span><small>Legacy unclassified</small><strong>{payrollHours(selectedPayrollSummary?.unclassifiedCategoryMinutes ?? 0)} hr</strong></span> : null}
-                <span><small>Non-overtime</small><strong>{payrollHours(selectedPayrollSummary?.regularMinutes ?? 0)} hr</strong></span>
-                <span><small>Overtime</small><strong>{payrollHours(selectedPayrollSummary?.overtimeMinutes ?? 0)} hr</strong></span>
-                <span><small>Unpaid breaks</small><strong>{payrollHours(selectedPayrollSummary?.breakMinutes ?? 0)} hr</strong></span>
-                <span><small>Completed work segments</small><strong>{selectedPayrollSummary?.workedShiftCount ?? 0}</strong></span>
+                <span><small>Regular</small><strong>{payrollHours(selectedOperationalSummary?.regularCategoryMinutes ?? 0)} hr</strong></span>
+                <span><small>EP</small><strong>{payrollHours(selectedOperationalSummary?.epMinutes ?? 0)} hr</strong></span>
+                <span><small>TRUEP</small><strong>{payrollHours(selectedOperationalSummary?.truepMinutes ?? 0)} hr</strong></span>
+                {(selectedOperationalSummary?.unclassifiedCategoryMinutes ?? 0) > 0 ? <span><small>Legacy unclassified</small><strong>{payrollHours(selectedOperationalSummary?.unclassifiedCategoryMinutes ?? 0)} hr</strong></span> : null}
+                <span><small>Non-overtime</small><strong>{payrollHours(selectedOperationalSummary?.regularMinutes ?? 0)} hr</strong></span>
+                <span><small>Overtime</small><strong>{payrollHours(selectedOperationalSummary?.overtimeMinutes ?? 0)} hr</strong></span>
+                <span><small>Unpaid breaks</small><strong>{payrollHours(selectedOperationalSummary?.breakMinutes ?? 0)} hr</strong></span>
+                <span><small>Completed work segments</small><strong>{selectedOperationalSummary?.workedShiftCount ?? 0}</strong></span>
               </div>
               <small>Regular, EP, and TRUEP partition total worked hours. Overtime is already included in one category.</small>
+              {selectedHasDifferentPayrollAllocation ? (
+                <p className="time-maintenance-breakdown__allocation-note">
+                  <strong>Payroll boundary allocation:</strong> {payrollHours(selectedPayrollAllocatedMinutes ?? 0)} hr falls inside these selected dates. Operational totals keep complete overnight shifts on the workday they started; payroll can carry minutes into the next range or include minutes from a prior workday at the Sunday midnight boundary.
+                </p>
+              ) : null}
             </details>
           ) : null}
 
@@ -1223,7 +1247,7 @@ export function TimeMaintenanceWorkbench({
           ) : null}
 
           {showOverview ? (
-            overviewSummaryQuery.isPending || overviewReviewQuery.isPending ? (
+            overviewSummaryQuery.isPending || overviewReviewQuery.isPending || liveRosterQuery.isPending ? (
               <DataStatePanel icon={FileClock} title="Loading employee summaries">
                 <p>Building the team overview for this pay-period range.</p>
               </DataStatePanel>
@@ -1232,8 +1256,13 @@ export function TimeMaintenanceWorkbench({
                 <p>{overviewSummaryQuery.error.message}</p>
               </DataStatePanel>
             ) : overviewReviewQuery.isError ? (
-              <DataStatePanel icon={ShieldAlert} title="Payroll totals unavailable" tone="error">
+              <DataStatePanel icon={ShieldAlert} title="Worked totals unavailable" tone="error">
                 <p>{overviewReviewQuery.error.message}</p>
+              </DataStatePanel>
+            ) : liveRosterQuery.isError ? (
+              <DataStatePanel icon={ShieldAlert} title="Current clock status unavailable" tone="error">
+                <p>{liveRosterQuery.error.message}</p>
+                <button className="secondary-button" onClick={() => void liveRosterQuery.refetch()} type="button">Try again</button>
               </DataStatePanel>
             ) : overviewRows.length === 0 ? (
               <DataStatePanel icon={UserRound} title="No team time activity in this range">
@@ -1262,7 +1291,7 @@ export function TimeMaintenanceWorkbench({
                     </thead>
                     <tbody>
                       {overviewRows.map((row) => {
-                        const clockState = maintenanceClockState(row.latestKind)
+                        const clockState = row.clockState
                         const reviewCount = row.pendingCorrectionCount + row.exceptionCount
                         return (
                           <tr key={row.employeeId}>
@@ -1272,9 +1301,11 @@ export function TimeMaintenanceWorkbench({
                             </td>
                             <td>
                               <span className={clockState === 'on_break' ? 'payroll-status payroll-status--hold' : 'payroll-status payroll-status--ready'}>
-                                {maintenanceClockLabel(row.latestKind)}
+                                {maintenanceClockLabel(clockState)}
                               </span>
-                              {row.latestEffectiveAt ? <small>{formatTime(row.latestEffectiveAt)}</small> : <small>No punch in range</small>}
+                              {row.liveStatusSince
+                                ? <small>Since {formatTime(row.liveStatusSince)}</small>
+                                : <small>Live roster verified</small>}
                             </td>
                             <td>
                               <strong>{payrollHours(row.paidMinutes)} hr paid</strong>

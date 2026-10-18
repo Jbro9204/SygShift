@@ -27,7 +27,7 @@ describe('attendance coordination repair guardrails', () => {
 
   it('does not substitute a false zero when a protected payroll total is unavailable', () => {
     expect(timePage).toContain("selectedWorkedMinutes === undefined ? '—'")
-    expect(timePage).toContain('Verified payroll total unavailable')
+    expect(timePage).toContain('Verified worked total unavailable')
     expect(timePage).toContain('overviewReviewQuery.isSuccess')
   })
 

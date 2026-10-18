@@ -1,5 +1,28 @@
 # SygShift Development Log
 
+## 10/18/2026 - Payroll Hours Reconciliation Repair
+
+- Separated operational workday totals from payroll allocation slices so employee detail, hours breakdown, and
+  scheduled variance retain complete overnight occurrences while payroll keeps the configured Sunday-midnight split.
+- Repaired Team Attendance range pairing around the occurrence assignment anchor and aligned its totals with
+  canonical occurrence rounding; next-day closing punches remain attached to the workday on which the shift began.
+- Moved Clocked In, On Break, and current location to the protected live roster in Team Attendance and the Time
+  Command Center; selected-range first/last punches are now labeled as historical workday evidence.
+- Alejandro's October 4-17 contract now reconciles to 1,445 operational minutes / 24.08 hours against 24.00
+  scheduled / +0.08 variance, while payroll intentionally retains 1,205 minutes in that range and 240 next period.
+- Preserved original and adjusted punches, correction history, identity records, schedules, locked payroll,
+  allocation policy, pay rates, and payroll submission controls. Incomplete pairs remain explicit exceptions.
+- Added forward migration `20261018225038` and additive overtime-parity follow-up `20261018231406`, rollback-only
+  SQL coverage, and application regressions for boundaries, partial-week overtime context, Sunday allocation,
+  DST, adjustments, breaks, incomplete pairs, rounding, live status, and export preservation. The combined SQL
+  suites passed against the linked schema inside one rollback-only transaction with no fixture or migration residue.
+- Applied both production migrations and reran both rollback-only SQL suites. Alejandro remains at 1,445 operational
+  minutes with a 1,205 + 240 payroll allocation, three complete segments, no incomplete punch, and a final clock-out.
+- Full validation passed 374 files / 1 skipped and 2,154 tests / 1 skipped, strict TypeScript, zero-warning lint,
+  production build, static-asset contract, and the 44/44 desktop/mobile Time Clock and Time Maintenance matrix.
+- Rollback checkpoint: `rollback/pre-payroll-hours-reconciliation-20261018` at `dac0819`. Implementation commit,
+  Worker deployment, and live asset verification remain pending release record updates in the full changelog.
+
 ## 10/11/2026 - Secure Access and Scheduled Work Containment
 
 - Traced the production `Checking Secure Access...` stall to Supabase/PostgREST pool exhaustion amplified by

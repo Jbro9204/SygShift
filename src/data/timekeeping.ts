@@ -567,6 +567,7 @@ const teamAttendanceSummaryRowSchema = z.object({
   overtimeMinutes: z.number().int().nonnegative().default(0),
   workedSegmentCount: z.number().int().nonnegative().default(0),
   pendingCorrectionCount: z.number().int().nonnegative().default(0),
+  incompletePunchCount: z.number().int().nonnegative().optional(),
 })
 
 const teamAttendanceSummarySchema = z.object({
@@ -620,6 +621,7 @@ const teamAttendanceTotalsSchema = z.object({
     overtimeMinutes: z.number().int().nonnegative(),
     workedSegmentCount: z.number().int().nonnegative(),
     pendingCorrectionCount: z.number().int().nonnegative(),
+    incompletePunchCount: z.number().int().nonnegative().optional(),
   })),
 })
 
@@ -957,6 +959,11 @@ export interface PayrollEmployeeSummary {
   exceptionCount: number
   payrollReady: boolean
   notes: string[]
+}
+
+export interface OperationalOccurrenceRange {
+  fromDate: string
+  throughDate: string
 }
 
 export interface PayrollCategoryMinuteAllocation {
@@ -2053,9 +2060,111 @@ export function payrollExportRows(rows: TimekeepingReviewRow[]): TimekeepingRevi
 }
 
 export function summarizePayrollRowsByEmployee(rows: TimekeepingReviewRow[]): PayrollEmployeeSummary[] {
-  const summaries = new Map<string, PayrollEmployeeSummary & { locationKeys: Set<string>; noteKeys: Set<string> }>()
+  return summarizeWorkedRowsByEmployee(payrollWorkedRows(rows), (row) => ({
+    breakMinutes: row.breakMinutes,
+    grossMinutes: row.grossMinutes,
+    overtimeMinutes: row.overtimeMinutes,
+    paidMinutes: row.paidMinutes,
+    regularMinutes: row.regularMinutes,
+    categoryMinutes: payrollCategoryAllocation(row),
+    workedShiftCount: 1,
+  }))
+}
+
+/**
+ * Summarizes complete canonical timecard occurrences by their operational
+ * workday. Payroll review rows can carry only the allocation slice that falls
+ * inside the selected payroll range; the occurrence fields retain the whole
+ * overnight timecard. Time Maintenance uses this view so a next-day clock-out
+ * is not cut off at midnight and an inbound slice from the prior workday is not
+ * counted as a new occurrence in the selected operational range.
+ */
+export function summarizeOperationalRowsByEmployee(
+  rows: TimekeepingReviewRow[],
+  range: OperationalOccurrenceRange,
+): PayrollEmployeeSummary[] {
+  const occurrenceRows: TimekeepingReviewRow[] = []
+  const keyedOccurrenceIndexes = new Map<string, number>()
 
   for (const row of payrollWorkedRows(rows)) {
+    if (row.operationalDate < range.fromDate || row.operationalDate > range.throughDate) continue
+
+    const occurrenceKey = row.payrollOccurrenceKey.trim()
+    if (!occurrenceKey) {
+      occurrenceRows.push(row)
+      continue
+    }
+
+    const existingIndex = keyedOccurrenceIndexes.get(occurrenceKey)
+    if (existingIndex === undefined) {
+      keyedOccurrenceIndexes.set(occurrenceKey, occurrenceRows.length)
+      occurrenceRows.push(row)
+      continue
+    }
+
+    // Prefer the representation that carries canonical occurrence totals if a
+    // legacy payload repeats one occurrence as multiple allocation rows.
+    if (
+      occurrenceRows[existingIndex]?.occurrencePaidMinutes === undefined
+      && row.occurrencePaidMinutes !== undefined
+    ) {
+      occurrenceRows[existingIndex] = row
+    }
+  }
+
+  return summarizeWorkedRowsByEmployee(occurrenceRows, (row) => {
+    const paidMinutes = row.occurrencePaidMinutes ?? row.paidMinutes
+    const hasOccurrenceCategoryTotals = row.occurrenceRegularCategoryMinutes !== undefined
+      && row.occurrenceEpMinutes !== undefined
+      && row.occurrenceTruepMinutes !== undefined
+      && row.occurrenceUnclassifiedCategoryMinutes !== undefined
+    const categoryMinutes = hasOccurrenceCategoryTotals
+      ? {
+          epMinutes: row.occurrenceEpMinutes ?? 0,
+          regularCategoryMinutes: row.occurrenceRegularCategoryMinutes ?? 0,
+          truepMinutes: row.occurrenceTruepMinutes ?? 0,
+          unclassifiedCategoryMinutes: row.occurrenceUnclassifiedCategoryMinutes ?? 0,
+        }
+      : payrollCategoryAllocation({
+          mixedPayrollCategories: row.mixedPayrollCategories,
+          paidMinutes,
+          payrollCategory: row.payrollCategory,
+          rowKind: row.rowKind,
+        })
+    const completedSegmentCount = row.workedSegments.length > 0
+      ? row.workedSegments.filter((segment) => Boolean(segment.endsAt)).length
+      : row.firstClockIn && row.lastClockOut ? 1 : 0
+
+    return {
+      breakMinutes: row.occurrenceBreakMinutes ?? row.breakMinutes,
+      grossMinutes: row.occurrenceGrossMinutes ?? row.grossMinutes,
+      overtimeMinutes: row.occurrenceOvertimeMinutes ?? row.overtimeMinutes,
+      paidMinutes,
+      regularMinutes: row.occurrenceRegularMinutes ?? row.regularMinutes,
+      categoryMinutes,
+      workedShiftCount: completedSegmentCount,
+    }
+  })
+}
+
+interface WorkedRowSummaryMinutes {
+  breakMinutes: number
+  categoryMinutes: PayrollCategoryMinuteAllocation
+  grossMinutes: number
+  overtimeMinutes: number
+  paidMinutes: number
+  regularMinutes: number
+  workedShiftCount: number
+}
+
+function summarizeWorkedRowsByEmployee(
+  rows: TimekeepingReviewRow[],
+  minutesForRow: (row: TimekeepingReviewRow) => WorkedRowSummaryMinutes,
+): PayrollEmployeeSummary[] {
+  const summaries = new Map<string, PayrollEmployeeSummary & { locationKeys: Set<string>; noteKeys: Set<string> }>()
+
+  for (const row of rows) {
+    const rowMinutes = minutesForRow(row)
     const existing = summaries.get(row.employeeId)
     const summary = existing ?? {
       breakMinutes: 0,
@@ -2086,19 +2195,18 @@ export function summarizePayrollRowsByEmployee(rows: TimekeepingReviewRow[]): Pa
       workedShiftCount: 0,
     }
 
-    summary.breakMinutes += row.breakMinutes
-    summary.grossMinutes += row.grossMinutes
-    summary.paidMinutes += row.paidMinutes
-    summary.regularMinutes += row.regularMinutes
-    summary.overtimeMinutes += row.overtimeMinutes
-    const categoryMinutes = payrollCategoryAllocation(row)
-    summary.regularCategoryMinutes += categoryMinutes.regularCategoryMinutes
-    summary.epMinutes += categoryMinutes.epMinutes
-    summary.truepMinutes += categoryMinutes.truepMinutes
-    summary.unclassifiedCategoryMinutes += categoryMinutes.unclassifiedCategoryMinutes
-    if (row.workType === 'training') summary.trainingMinutes += row.paidMinutes
-    else summary.postMinutes += row.paidMinutes
-    summary.workedShiftCount += 1
+    summary.breakMinutes += rowMinutes.breakMinutes
+    summary.grossMinutes += rowMinutes.grossMinutes
+    summary.paidMinutes += rowMinutes.paidMinutes
+    summary.regularMinutes += rowMinutes.regularMinutes
+    summary.overtimeMinutes += rowMinutes.overtimeMinutes
+    summary.regularCategoryMinutes += rowMinutes.categoryMinutes.regularCategoryMinutes
+    summary.epMinutes += rowMinutes.categoryMinutes.epMinutes
+    summary.truepMinutes += rowMinutes.categoryMinutes.truepMinutes
+    summary.unclassifiedCategoryMinutes += rowMinutes.categoryMinutes.unclassifiedCategoryMinutes
+    if (row.workType === 'training') summary.trainingMinutes += rowMinutes.paidMinutes
+    else summary.postMinutes += rowMinutes.paidMinutes
+    summary.workedShiftCount += rowMinutes.workedShiftCount
     summary.firstDate = row.operationalDate < summary.firstDate ? row.operationalDate : summary.firstDate
     summary.lastDate = row.operationalDate > summary.lastDate ? row.operationalDate : summary.lastDate
     summary.locationKeys.add(payrollLocationKey(row))

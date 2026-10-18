@@ -1,8 +1,8 @@
 import type {
+  LiveTimeRoster,
+  LiveTimeRosterRow,
   PayrollExportBatch,
   PayrollRules,
-  TeamAttendanceSummary,
-  TeamAttendanceSummaryRow,
   TimekeepingDashboard,
   TimekeepingReview,
   TimekeepingReviewRow,
@@ -77,9 +77,9 @@ export function commandRoleMode(session: SessionContext | null | undefined, dash
 }
 
 export function buildTimeCommandCenterModel(input: {
-  attendanceSummary?: TeamAttendanceSummary
   dashboard: TimekeepingDashboard
   exportHistory?: PayrollExportBatch[]
+  liveRoster?: LiveTimeRoster
   payrollRules?: PayrollRules
   payrollPeriod?: TimePeriod
   operationsWorkspace?: TimeOperationsWorkspace
@@ -95,7 +95,7 @@ export function buildTimeCommandCenterModel(input: {
   const todayRows = selfRows.filter((row) => row.operationalDate === input.dashboard.operationalDate)
 
   return {
-    clockedIn: summarizeClockedIn(input.attendanceSummary),
+    clockedIn: summarizeClockedIn(input.liveRoster),
     exceptions: summarizeExceptions(workedReview),
     missingPunches: summarizeMissingPunches(workedReview, input.operationsWorkspace),
     overtimeRisk: summarizeOvertimeRisk(workedReview),
@@ -197,23 +197,19 @@ function summarizeOvertimeRisk(review?: TimekeepingReview): TimeCommandCenterMod
   }
 }
 
-function summarizeClockedIn(attendanceSummary?: TeamAttendanceSummary): TimeCommandCenterModel['clockedIn'] {
-  if (!attendanceSummary) return { atScheduledLocation: 0, atUnexpectedLocation: 0, count: 0, longShiftCount: 0 }
-  const activeRows = attendanceSummary.rows.filter((row) => row.latestKind && ['clock_in', 'break_start', 'break_end'].includes(row.latestKind))
-  const now = new Date(attendanceSummary.serverTimestamp).getTime()
+function summarizeClockedIn(liveRoster?: LiveTimeRoster): TimeCommandCenterModel['clockedIn'] {
+  if (!liveRoster) return { atScheduledLocation: 0, atUnexpectedLocation: 0, count: 0, longShiftCount: 0 }
+  const activeRows = liveRoster.rows
   return {
     atScheduledLocation: activeRows.filter(isAtScheduledLocation).length,
     atUnexpectedLocation: activeRows.filter((row) => !isAtScheduledLocation(row)).length,
-    count: activeRows.length,
-    longShiftCount: activeRows.filter((row) => {
-      if (!row.latestEffectiveAt) return false
-      return now - new Date(row.latestEffectiveAt).getTime() >= ACTIVE_CLOCK_IN_REVIEW_LIMIT_HOURS * 60 * 60 * 1000
-    }).length,
+    count: liveRoster.totalCount,
+    longShiftCount: activeRows.filter((row) => row.elapsedMinutes >= ACTIVE_CLOCK_IN_REVIEW_LIMIT_HOURS * 60).length,
   }
 }
 
-function isAtScheduledLocation(row: TeamAttendanceSummaryRow): boolean {
-  return Boolean(row.latestSiteCode || row.latestSiteName || row.latestPostName || row.latestEventName)
+function isAtScheduledLocation(row: LiveTimeRosterRow): boolean {
+  return Boolean(row.siteCode || row.siteName || row.postName || row.eventName)
 }
 
 function countRowsWithException(rows: TimekeepingReviewRow[], exception: TimekeepingReviewRow['exceptionCodes'][number]): number {

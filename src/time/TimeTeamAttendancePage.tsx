@@ -17,6 +17,7 @@ import { ModalDialog } from '../components/ModalDialog'
 import { canAccessRoute } from '../app/accessPolicy'
 import { getSessionContext } from '../data/auth'
 import {
+  getLiveTimeRoster,
   getPayrollRules,
   getTeamAttendanceSummary,
   payrollHours,
@@ -27,6 +28,7 @@ import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../p
 import { currentPayrollWeek, formatUsDateKey, type TimePeriod } from './timeRules'
 import { canManageTime, canViewTeamTime } from './timePermissions'
 import { timeCorrectionReviewPath } from './timeCorrectionWorkflow'
+import { teamAttendanceReviewState } from './teamAttendanceReviewState'
 import { buildTeamRows, type TeamClockState } from './teamAttendanceRows'
 import {
   TimeAlertCard,
@@ -79,6 +81,20 @@ function statusFilterFromSearch(value: string | null): TeamAttendanceFilter {
 
 function periodLabel(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>): string {
   return `${formatUsDateKey(period.fromDate)} - ${formatUsDateKey(period.throughDate)}`
+}
+
+function incompletePunchReviewPath(input: {
+  employeeId: string
+  fromDate: string
+  throughDate: string
+}): string {
+  const parameters = new URLSearchParams({
+    employee: input.employeeId,
+    from: input.fromDate,
+    show: 'missing_punches',
+    through: input.throughDate,
+  })
+  return `/time/review?${parameters.toString()}`
 }
 
 export function TimeTeamAttendancePage() {
@@ -138,8 +154,18 @@ export function TimeTeamAttendancePage() {
     queryKey: ['time-team-summary', fromDate, throughDate],
     refetchInterval: 30_000,
   })
+  const liveRosterQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && teamAllowed,
+    queryFn: getLiveTimeRoster,
+    queryKey: ['live-time-roster'],
+    refetchInterval: 15_000,
+  })
   const teamRows = useMemo(
-    () => buildTeamRows(summaryQuery.data?.rows ?? []),
+    () => buildTeamRows(summaryQuery.data?.rows ?? [], liveRosterQuery.data?.rows ?? []),
+    [liveRosterQuery.data?.rows, summaryQuery.data?.rows],
+  )
+  const incompletePunchCountByEmployee = useMemo(
+    () => new Map((summaryQuery.data?.rows ?? []).map((row) => [row.employeeId, row.incompletePunchCount])),
     [summaryQuery.data?.rows],
   )
   const selectedEmployee = useMemo(
@@ -150,8 +176,13 @@ export function TimeTeamAttendancePage() {
     const normalizedQuery = searchQuery.trim().toLocaleLowerCase()
     return teamRows
       .filter((row) => {
+        const reviewState = teamAttendanceReviewState({
+          hasSelectedRangeSummary: row.hasSelectedRangeSummary,
+          incompletePunchCount: incompletePunchCountByEmployee.get(row.employeeId),
+          pendingCorrectionCount: row.pendingCorrectionCount,
+        })
         const statusMatches = statusFilter === 'all'
-          || (statusFilter === 'exceptions' ? row.pendingCorrectionCount > 0 : row.state === statusFilter)
+          || (statusFilter === 'exceptions' ? reviewState.requiresAttention : row.state === statusFilter)
         if (!statusMatches) return false
         if (!normalizedQuery) return true
         return [row.employeeName, row.username, row.role, row.employmentType, row.currentLocation, row.scheduledSummary]
@@ -163,7 +194,7 @@ export function TimeTeamAttendancePage() {
         const stateWeight = { working: 0, on_break: 1, off_clock: 2 }
         return stateWeight[left.state] - stateWeight[right.state] || left.employeeName.localeCompare(right.employeeName)
       })
-  }, [searchQuery, sortOrder, statusFilter, teamRows])
+  }, [incompletePunchCountByEmployee, searchQuery, sortOrder, statusFilter, teamRows])
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize))
   const safePage = Math.min(page, pageCount)
   const visibleRows = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize)
@@ -173,8 +204,8 @@ export function TimeTeamAttendancePage() {
     setExpandedEmployeeId(null)
   }, [fromDate, pageSize, searchQuery, sortOrder, statusFilter, throughDate])
 
-  const activeCount = teamRows.filter((row) => row.state === 'working').length
-  const breakCount = teamRows.filter((row) => row.state === 'on_break').length
+  const activeCount = liveRosterQuery.data?.workingCount
+  const breakCount = liveRosterQuery.data?.breakCount
   const pendingReviewCount = teamRows.reduce((total, row) => total + row.pendingCorrectionCount, 0)
   const paidMinutes = teamRows.reduce((total, row) => total + row.paidMinutes, 0)
 
@@ -240,7 +271,7 @@ export function TimeTeamAttendancePage() {
       <TimePageHeader
         actions={reviewQueueAllowed ? <Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Review Queue</span></Link> : undefined}
         eyebrow="Team Attendance"
-        summary="Live team status, worked totals, and direct correction access for supervisors, schedulers, and admins."
+        summary="Current live status, selected-workday totals, and direct correction access for supervisors, schedulers, and admins."
         title="Team Attendance"
       />
 
@@ -293,8 +324,8 @@ export function TimeTeamAttendancePage() {
       </section>
 
       <section className="time-command-grid" aria-label="Team attendance summary">
-        <TimeMetricCard ariaLabel="Clocked In: open the current live roster" detail="Employees with a live working punch." icon={Timer} label="Clocked In" to="/time/on-duty" tone={activeCount > 0 ? 'good' : 'neutral'} value={activeCount} />
-        <TimeMetricCard detail="Employees currently marked on break." icon={Clock3} label="On Break" tone={breakCount > 0 ? 'warning' : 'neutral'} value={breakCount} />
+        <TimeMetricCard ariaLabel="Clocked In: open the current live roster" detail="Employees with a current live working punch." icon={Timer} label="Clocked In" to="/time/on-duty" tone={(activeCount ?? 0) > 0 ? 'good' : 'neutral'} value={activeCount ?? '—'} />
+        <TimeMetricCard detail="Employees currently marked on break in the live roster." icon={Clock3} label="On Break" tone={(breakCount ?? 0) > 0 ? 'warning' : 'neutral'} value={breakCount ?? '—'} />
         <TimeMetricCard detail="Worked time in the selected period." icon={FileClock} label="Paid Hours" value={`${payrollHours(paidMinutes)} hr`} />
         <TimeMetricCard detail="Employee correction requests awaiting review." icon={AlertTriangle} label="Pending Reviews" tone={pendingReviewCount > 0 ? 'danger' : 'good'} value={pendingReviewCount} />
       </section>
@@ -305,12 +336,14 @@ export function TimeTeamAttendancePage() {
           summary="Open an employee to review and fix their punch history below."
           title="Employees"
         />
-        {summaryQuery.isPending ? (
+        {summaryQuery.isPending || liveRosterQuery.isPending ? (
           <DataStatePanel icon={Timer} title="Loading team attendance">
-            <p>Calculating live status, worked totals, and pending reviews.</p>
+            <p>Loading current live status, selected-workday totals, and pending reviews.</p>
           </DataStatePanel>
         ) : summaryQuery.isError ? (
           <DataStatePanel icon={ShieldAlert} title="Team attendance summary unavailable" tone="error"><p>{summaryQuery.error.message}</p></DataStatePanel>
+        ) : liveRosterQuery.isError ? (
+          <DataStatePanel icon={ShieldAlert} title="Current clock status unavailable" tone="error"><p>{liveRosterQuery.error.message}</p><TimeButton onClick={() => void liveRosterQuery.refetch()} variant="secondary">Try again</TimeButton></DataStatePanel>
         ) : filteredRows.length === 0 ? (
           <DataStatePanel icon={CheckCircle2} title="No employees match this view">
             <p>Change the filter or date range to review team attendance.</p>
@@ -319,6 +352,12 @@ export function TimeTeamAttendancePage() {
           <div className="time-team-list">
             {visibleRows.map((row) => {
               const expanded = expandedEmployeeId === row.employeeId
+              const incompletePunchCount = incompletePunchCountByEmployee.get(row.employeeId)
+              const reviewState = teamAttendanceReviewState({
+                hasSelectedRangeSummary: row.hasSelectedRangeSummary,
+                incompletePunchCount,
+                pendingCorrectionCount: row.pendingCorrectionCount,
+              })
               return (
                 <article className={expanded ? 'time-team-person time-team-person--expanded' : 'time-team-person'} key={row.employeeId}>
                   <button
@@ -333,20 +372,25 @@ export function TimeTeamAttendancePage() {
                     </span>
                     <TimeStatusBadge tone={statusTone(row.state)}>{statusLabel(row.state)}</TimeStatusBadge>
                     <span className="time-team-person__location"><MapPin aria-hidden="true" size={16} /><span>{row.currentLocation}</span></span>
-                    <span className="time-team-person__hours"><strong>{payrollHours(row.paidMinutes)} hr</strong><small>{row.workedSegmentCount} worked segment{row.workedSegmentCount === 1 ? '' : 's'}</small></span>
-                    <TimeStatusBadge tone={row.pendingCorrectionCount > 0 ? 'warning' : 'good'}>{row.pendingCorrectionCount > 0 ? `${row.pendingCorrectionCount} review` : 'Clean'}</TimeStatusBadge>
+                    <span className="time-team-person__hours">
+                      <strong>{row.hasSelectedRangeSummary ? `${payrollHours(row.paidMinutes)} hr` : 'No work in range'}</strong>
+                      <small>{row.hasSelectedRangeSummary ? `${row.workedSegmentCount} worked segment${row.workedSegmentCount === 1 ? '' : 's'}` : 'Current live status only'}</small>
+                    </span>
+                    <TimeStatusBadge tone={reviewState.tone}>{reviewState.label}</TimeStatusBadge>
                     <ChevronDown aria-hidden="true" className="time-team-person__chevron" size={20} />
                   </button>
                   {expanded ? (
                     <div className="time-team-person__details">
                       <dl>
                         <div><dt>Scheduled</dt><dd>{row.scheduledSummary}</dd></div>
-                        <div><dt>First punch</dt><dd>{row.firstClockIn ? formatOperationalDateTime(row.firstClockIn, { includeTimeZoneName: true }) : 'No punch in range'}</dd></div>
-                        <div><dt>Last punch</dt><dd>{row.lastClockOut ? formatOperationalDateTime(row.lastClockOut, { includeTimeZoneName: true }) : row.firstClockIn ? 'Clock-out not recorded' : 'No punch in range'}</dd></div>
+                        <div><dt>First clock-in for selected workdays</dt><dd>{row.firstClockIn ? formatOperationalDateTime(row.firstClockIn, { includeTimeZoneName: true }) : 'No punch in range'}</dd></div>
+                        <div><dt>Last completed clock-out for selected workdays</dt><dd>{row.lastClockOut ? formatOperationalDateTime(row.lastClockOut, { includeTimeZoneName: true }) : row.firstClockIn ? 'Clock-out not recorded' : 'No punch in range'}</dd></div>
                         <div><dt>Break / OT</dt><dd>{payrollHours(row.breakMinutes)} hr break · {payrollHours(row.overtimeMinutes)} hr OT</dd></div>
+                        <div><dt>Selected-range review</dt><dd>{reviewState.label}</dd></div>
                       </dl>
                       <div className="time-team-person__actions">
                         {manageAllowed ? <TimeButton onClick={() => focusEmployee(row.employeeId)} variant="primary">Open Employee Time</TimeButton> : <span>View-only access</span>}
+                        {(incompletePunchCount ?? 0) > 0 && reviewQueueAllowed ? <Link className="time-button time-button--secondary" to={incompletePunchReviewPath({ employeeId: row.employeeId, fromDate, throughDate })}><AlertTriangle aria-hidden="true" size={18} /><span>Review Incomplete Punch</span></Link> : null}
                         {row.pendingCorrectionCount > 0 && reviewQueueAllowed ? <Link className="time-button time-button--secondary" to={timeCorrectionReviewPath({ employeeId: row.employeeId, fromDate, throughDate })}><AlertTriangle aria-hidden="true" size={18} /><span>Review Requests</span></Link> : null}
                       </div>
                     </div>

@@ -26008,6 +26008,21 @@ a.home-metric-card:focus-visible {
   font-size: 18px;
 }
 
+.time-maintenance-breakdown__allocation-note {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  color: light-dark(#564a37, #ded5c5);
+  background: light-dark(#fff8e9, #242119);
+  border: 1px solid light-dark(#ead5a8, #6a542d);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.time-maintenance-breakdown__allocation-note strong {
+  color: light-dark(#735016, #edc974);
+}
+
 .my-time-history {
   margin: 16px 0;
   overflow: hidden;

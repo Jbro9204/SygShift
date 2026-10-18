@@ -20,7 +20,7 @@ import { canAccessRoute } from '../app/accessPolicy'
 import { getSessionContext } from '../data/auth'
 import { getTimekeepingOperationsWorkspace } from '../data/timeOperations'
 import {
-  getTeamAttendanceSummary,
+  getLiveTimeRoster,
   getOwnTimekeepingReview,
   getPayrollExportHistory,
   getPayrollPeriodContext,
@@ -84,11 +84,11 @@ export function TimeCommandCenterPage() {
       })
     },
   })
-  const attendanceSummaryQuery = useQuery({
-    enabled: isSupabaseConfigured && teamAllowed && periodQuery.isSuccess,
-    queryKey: ['time-command-attendance-summary', fromDate, throughDate],
-    queryFn: () => getTeamAttendanceSummary({ fromDate, throughDate }),
-    refetchInterval: 30_000,
+  const liveRosterQuery = useQuery({
+    enabled: isSupabaseConfigured && teamAllowed,
+    queryKey: ['live-time-roster'],
+    queryFn: getLiveTimeRoster,
+    refetchInterval: 15_000,
   })
   const operationsWorkspaceQuery = useQuery({
     enabled: isSupabaseConfigured && teamAllowed && periodQuery.isSuccess,
@@ -159,16 +159,16 @@ export function TimeCommandCenterPage() {
   }
 
   const model = buildTimeCommandCenterModel({
-    attendanceSummary: attendanceSummaryQuery.data,
     dashboard,
     exportHistory: exportHistoryQuery.data,
+    liveRoster: liveRosterQuery.data,
     operationsWorkspace: operationsWorkspaceQuery.data,
     payrollPeriod: activePeriod,
     review: reviewQuery.data,
     session: sessionQuery.data,
   })
-  const loadingMetrics = reviewQuery.isPending || (teamAllowed && (attendanceSummaryQuery.isPending || operationsWorkspaceQuery.isPending))
-  const partialError = reviewQuery.isError || attendanceSummaryQuery.isError || operationsWorkspaceQuery.isError || periodQuery.isError || exportHistoryQuery.isError
+  const loadingMetrics = reviewQuery.isPending || (teamAllowed && (liveRosterQuery.isPending || operationsWorkspaceQuery.isPending))
+  const partialError = reviewQuery.isError || liveRosterQuery.isError || operationsWorkspaceQuery.isError || periodQuery.isError || exportHistoryQuery.isError
   const employeeView = model.roleMode === 'employee' || model.roleMode === 'salary'
 
   return (

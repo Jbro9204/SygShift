@@ -1,4 +1,4 @@
-import type { TeamAttendanceSummaryRow } from '../data/timekeeping'
+import type { LiveTimeRosterRow, TeamAttendanceSummaryRow } from '../data/timekeeping'
 
 export type TeamClockState = 'off_clock' | 'working' | 'on_break'
 
@@ -22,21 +22,16 @@ export interface TeamAttendanceRow {
   scheduledSummary: string
   eventCount: number
   pendingCorrectionCount: number
+  hasSelectedRangeSummary: boolean
 }
 
-function latestEventState(kind: TeamAttendanceSummaryRow['latestKind']): TeamClockState {
-  if (!kind || kind === 'clock_out') return 'off_clock'
-  if (kind === 'break_start') return 'on_break'
-  return 'working'
+function liveRosterState(row: LiveTimeRosterRow | undefined): TeamClockState {
+  if (!row) return 'off_clock'
+  return row.status
 }
 
-function summaryLocation(row: TeamAttendanceSummaryRow): string {
-  const liveLocation = row.latestKind && row.latestKind !== 'clock_out'
-    ? [row.latestSiteCode, row.latestSiteName, row.latestPostName ?? row.latestEventName].filter(Boolean).join(' / ')
-      || row.latestLocationName
-    : null
-
-  return liveLocation
+function summaryLocation(row: TeamAttendanceSummaryRow, liveRow: LiveTimeRosterRow | undefined): string {
+  return liveRow?.locationName
     || [row.scheduledSiteCode, row.scheduledSiteName, row.scheduledPostName ?? row.scheduledEventName].filter(Boolean).join(' / ')
     || row.scheduledLocationName
     || 'No location yet'
@@ -50,28 +45,64 @@ function scheduledSummary(row: TeamAttendanceSummaryRow): string {
   return `${row.scheduledShiftCount} scheduled · ${location}`
 }
 
-export function buildTeamRows(summaries: TeamAttendanceSummaryRow[]): TeamAttendanceRow[] {
-  return summaries.map((attendance) => ({
-    breakMinutes: attendance.breakMinutes,
-    currentLocation: summaryLocation(attendance),
-    employeeId: attendance.employeeId,
-    employeeName: attendance.employeeName,
-    employmentType: attendance.employmentType,
-    eventCount: attendance.eventCount,
-    firstClockIn: attendance.firstClockIn,
-    lastClockOut: attendance.lastClockOut,
-    latestEffectiveAt: attendance.latestEffectiveAt,
-    latestKind: attendance.latestKind,
-    overtimeMinutes: attendance.overtimeMinutes,
-    paidMinutes: attendance.paidMinutes,
-    pendingCorrectionCount: attendance.pendingCorrectionCount,
-    role: attendance.role,
-    scheduledShiftCount: attendance.scheduledShiftCount,
-    scheduledSummary: scheduledSummary(attendance),
-    state: latestEventState(attendance.latestKind),
-    username: attendance.username,
-    workedSegmentCount: attendance.workedSegmentCount,
-  })).filter((row) =>
+export function buildTeamRows(
+  summaries: TeamAttendanceSummaryRow[],
+  liveRoster: LiveTimeRosterRow[] = [],
+): TeamAttendanceRow[] {
+  const liveByEmployee = new Map(liveRoster.map((row) => [row.employeeId, row]))
+  const summaryEmployeeIds = new Set(summaries.map((row) => row.employeeId))
+
+  const summaryRows: TeamAttendanceRow[] = summaries.map((attendance) => {
+    const liveRow = liveByEmployee.get(attendance.employeeId)
+    return {
+      breakMinutes: attendance.breakMinutes,
+      currentLocation: summaryLocation(attendance, liveRow),
+      employeeId: attendance.employeeId,
+      employeeName: attendance.employeeName,
+      employmentType: attendance.employmentType,
+      eventCount: attendance.eventCount,
+      firstClockIn: attendance.firstClockIn,
+      lastClockOut: attendance.lastClockOut,
+      latestEffectiveAt: attendance.latestEffectiveAt,
+      latestKind: attendance.latestKind,
+      overtimeMinutes: attendance.overtimeMinutes,
+      paidMinutes: attendance.paidMinutes,
+      pendingCorrectionCount: attendance.pendingCorrectionCount,
+      role: attendance.role,
+      scheduledShiftCount: attendance.scheduledShiftCount,
+      scheduledSummary: scheduledSummary(attendance),
+      state: liveRosterState(liveRow),
+      username: attendance.username,
+      workedSegmentCount: attendance.workedSegmentCount,
+      hasSelectedRangeSummary: true,
+    }
+  })
+  const liveOnlyRows: TeamAttendanceRow[] = [...liveByEmployee.values()]
+    .filter((liveRow) => !summaryEmployeeIds.has(liveRow.employeeId))
+    .map((liveRow) => ({
+      breakMinutes: 0,
+      currentLocation: liveRow.locationName,
+      employeeId: liveRow.employeeId,
+      employeeName: liveRow.employeeName,
+      employmentType: liveRow.employmentType,
+      eventCount: 0,
+      firstClockIn: null,
+      hasSelectedRangeSummary: false,
+      lastClockOut: null,
+      latestEffectiveAt: null,
+      latestKind: null,
+      overtimeMinutes: 0,
+      paidMinutes: 0,
+      pendingCorrectionCount: 0,
+      role: liveRow.role,
+      scheduledShiftCount: 0,
+      scheduledSummary: 'No scheduled or worked time in selected range',
+      state: liveRosterState(liveRow),
+      username: liveRow.username,
+      workedSegmentCount: 0,
+    }))
+
+  return [...summaryRows, ...liveOnlyRows].filter((row) =>
     row.eventCount > 0
     || row.workedSegmentCount > 0
     || row.paidMinutes > 0
