@@ -1,7 +1,7 @@
 # Payroll Hours Reconciliation Repair
 
 Date: October 18, 2026
-Status: Database repair verified in production; application deployment fields remain pending below
+Status: Released and verified in production
 
 ## Outcome
 
@@ -99,15 +99,22 @@ The approved October 15 clock-in adjustment remains effective for calculation. T
 - Full `pnpm check`: **374 files passed / 1 skipped; 2,154 tests passed / 1 skipped**, plus strict TypeScript,
   zero-warning lint, production build, and static-asset contract.
 - Mandatory desktop/mobile Time Clock workflow plus Time Maintenance layout: **44/44 passed**.
-- Final production build, health/readiness, authenticated workflow, and exact-asset verification: **PENDING RELEASE RECORD UPDATE**
+- Final production build and static-asset contract passed immediately before deployment.
+- Both production origins returned `200` for root, login, health, and readiness. The unauthenticated same-origin
+  shared-session probe returned the expected `204`.
+- Production database verification used an active AAL2 Time viewer and returned 1,445 operational minutes,
+  1,440 scheduled minutes, three completed segments, zero incomplete punches, final state `clock_out`, and the
+  intentional `1,205 + 240 = 1,445` payroll split.
+- Production `index.html` and all eight referenced entry assets matched the fresh local build byte-for-byte.
 
 ## Deployment and rollback record
 
 - Pre-release rollback tag: `rollback/pre-payroll-hours-reconciliation-20261018`
 - Rollback tag commit: `dac0819`
-- Implementation commit: `PENDING_COMMIT`
-- Cloudflare Worker version: `PENDING_WORKER_VERSION`
-- Cloudflare deployment ID: `PENDING_DEPLOYMENT_ID`
-- Production entry assets and SHA-256 parity: `PENDING_LIVE_ASSET_VERIFICATION`
+- Implementation commit: `491a72fe041de096732e7ce401d4a4efd740e13b`
+- Cloudflare Worker version: `f2132e95-c5fb-4d02-be01-68021b672af4`
+- Cloudflare deployment ID: `75639a73-dff3-4443-87de-fc1528146804`
+- Production entry assets and SHA-256 parity: **9/9 exact matches**; `index.html`
+  SHA-256 `5a488a89ee5e4bd643b5b6144c29295877b95d5f70808a85067307ae8590f037`
 
 If rollback is required, restore the tagged application source. The forward database repair changes only derived Team Attendance readers and preserves canonical source records, so rollback must not delete or rewrite employee, schedule, punch, correction, or payroll history.

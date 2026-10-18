@@ -20,8 +20,11 @@
   minutes with a 1,205 + 240 payroll allocation, three complete segments, no incomplete punch, and a final clock-out.
 - Full validation passed 374 files / 1 skipped and 2,154 tests / 1 skipped, strict TypeScript, zero-warning lint,
   production build, static-asset contract, and the 44/44 desktop/mobile Time Clock and Time Maintenance matrix.
-- Rollback checkpoint: `rollback/pre-payroll-hours-reconciliation-20261018` at `dac0819`. Implementation commit,
-  Worker deployment, and live asset verification remain pending release record updates in the full changelog.
+- Released source `491a72f` as Cloudflare Worker `f2132e95-c5fb-4d02-be01-68021b672af4` through deployment
+  `75639a73-dff3-4443-87de-fc1528146804`; both production origins passed root, login, health, and readiness checks,
+  the same-origin shared-session probe returned the expected `204`, and all nine entry assets matched exactly.
+- Rollback checkpoint: `rollback/pre-payroll-hours-reconciliation-20261018` at `dac0819`. See the full changelog for
+  root cause, reconciliation evidence, migration hashes, test coverage, and rollback details.
 
 ## 10/11/2026 - Secure Access and Scheduled Work Containment
 
