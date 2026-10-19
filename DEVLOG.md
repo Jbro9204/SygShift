@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 10/19/2026 - Secure Access Incident Recovery
+
+- Restored production after a project-wide Supabase data-plane outage left keyed Auth, REST, Storage, session-context, and required-action checks unavailable while Cloudflare health and readiness remained healthy.
+- Contained recovery by temporarily pausing the minute cron, restarted the Supabase project, verified the authenticated workspace and **Messaging connected**, then restored the intended `* * * * *` trigger.
+- Confirmed from Cloudflare telemetry that all nine outage-window scheduled failures stopped at the first `service_run_timekeeping_automation` RPC with an eight-second `504` timeout; downstream lanes did not run, and the final pre-outage cycle showed no backlog.
+- Preserved the current source/database release and every employee, schedule, timekeeping, payroll, identity, message, notification, and audit record. No migration, rollback, or source-data correction was performed.
+- Post-restart database health showed 26/60 connections, zero blocked or idle-in-transaction sessions, and normal session/checkpoint/SygSphere query timing. Root, health, readiness, authenticated secure access, and six consecutive restored scheduled cycles passed with no containment event.
+- Complete incident evidence and the remaining provider-log limitation are recorded in `docs/changelogs/CHANGELOG_2026-10-19_SECURE_ACCESS_INCIDENT_RECOVERY.md`.
+
 ## 10/19/2026 - SygSphere Message Acknowledgment
 
 - Added explicit, idempotent acknowledgment for group/channel instructions without adding events to the message stream or treating a view/read receipt as acknowledgment.
