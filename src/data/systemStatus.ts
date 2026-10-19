@@ -4,13 +4,24 @@ import type { MaintenanceAccessMode } from './maintenance'
 const systemReadinessSchema = z.object({
   checks: z.object({
     assetsBinding: z.boolean(),
+    scheduledRuntimeCoordinator: z.boolean(),
+    scheduledRuntimeFresh: z.boolean(),
+    scheduledRuntimeSourceCommit: z.boolean(),
     supabasePublishableKey: z.boolean(),
     supabaseServiceRoleKey: z.boolean(),
     supabaseUrl: z.boolean(),
   }),
   ready: z.boolean(),
   requestId: z.string(),
-  status: z.enum(['ready', 'misconfigured']),
+  scheduledRuntime: z.object({
+    consecutiveFailures: z.number().int().nonnegative(),
+    lastFullSuccessAt: z.string().datetime().nullable(),
+    lastFullSuccessSourceCommit: z.string().regex(/^[0-9a-f]{40}$/).nullable(),
+    lastSuccessAt: z.string().datetime().nullable(),
+    mode: z.enum(['closed', 'open', 'recovering']),
+    nextProbeAt: z.string().datetime().nullable(),
+  }).nullable(),
+  status: z.enum(['ready', 'misconfigured', 'degraded']),
 })
 
 export type SystemReadiness = z.infer<typeof systemReadinessSchema>
@@ -78,6 +89,44 @@ export function deriveSystemServiceStatus(input: {
         service: 'Application delivery',
         severity: 'disruption',
         summary: 'The production Worker cannot access the application asset bundle.',
+      })
+    }
+    if (!input.readiness.checks.scheduledRuntimeCoordinator) {
+      issues.push({
+        action: 'Confirm the scheduled runtime coordinator is reachable; restore its binding and redeploy only if the binding is missing.',
+        impact: 'Background work is stopped so it cannot overlap or amplify a data-service interruption.',
+        service: 'Automatic recovery controller',
+        severity: 'disruption',
+        summary: 'The automatic recovery controller is unavailable.',
+      })
+    } else if (!input.readiness.checks.scheduledRuntimeSourceCommit) {
+      issues.push({
+        action: 'Set the deployed source commit to the exact 40-character Git commit and allow one complete scheduled cycle to finish.',
+        impact: 'Release readiness remains closed because the running code cannot prove which revision completed scheduled work.',
+        service: 'Release verification',
+        severity: 'disruption',
+        summary: 'The deployed source commit is invalid.',
+      })
+    } else if (!input.readiness.checks.scheduledRuntimeFresh) {
+      const runtimeMode = input.readiness.scheduledRuntime?.mode
+      const recovering = runtimeMode === 'recovering'
+      const contained = runtimeMode === 'open' || recovering
+      issues.push({
+        action: contained
+          ? recovering
+            ? 'Allow the next read-only recovery check to finish. Full scheduled work resumes on a later cycle only after recovery is confirmed.'
+            : 'Automatic read-only recovery checks retry once per minute. Review the provider only if recovery does not complete.'
+          : 'Allow the next scheduled cycle to refresh runtime health; review Worker logs if it remains stale.',
+        impact: contained
+          ? 'Only a bounded read-only recovery check runs each minute; scheduled record changes remain paused.'
+          : 'Scheduled processing may be delayed, but no data-service outage has been confirmed.',
+        service: 'Data service recovery',
+        severity: 'disruption',
+        summary: contained
+          ? recovering
+            ? 'SygShift is verifying data-service recovery before resuming normal work.'
+            : 'SygShift has paused scheduled changes while the data service recovers.'
+          : 'Scheduled runtime health confirmation is stale.',
       })
     }
     if (!input.readiness.checks.supabaseUrl || !input.readiness.checks.supabasePublishableKey) {

@@ -12,14 +12,70 @@ import worker, {
   validateSuppliedTemporaryPassword,
 } from '../worker'
 
-function environment(response: Response = new Response('asset'), values: Record<string, unknown> = {}) {
-  return { ASSETS: { fetch: vi.fn().mockResolvedValue(response) }, ...values }
+const sourceCommit = 'a'.repeat(40)
+
+function healthyScheduledRuntimeSnapshot() {
+  return {
+    consecutiveFailures: 0,
+    cooldownRemainingMs: 0,
+    healthyCycles: 1,
+    lastFailureAtMs: null,
+    lastFailureOperation: null,
+    lastFailureStatus: null,
+    lastFailureTimedOut: false,
+    lastFullSuccessAtMs: Date.now(),
+    lastFullSuccessSourceCommit: sourceCommit,
+    lastScheduledTimeMs: Date.now(),
+    lastSuccessAtMs: Date.now(),
+    leaseActive: false,
+    leaseExpiresAtMs: null,
+    mode: 'closed' as const,
+    nextProbeAtMs: null,
+    openedAtMs: null,
+    recoverySuccesses: 0,
+    updatedAtMs: Date.now(),
+  }
 }
 
-const configuredEnvironment = {
+function scheduledCoordinatorBinding() {
+  const snapshot = healthyScheduledRuntimeSnapshot()
+  const coordinator = {
+    acquireCycle: vi.fn(async () => ({
+      decision: 'run_full' as const,
+      leaseExpiresAtMs: Date.now() + 75_000,
+      leaseId: crypto.randomUUID(),
+      state: snapshot,
+    })),
+    getSnapshot: vi.fn(async () => snapshot),
+    recordFailure: vi.fn(async () => ({ applied: true, state: snapshot })),
+    recordFullSuccess: vi.fn(async () => ({ applied: true, state: snapshot })),
+    recordRecoverySuccess: vi.fn(async () => ({ applied: true, state: snapshot })),
+    releaseCycle: vi.fn(async () => ({ applied: true, state: snapshot })),
+    renewCycle: vi.fn(async () => ({ applied: true, state: snapshot })),
+  }
+  return { coordinator, namespace: { getByName: vi.fn(() => coordinator) } }
+}
+
+function environment(
+  response: Response = new Response('asset'),
+  values: Record<string, unknown> = {},
+): Partial<Env> & { ASSETS: Fetcher } {
+  return {
+    ASSETS: { fetch: vi.fn().mockResolvedValue(response) },
+    SCHEDULE_COORDINATOR: scheduledCoordinatorBinding().namespace,
+    ...values,
+  } as unknown as Partial<Env> & { ASSETS: Fetcher }
+}
+
+const configuredEnvironmentWithoutSourceCommit = {
   SUPABASE_PUBLISHABLE_KEY: 'publishable',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role',
   SUPABASE_URL: 'https://example.supabase.co',
+}
+
+const configuredEnvironment = {
+  ...configuredEnvironmentWithoutSourceCommit,
+  SYGSHIFT_SOURCE_COMMIT: sourceCommit,
 }
 
 async function bridgeRecoveryHeaders(
@@ -266,6 +322,121 @@ describe('Cloudflare Worker boundary', () => {
     expect(JSON.stringify(payload)).not.toContain('service-role')
   })
 
+  it('proves readiness with a fresh full scheduler cycle owned by the configured source commit', async () => {
+    const snapshot = {
+      ...healthyScheduledRuntimeSnapshot(),
+      lastFullSuccessSourceCommit: sourceCommit,
+    }
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/ready'),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        SCHEDULE_COORDINATOR: {
+          getByName: () => ({ getSnapshot: vi.fn(async () => snapshot) }),
+        },
+        SYGSHIFT_SOURCE_COMMIT: sourceCommit.toUpperCase(),
+      }),
+    )
+    const payload = await response.json() as {
+      checks: { scheduledRuntimeFresh: boolean; scheduledRuntimeSourceCommit: boolean }
+      ready: boolean
+      scheduledRuntime: {
+        lastFullSuccessAt: string | null
+        lastFullSuccessSourceCommit: string | null
+      }
+    }
+
+    expect(response.status).toBe(200)
+    expect(payload).toMatchObject({
+      checks: {
+        scheduledRuntimeFresh: true,
+        scheduledRuntimeSourceCommit: true,
+      },
+      ready: true,
+      scheduledRuntime: {
+        lastFullSuccessSourceCommit: sourceCommit,
+      },
+    })
+    expect(payload.scheduledRuntime.lastFullSuccessAt).toBe(new Date(snapshot.lastFullSuccessAtMs).toISOString())
+  })
+
+  it('stays degraded until the deployed source commit owns a complete scheduler cycle', async () => {
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/ready'),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        SCHEDULE_COORDINATOR: {
+          getByName: () => ({
+            getSnapshot: vi.fn(async () => ({
+              ...healthyScheduledRuntimeSnapshot(),
+              lastFullSuccessSourceCommit: 'b'.repeat(40),
+            })),
+          }),
+        },
+        SYGSHIFT_SOURCE_COMMIT: sourceCommit,
+      }),
+    )
+    const payload = await response.json() as {
+      checks: { scheduledRuntimeFresh: boolean; scheduledRuntimeSourceCommit: boolean }
+      ready: boolean
+      status: string
+    }
+
+    expect(response.status).toBe(503)
+    expect(payload).toMatchObject({
+      checks: {
+        scheduledRuntimeFresh: false,
+        scheduledRuntimeSourceCommit: true,
+      },
+      ready: false,
+      status: 'degraded',
+    })
+  })
+
+  it('fails readiness configuration for a malformed source commit', async () => {
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/ready'),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        SYGSHIFT_SOURCE_COMMIT: 'not-a-git-commit',
+      }),
+    )
+    const payload = await response.json() as {
+      checks: { scheduledRuntimeSourceCommit: boolean }
+      ready: boolean
+      status: string
+    }
+
+    expect(response.status).toBe(503)
+    expect(payload).toMatchObject({
+      checks: { scheduledRuntimeSourceCommit: false },
+      ready: false,
+      status: 'misconfigured',
+    })
+  })
+
+  it('fails readiness configuration when the source commit is missing', async () => {
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/ready'),
+      environment(new Response('asset'), configuredEnvironmentWithoutSourceCommit),
+    )
+    const payload = await response.json() as {
+      checks: { scheduledRuntimeFresh: boolean; scheduledRuntimeSourceCommit: boolean }
+      ready: boolean
+      status: string
+    }
+
+    expect(response.status).toBe(503)
+    expect(payload).toMatchObject({
+      checks: {
+        scheduledRuntimeFresh: false,
+        scheduledRuntimeSourceCommit: false,
+      },
+      ready: false,
+      status: 'misconfigured',
+    })
+  })
+
   it('reports missing production configuration as not ready', async () => {
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/ready'),
@@ -276,6 +447,114 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.status).toBe(503)
     expect(payload.ready).toBe(false)
     expect(payload.status).toBe('misconfigured')
+  })
+
+  it('reports degraded readiness from durable scheduler state without probing Supabase', async () => {
+    const fetchMock = vi.fn()
+    const snapshot = {
+      ...healthyScheduledRuntimeSnapshot(),
+      consecutiveFailures: 2,
+      lastFailureAtMs: Date.now(),
+      lastFullSuccessAtMs: Date.now() - 5 * 60_000,
+      lastSuccessAtMs: Date.now() - 5 * 60_000,
+      mode: 'open' as const,
+      nextProbeAtMs: Date.now() + 60_000,
+    }
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      const response = await worker.fetch(
+        new Request('https://app.sygshift.example/api/v1/ready'),
+        environment(new Response('asset'), {
+          ...configuredEnvironment,
+          SCHEDULE_COORDINATOR: {
+            getByName: () => ({ getSnapshot: vi.fn(async () => snapshot) }),
+          },
+        }),
+      )
+      const payload = await response.json() as {
+        checks: { scheduledRuntimeFresh: boolean }
+        ready: boolean
+        scheduledRuntime: { consecutiveFailures: number; mode: string }
+        status: string
+      }
+
+      expect(response.status).toBe(503)
+      expect(payload).toMatchObject({
+        checks: { scheduledRuntimeFresh: false },
+        ready: false,
+        scheduledRuntime: { consecutiveFailures: 2, mode: 'open' },
+        status: 'degraded',
+      })
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps readiness degraded until a new scheduler state records its first successful cron', async () => {
+    const now = Date.now()
+    const bootstrapSnapshot = {
+      ...healthyScheduledRuntimeSnapshot(),
+      healthyCycles: 0,
+      lastFullSuccessAtMs: null,
+      lastFullSuccessSourceCommit: null,
+      lastSuccessAtMs: null,
+      updatedAtMs: now,
+    }
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/ready'),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        SCHEDULE_COORDINATOR: {
+          getByName: () => ({ getSnapshot: vi.fn(async () => bootstrapSnapshot) }),
+        },
+      }),
+    )
+    const payload = await response.json() as {
+      checks: { scheduledRuntimeFresh: boolean }
+      ready: boolean
+      status: string
+    }
+
+    expect(response.status).toBe(503)
+    expect(payload).toMatchObject({
+      checks: { scheduledRuntimeFresh: false },
+      ready: false,
+      status: 'degraded',
+    })
+  })
+
+  it('keeps stale unconfirmed scheduler state degraded', async () => {
+    const staleBootstrapSnapshot = {
+      ...healthyScheduledRuntimeSnapshot(),
+      healthyCycles: 0,
+      lastFullSuccessAtMs: null,
+      lastFullSuccessSourceCommit: null,
+      lastSuccessAtMs: null,
+      updatedAtMs: Date.now() - 2 * 60_000 - 1,
+    }
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/ready'),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        SCHEDULE_COORDINATOR: {
+          getByName: () => ({ getSnapshot: vi.fn(async () => staleBootstrapSnapshot) }),
+        },
+      }),
+    )
+    const payload = await response.json() as {
+      checks: { scheduledRuntimeFresh: boolean }
+      ready: boolean
+      status: string
+    }
+
+    expect(response.status).toBe(503)
+    expect(payload).toMatchObject({
+      checks: { scheduledRuntimeFresh: false },
+      ready: false,
+      status: 'degraded',
+    })
   })
 
   it.each([
@@ -1226,6 +1505,127 @@ describe('Cloudflare Worker boundary', () => {
     vi.unstubAllGlobals()
   })
 
+  it('renews the scheduler lease while a scheduled cycle is still delivering work', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 19, 15, 0)))
+    const notificationId = '20000000-0000-4000-8000-000000000099'
+    let releaseEmail: (() => void) | undefined
+    const emailPending = new Promise<void>((resolve) => { releaseEmail = resolve })
+    const emailSend = vi.fn(() => emailPending)
+    let notificationClaimed = false
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      let payload: Record<string, unknown> | Record<string, unknown>[] = []
+      if (url.includes('/rpc/service_run_timekeeping_automation')) {
+        payload = { status: 'completed' }
+      } else if (url.includes('/rpc/service_claim_timekeeping_notification_batch') && !notificationClaimed) {
+        notificationClaimed = true
+        payload = [{
+          aggregateId: '30000000-0000-4000-8000-000000000099',
+          aggregateType: 'timekeeping_event',
+          id: notificationId,
+          message: { subject: 'Timekeeping notice', text: 'Review your timecard.' },
+          messageType: 'automatic_clock_out',
+          recipients: ['employee@example.com'],
+        }]
+      }
+      return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } })
+    })
+    const snapshot = healthyScheduledRuntimeSnapshot()
+    const renewCycle = vi.fn(async () => ({ applied: true, state: snapshot }))
+    const recordFullSuccess = vi.fn(async () => ({ applied: true, state: snapshot }))
+    const coordinator = {
+      acquireCycle: vi.fn(async () => ({
+        decision: 'run_full' as const,
+        leaseExpiresAtMs: Date.now() + 75_000,
+        leaseId: '10000000-0000-4000-8000-000000000099',
+        state: snapshot,
+      })),
+      getSnapshot: vi.fn(async () => snapshot),
+      recordFailure: vi.fn(async () => ({ applied: true, state: snapshot })),
+      recordFullSuccess,
+      recordRecoverySuccess: vi.fn(async () => ({ applied: true, state: snapshot })),
+      releaseCycle: vi.fn(async () => ({ applied: true, state: snapshot })),
+      renewCycle,
+    }
+    const scheduledWork: Promise<unknown>[] = []
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await worker.scheduled(
+        { cron: '* * * * *', scheduledTime: Date.now() },
+        environment(new Response('asset'), {
+          ...configuredEnvironment,
+          EMAIL: { send: emailSend },
+          SCHEDULE_COORDINATOR: { getByName: () => coordinator },
+          SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+          SYGSHIFT_SOURCE_COMMIT: sourceCommit,
+        }),
+        { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+      )
+
+      await vi.waitFor(() => expect(emailSend).toHaveBeenCalledTimes(1))
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(renewCycle).toHaveBeenCalledTimes(1)
+      expect(recordFullSuccess).not.toHaveBeenCalled()
+
+      releaseEmail?.()
+      await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+      expect(recordFullSuccess).toHaveBeenCalledTimes(1)
+      expect(recordFullSuccess).toHaveBeenCalledWith({
+        leaseId: '10000000-0000-4000-8000-000000000099',
+        sourceCommit,
+      })
+    } finally {
+      vi.unstubAllGlobals()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    {
+      label: 'missing',
+      runtimeConfiguration: configuredEnvironmentWithoutSourceCommit,
+    },
+    {
+      label: 'malformed',
+      runtimeConfiguration: {
+        ...configuredEnvironmentWithoutSourceCommit,
+        SYGSHIFT_SOURCE_COMMIT: 'not-a-git-commit',
+      },
+    },
+  ])('fails scheduled work closed when the source commit is $label', async ({ runtimeConfiguration }) => {
+    const fetchMock = vi.fn()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { coordinator, namespace } = scheduledCoordinatorBinding()
+    const scheduledWork: Promise<unknown>[] = []
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await worker.scheduled(
+        { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 19, 15, 0) },
+        environment(new Response('asset'), {
+          ...runtimeConfiguration,
+          EMAIL: { send: vi.fn() },
+          SCHEDULE_COORDINATOR: namespace,
+        }),
+        { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+      )
+      await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+
+      expect(coordinator.acquireCycle).not.toHaveBeenCalled()
+      expect(coordinator.recordFullSuccess).not.toHaveBeenCalled()
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(errorSpy.mock.calls.some(([value]) => (
+        String(value).includes('"event":"scheduled_work_misconfigured"')
+        && String(value).includes('"reason":"source_commit_missing_or_invalid"')
+      ))).toBe(true)
+    } finally {
+      errorSpy.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('contains noncritical scheduled work when the database pool is transiently unavailable', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.signal).toBeInstanceOf(AbortSignal)
@@ -1267,6 +1667,129 @@ describe('Cloudflare Worker boundary', () => {
 
     errorSpy.mockRestore()
     vi.unstubAllGlobals()
+  })
+
+  it('persists scheduler containment across minute triggers and makes no new database request during cooldown', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      message: 'Timed out acquiring connection from connection pool',
+    }), {
+      headers: { 'content-type': 'application/json' },
+      status: 503,
+    }))
+    const snapshot = healthyScheduledRuntimeSnapshot()
+    let circuitOpen = false
+    const coordinator = {
+      acquireCycle: vi.fn(async () => circuitOpen
+        ? {
+            decision: 'skip' as const,
+            reason: 'cooldown' as const,
+            retryAtMs: Date.now() + 60_000,
+            state: { ...snapshot, consecutiveFailures: 1, mode: 'open' as const },
+          }
+        : {
+            decision: 'run_full' as const,
+            leaseExpiresAtMs: Date.now() + 50_000,
+            leaseId: '10000000-0000-4000-8000-000000000001',
+            state: snapshot,
+          }),
+      getSnapshot: vi.fn(async () => snapshot),
+      recordFailure: vi.fn(async () => {
+        circuitOpen = true
+        return { applied: true, state: { ...snapshot, consecutiveFailures: 1, mode: 'open' as const } }
+      }),
+      recordFullSuccess: vi.fn(async () => ({ applied: true, state: snapshot })),
+      recordRecoverySuccess: vi.fn(async () => ({ applied: true, state: snapshot })),
+      releaseCycle: vi.fn(async () => ({ applied: true, state: snapshot })),
+      renewCycle: vi.fn(async () => ({ applied: true, state: snapshot })),
+    }
+    const runtime = environment(new Response('asset'), {
+      ...configuredEnvironment,
+      EMAIL: { send: vi.fn() },
+      SCHEDULE_COORDINATOR: { getByName: () => coordinator },
+    })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      for (const minute of [0, 1]) {
+        const scheduledWork: Promise<unknown>[] = []
+        await worker.scheduled(
+          { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 19, 15, minute) },
+          runtime,
+          { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+        )
+        await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+      }
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(coordinator.recordFailure).toHaveBeenCalledTimes(1)
+      expect(infoSpy.mock.calls.some(([value]) => String(value).includes('"event":"scheduled_work_skipped"'))).toBe(true)
+    } finally {
+      errorSpy.mockRestore()
+      infoSpy.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('uses only one read-only request during a half-open recovery probe', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/rpc/get_maintenance_status')) {
+        return new Response(JSON.stringify({ active: [], recentlyCompleted: [], upcoming: [] }), {
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (url.includes('/rpc/service_run_timekeeping_automation')) {
+        return new Response(JSON.stringify({ status: 'completed' }), { headers: { 'content-type': 'application/json' } })
+      }
+      return new Response('[]', { headers: { 'content-type': 'application/json' } })
+    })
+    const snapshot = healthyScheduledRuntimeSnapshot()
+    const recordRecoverySuccess = vi.fn(async () => ({
+      applied: true,
+      state: { ...snapshot, mode: 'recovering' as const, recoverySuccesses: 1 },
+    }))
+    const recordFullSuccess = vi.fn(async () => ({ applied: true, state: snapshot }))
+    const coordinator = {
+      acquireCycle: vi.fn(async () => ({
+        decision: 'run_recovery_probe' as const,
+        leaseExpiresAtMs: Date.now() + 50_000,
+        leaseId: '10000000-0000-4000-8000-000000000002',
+        state: { ...snapshot, mode: 'open' as const },
+      })),
+      getSnapshot: vi.fn(async () => snapshot),
+      recordFailure: vi.fn(async () => ({ applied: true, state: snapshot })),
+      recordFullSuccess,
+      recordRecoverySuccess,
+      releaseCycle: vi.fn(async () => ({ applied: true, state: snapshot })),
+      renewCycle: vi.fn(async () => ({ applied: true, state: snapshot })),
+    }
+    const scheduledWork: Promise<unknown>[] = []
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await worker.scheduled(
+        { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 19, 15, 2) },
+        environment(new Response('asset'), {
+          ...configuredEnvironment,
+          EMAIL: { send: vi.fn() },
+          SCHEDULE_COORDINATOR: { getByName: () => coordinator },
+        }),
+        { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+      )
+      await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+
+      const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
+      expect(calledUrls).toHaveLength(1)
+      expect(calledUrls[0]).toContain('/rpc/get_maintenance_status')
+      expect(calledUrls.some((url) => url.includes('/rpc/service_run_timekeeping_automation'))).toBe(false)
+      expect(calledUrls.some((url) => url.includes('/rpc/service_claim_timekeeping_notification_batch'))).toBe(false)
+      expect(recordRecoverySuccess).toHaveBeenCalledTimes(1)
+      expect(recordFullSuccess).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it.each([
@@ -1362,6 +1885,69 @@ describe('Cloudflare Worker boundary', () => {
 
     errorSpy.mockRestore()
     vi.unstubAllGlobals()
+  })
+
+  it('withholds full-cycle success when a critical timekeeping notification returns a delivery failure', async () => {
+    const notificationId = '20000000-0000-4000-8000-000000000077'
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/rpc/service_claim_timekeeping_notification_batch')) {
+        return new Response(JSON.stringify([{
+          id: notificationId,
+          messageType: 'automatic_clock_out',
+          aggregateType: 'timekeeping_event',
+          aggregateId: '30000000-0000-4000-8000-000000000077',
+          recipients: ['employee@example.com'],
+          message: { subject: 'Automatic clock-out recorded', text: 'Review your timecard.' },
+        }]), { headers: { 'content-type': 'application/json' } })
+      }
+      if (url.includes('/rpc/service_mark_notification_result')) {
+        const body = JSON.parse(String(init?.body)) as { delivered?: boolean }
+        expect(body.delivered).toBe(false)
+        return new Response('null', { headers: { 'content-type': 'application/json' } })
+      }
+      if (url.includes('/rpc/service_claim_')) {
+        return new Response('[]', { headers: { 'content-type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ status: 'completed' }), { headers: { 'content-type': 'application/json' } })
+    })
+    const emailSend = vi.fn().mockRejectedValue(new Error('provider rejected message'))
+    const scheduledWork: Promise<unknown>[] = []
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { coordinator, namespace } = scheduledCoordinatorBinding()
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await worker.scheduled(
+        { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 19, 15, 11) },
+        environment(new Response('asset'), {
+          ...configuredEnvironment,
+          EMAIL: { send: emailSend },
+          SCHEDULE_COORDINATOR: namespace,
+          SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+        }),
+        { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+      )
+      await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+
+      const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
+      expect(emailSend).toHaveBeenCalledTimes(1)
+      expect(calledUrls.some((url) => url.includes('/rpc/service_mark_notification_result'))).toBe(true)
+      expect(calledUrls.some((url) => url.includes('/rpc/service_claim_notification_batch'))).toBe(true)
+      expect(errorSpy.mock.calls.some(([value]) => (
+        String(value).includes('"event":"timekeeping_notification_delivery_failed"')
+        && String(value).includes('"failureCount":1')
+      ))).toBe(true)
+      expect(errorSpy.mock.calls.some(([value]) => (
+        String(value).includes('"event":"scheduled_runtime_full_success_withheld"')
+        && String(value).includes('"timekeeping_notification_delivery"')
+      ))).toBe(true)
+      expect(coordinator.recordFullSuccess).not.toHaveBeenCalled()
+      expect(coordinator.releaseCycle).toHaveBeenCalledTimes(1)
+    } finally {
+      errorSpy.mockRestore()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('durably completes an accepted email before a deferred audit outage so the next cycle cannot resend it', async () => {
@@ -1619,15 +2205,42 @@ describe('Cloudflare Worker boundary', () => {
     {
       failedRpc: 'service_run_timekeeping_automation',
       expectedEvent: 'timekeeping_automation_failed',
+      expectedLane: 'timekeeping_automation',
       expectedSummaryKey: 'automation',
+    },
+    {
+      failedRpc: 'service_refresh_attendance_alert_schedule_state',
+      expectedEvent: 'attendance_alert_schedule_refresh_failed',
+      expectedLane: 'attendance_alert_schedule_refresh',
+      expectedSummaryKey: 'attendanceScheduleRefresh',
     },
     {
       failedRpc: 'service_reconcile_operational_alert_lifecycle',
       expectedEvent: 'operational_alert_lifecycle_reconciliation_failed',
+      expectedLane: 'operational_alert_lifecycle',
       expectedSummaryKey: 'alertLifecycle',
+    },
+    {
+      failedRpc: 'service_refresh_hr_offboarding_due_cases',
+      expectedEvent: 'offboarding_due_refresh_failed',
+      expectedLane: 'hr_offboarding_due_cases',
+      expectedSummaryKey: 'offboardingDue',
+    },
+    {
+      failedRpc: 'service_process_shift_coverage_notification_waves',
+      expectedEvent: 'shift_coverage_notifications_failed',
+      expectedLane: 'shift_coverage_notifications',
+      expectedSummaryKey: 'coverageNotifications',
+    },
+    {
+      failedRpc: 'service_process_due_sygtasks_recurring_series',
+      expectedEvent: 'sygtasks_scheduled_work_failed',
+      expectedLane: 'sygtasks_scheduled_work',
+      expectedSummaryKey: 'sygtasksScheduledWork',
     },
   ])('continues call-off lifecycle and delivery safeguards when $failedRpc fails', async ({
     expectedEvent,
+    expectedLane,
     expectedSummaryKey,
     failedRpc,
   }) => {
@@ -1644,6 +2257,7 @@ describe('Cloudflare Worker boundary', () => {
     const scheduledWork: Promise<unknown>[] = []
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const { coordinator, namespace } = scheduledCoordinatorBinding()
     vi.stubGlobal('fetch', fetchMock)
 
     await worker.scheduled(
@@ -1651,6 +2265,7 @@ describe('Cloudflare Worker boundary', () => {
       environment(new Response('asset'), {
         ...configuredEnvironment,
         EMAIL: { send: vi.fn() },
+        SCHEDULE_COORDINATOR: namespace,
       }),
       { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
     )
@@ -1663,6 +2278,12 @@ describe('Cloudflare Worker boundary', () => {
     expect(callIndex('service_process_shift_coverage_notification_waves')).toBeGreaterThan(callIndex('service_reconcile_operational_alert_lifecycle'))
     expect(callIndex('service_claim_notification_batch')).toBeGreaterThan(callIndex('service_process_shift_coverage_notification_waves'))
     expect(errorSpy.mock.calls.some(([value]) => String(value).includes(`"event":"${expectedEvent}"`))).toBe(true)
+    expect(errorSpy.mock.calls.some(([value]) => (
+      String(value).includes('"event":"scheduled_runtime_full_success_withheld"')
+      && String(value).includes(`"${expectedLane}"`)
+    ))).toBe(true)
+    expect(coordinator.recordFullSuccess).not.toHaveBeenCalled()
+    expect(coordinator.releaseCycle).toHaveBeenCalledTimes(1)
 
     const scheduledSummary = infoSpy.mock.calls
       .map(([value]) => {

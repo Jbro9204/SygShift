@@ -23,7 +23,12 @@ import type {
 } from '@simplewebauthn/server'
 import { isSecurityKeyPilotEligible, securityKeyFeatureEnabled } from './securityKeyPilot'
 import { TenantCommsDurableObject } from './comms/tenantCommsDurableObject'
-import { ScheduledRuntimeCoordinator } from './scheduledRuntimeCoordinator'
+import {
+  ScheduledRuntimeCoordinator,
+  scheduledRuntimeLeaseHeartbeatMs,
+  type ScheduledRuntimeAcquireResult,
+  type ScheduledRuntimeSnapshot,
+} from './scheduledRuntimeCoordinator'
 import {
   channelConversationCommandScopeSchema,
   communicationsCommandScopeSchema,
@@ -90,6 +95,8 @@ type Environment = Partial<Env> & {
   SYGILANT_SHARED_IDENTITY_SIGNING_SECRET?: string
   SYGILANT_SHARED_IDENTITY_TOKEN_TTL_SECONDS?: string
   SYGSHIFT_PASSWORD_RECOVERY_BRIDGE_SECRET?: string
+  SYGSHIFT_SOURCE_COMMIT?: string
+  SCHEDULE_COORDINATOR?: DurableObjectNamespace<ScheduledRuntimeCoordinator>
 }
 
 interface SygSphereResumableUploadOperation {
@@ -681,6 +688,130 @@ async function callRpc<T>(
 
 const scheduledSupabaseTimeoutMs = 8_000
 const scheduledRunBudgetMs = 45_000
+const scheduledReadinessFreshnessMs = 3 * 60_000
+const scheduledCoordinatorReadTimeoutMs = 1_500
+const scheduledCoordinatorOperationTimeoutMs = 3_000
+
+type ConfiguredSourceCommit = {
+  valid: true
+  value: string
+} | {
+  valid: false
+  value: null
+}
+
+function configuredSourceCommit(environment: Environment): ConfiguredSourceCommit {
+  if (environment.SYGSHIFT_SOURCE_COMMIT === undefined) return { valid: false, value: null }
+  const normalized = environment.SYGSHIFT_SOURCE_COMMIT.trim().toLowerCase()
+  if (!/^[0-9a-f]{40}$/.test(normalized)) return { valid: false, value: null }
+  return { valid: true, value: normalized }
+}
+
+type ScheduledRuntimeCoordinatorStub = Pick<
+  ScheduledRuntimeCoordinator,
+  | 'acquireCycle'
+  | 'getSnapshot'
+  | 'recordFailure'
+  | 'recordFullSuccess'
+  | 'recordRecoverySuccess'
+  | 'releaseCycle'
+  | 'renewCycle'
+>
+
+function scheduledRuntimeCoordinator(environment: Environment): ScheduledRuntimeCoordinatorStub | null {
+  const namespace = environment.SCHEDULE_COORDINATOR
+  if (!namespace) return null
+  return namespace.getByName('production') as ScheduledRuntimeCoordinatorStub
+}
+
+async function scheduledRuntimeSnapshotWithTimeout(
+  coordinator: ScheduledRuntimeCoordinatorStub,
+): Promise<ScheduledRuntimeSnapshot> {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      coordinator.getSnapshot(),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error('Scheduled runtime coordinator readiness timed out.')), scheduledCoordinatorReadTimeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
+class ScheduledRuntimeCoordinatorTimeoutError extends Error {
+  readonly operation: string
+
+  constructor(operation: string) {
+    super(`Scheduled runtime coordinator operation ${operation} timed out.`)
+    this.name = 'ScheduledRuntimeCoordinatorTimeoutError'
+    this.operation = operation
+  }
+}
+
+async function scheduledRuntimeCoordinatorCallWithTimeout<T>(
+  operation: string,
+  call: Promise<T>,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      call,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new ScheduledRuntimeCoordinatorTimeoutError(operation)),
+          scheduledCoordinatorOperationTimeoutMs,
+        )
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
+function startScheduledRuntimeLeaseHeartbeat(
+  coordinator: ScheduledRuntimeCoordinatorStub,
+  leaseId: string,
+  onFailure: (error: Error) => void,
+): { stop: () => Promise<Error | null> } {
+  let failure: Error | null = null
+  let inFlight: Promise<void> = Promise.resolve()
+  let stopped = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const schedule = () => {
+    timer = setTimeout(() => {
+      timer = undefined
+      if (stopped) return
+      inFlight = (async () => {
+        try {
+          const renewal = await scheduledRuntimeCoordinatorCallWithTimeout(
+            'renew_cycle',
+            coordinator.renewCycle({ leaseId }),
+          )
+          if (!renewal.applied) throw new Error('Scheduled runtime lease renewal was rejected.')
+        } catch (error) {
+          failure = error instanceof Error ? error : new Error('Scheduled runtime lease renewal failed.')
+          stopped = true
+          onFailure(failure)
+        } finally {
+          if (!stopped) schedule()
+        }
+      })()
+    }, scheduledRuntimeLeaseHeartbeatMs)
+  }
+
+  schedule()
+  return {
+    stop: async () => {
+      stopped = true
+      if (timer) clearTimeout(timer)
+      await inFlight
+      return failure
+    },
+  }
+}
 
 export class ScheduledSupabaseUnavailableError extends Error {
   readonly operation: string
@@ -8570,19 +8701,24 @@ async function processHrAutomationJobs(environment: Environment, limit = 10, rpc
   }
 }
 
-async function processPushJobs(environment: Environment, rpc: RpcInvoker = callRpc): Promise<void> {
+async function processPushJobs(
+  environment: Environment,
+  rpc: RpcInvoker = callRpc,
+): Promise<{ status: 'completed' | 'deferred' | 'disabled' }> {
   const config = configuredSupabase(environment)
   const publicKey = environment.SYGSHIFT_PUSH_PUBLIC_KEY
   const privateKey = environment.SYGSHIFT_PUSH_PRIVATE_KEY
   const hookSecret = environment.SYGSHIFT_PUSH_HOOK_SECRET
-  if (!config || !publicKey || !privateKey || !hookSecret) return
+  if (!config || !publicKey || !privateKey || !hookSecret) return { status: 'disabled' }
   try {
     const processed = await deliverPushBatch({ publicKey, privateKey, hookSecret }, (name, input) =>
       rpc({ serviceRoleKey: config.serviceRoleKey, url: config.url }, name, input, config.serviceRoleKey))
     if (processed) console.info(JSON.stringify({ event: 'push_batch_processed', processed }))
+    return { status: 'completed' }
   } catch (error) {
     if (isScheduledContainmentError(error)) throw error
     console.error(JSON.stringify({ event: 'push_batch_deferred' }))
+    return { status: 'deferred' }
   }
 }
 
@@ -8851,14 +8987,40 @@ async function processNotificationJobs(
   }
 }
 
-function readiness(environment: Environment, requestId: string): Response {
+async function readiness(environment: Environment, requestId: string): Promise<Response> {
   const config = configuredSupabase(environment)
   const sharedIdentityEnabled = environment.SYGSHIFT_SHARED_IDENTITY_ENABLED?.trim().toLowerCase() === 'true'
   const sygilantSharedIdentityEnabled = environment.SYGILANT_SHARED_IDENTITY_ENABLED?.trim().toLowerCase() === 'true'
   const sygilantSigningSecret = environment.SYGILANT_SHARED_IDENTITY_SIGNING_SECRET?.trim() ?? ''
   const sygilantConsumerSecret = environment.SYGILANT_SHARED_IDENTITY_CONSUMER_SECRET?.trim() ?? ''
+  const sourceCommit = configuredSourceCommit(environment)
+  const coordinator = scheduledRuntimeCoordinator(environment)
+  let scheduledRuntime: ScheduledRuntimeSnapshot | null = null
+  if (coordinator) {
+    try {
+      scheduledRuntime = await scheduledRuntimeSnapshotWithTimeout(coordinator)
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: 'scheduled_runtime_readiness_failed',
+        message: error instanceof Error ? error.message : 'Scheduled runtime coordinator is unavailable.',
+        requestId,
+      }))
+    }
+  }
+  const readinessCheckedAtMs = Date.now()
+  const scheduledRuntimeFresh = Boolean(
+    sourceCommit.valid
+    && scheduledRuntime?.mode === 'closed'
+    && scheduledRuntime.lastFullSuccessAtMs !== null
+    && readinessCheckedAtMs >= scheduledRuntime.lastFullSuccessAtMs
+    && readinessCheckedAtMs - scheduledRuntime.lastFullSuccessAtMs <= scheduledReadinessFreshnessMs
+    && scheduledRuntime.lastFullSuccessSourceCommit === sourceCommit.value,
+  )
   const checks = {
     assetsBinding: Boolean(environment.ASSETS),
+    scheduledRuntimeCoordinator: Boolean(coordinator && scheduledRuntime),
+    scheduledRuntimeFresh,
+    scheduledRuntimeSourceCommit: sourceCommit.valid,
     supabasePublishableKey: Boolean(
       environment.SUPABASE_PUBLISHABLE_KEY?.trim() || environment.VITE_SUPABASE_PUBLISHABLE_KEY?.trim(),
     ),
@@ -8870,13 +9032,31 @@ function readiness(environment: Environment, requestId: string): Response {
     sygilantSharedIdentityKeySeparation: !sygilantSharedIdentityEnabled || sygilantSigningSecret !== sygilantConsumerSecret,
     sygilantSharedIdentitySigningSecret: !sygilantSharedIdentityEnabled || sygilantSigningSecret.length >= 32,
   }
-  const ready = Boolean(config && Object.values(checks).every(Boolean))
+  const configured = Boolean(config && Object.entries(checks)
+    .filter(([name]) => name !== 'scheduledRuntimeFresh')
+    .every(([, value]) => value))
+  const ready = configured && scheduledRuntimeFresh
+  const status = !configured ? 'misconfigured' : ready ? 'ready' : 'degraded'
 
   return json({
     checks,
     ready,
     requestId,
-    status: ready ? 'ready' : 'misconfigured',
+    scheduledRuntime: scheduledRuntime ? {
+      consecutiveFailures: scheduledRuntime.consecutiveFailures,
+      lastFullSuccessAt: scheduledRuntime.lastFullSuccessAtMs === null
+        ? null
+        : new Date(scheduledRuntime.lastFullSuccessAtMs).toISOString(),
+      lastFullSuccessSourceCommit: scheduledRuntime.lastFullSuccessSourceCommit,
+      lastSuccessAt: scheduledRuntime.lastSuccessAtMs === null
+        ? null
+        : new Date(scheduledRuntime.lastSuccessAtMs).toISOString(),
+      mode: scheduledRuntime.mode,
+      nextProbeAt: scheduledRuntime.nextProbeAtMs === null
+        ? null
+        : new Date(scheduledRuntime.nextProbeAtMs).toISOString(),
+    } : null,
+    status,
   }, ready ? 200 : 503)
 }
 
@@ -9143,15 +9323,88 @@ function scheduledFailure(message: string): Record<string, unknown> {
   return { message, status: 'failed' }
 }
 
+type ScheduledRequiredLane =
+  | 'attendance_alert_schedule_refresh'
+  | 'hr_offboarding_due_cases'
+  | 'operational_alert_lifecycle'
+  | 'push_delivery'
+  | 'shift_coverage_notifications'
+  | 'sygtasks_scheduled_work'
+  | 'timekeeping_automation'
+  | 'timekeeping_notification_delivery'
+
+type ScheduledRequiredLaneFailure = {
+  lane: ScheduledRequiredLane
+  message: string
+}
+
+function scheduledRequiredLaneFailure(
+  failures: ScheduledRequiredLaneFailure[],
+  lane: ScheduledRequiredLane,
+  error: unknown,
+  fallback: string,
+): Record<string, unknown> {
+  const message = error instanceof Error ? error.message : fallback
+  failures.push({ lane, message })
+  return scheduledFailure(message)
+}
+
 async function runScheduledWorkerCycle(
   controller: WorkerScheduledController,
   environment: Environment,
 ): Promise<void> {
+  const sourceCommit = configuredSourceCommit(environment)
+  if (!sourceCommit.valid) {
+    console.error(JSON.stringify({
+      event: 'scheduled_work_misconfigured',
+      reason: 'source_commit_missing_or_invalid',
+      scheduledTime: controller.scheduledTime,
+    }))
+    return
+  }
+
   const config = configuredSupabase(environment)
   if (!config) {
     console.error(JSON.stringify({
       event: 'scheduled_work_failed',
       message: 'Scheduled work is missing its protected data configuration.',
+    }))
+    return
+  }
+
+  const coordinator = scheduledRuntimeCoordinator(environment)
+  if (!coordinator) {
+    console.error(JSON.stringify({
+      event: 'scheduled_work_contained',
+      reason: 'coordinator_binding_unavailable',
+      scheduledTime: controller.scheduledTime,
+    }))
+    return
+  }
+
+  let acquisition: ScheduledRuntimeAcquireResult
+  try {
+    acquisition = await scheduledRuntimeCoordinatorCallWithTimeout(
+      'acquire_cycle',
+      coordinator.acquireCycle({ scheduledTimeMs: controller.scheduledTime }),
+    )
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'scheduled_work_contained',
+      message: error instanceof Error ? error.message : 'Scheduled runtime coordinator is unavailable.',
+      reason: 'coordinator_acquire_failed',
+      scheduledTime: controller.scheduledTime,
+    }))
+    return
+  }
+
+  if (acquisition.decision === 'skip') {
+    console.info(JSON.stringify({
+      event: 'scheduled_work_skipped',
+      mode: acquisition.state.mode,
+      reason: acquisition.reason,
+      retryAt: new Date(acquisition.retryAtMs).toISOString(),
+      scheduledTime: controller.scheduledTime,
     }))
     return
   }
@@ -9167,9 +9420,19 @@ async function runScheduledWorkerCycle(
   const scheduledBudgetTimeout = setTimeout(() => scheduledAbortController.abort(), scheduledRunBudgetMs)
   const rpc = createScheduledRpcInvoker(circuit, deadlineAt)
   const jobRunId = crypto.randomUUID()
+  const leaseId = acquisition.leaseId
+  const recoveryProbe = acquisition.decision === 'run_recovery_probe'
+  let leaseFinalized = false
+  const leaseHeartbeat = startScheduledRuntimeLeaseHeartbeat(coordinator, leaseId, () => {
+    circuit.failedOperation = 'scheduled_runtime_lease_renewal'
+    circuit.failedStatus = null
+    circuit.open = true
+    scheduledAbortController.abort()
+  })
   const { fullReconciliation, minute } = scheduledDenverClock(controller.scheduledTime)
   const attendanceSafetyRefreshDue = fullReconciliation || minute % 5 === 0
   const availabilityRecoveryDue = fullReconciliation || minute % 15 === 0
+  const requiredLaneFailures: ScheduledRequiredLaneFailure[] = []
 
   let automation: Record<string, unknown>
   let attendanceScheduleRefresh: Record<string, unknown>
@@ -9178,9 +9441,40 @@ async function runScheduledWorkerCycle(
   let coverageNotifications: Record<string, unknown>
 
   try {
-    // This remains the first database action on every minute trigger. The RPC is
-    // idempotent by jobRunId, and its hard deadline prevents a stalled pool from
-    // keeping overlapping Worker invocations alive for several minutes.
+    if (recoveryProbe) {
+      // This read-only database call is the single half-open probe. No other
+      // scheduled work starts until two separate trigger cycles verify the
+      // provider and close the breaker.
+      await rpc<MaintenanceStatusPayload>(
+        config,
+        'get_maintenance_status',
+        {},
+        config.serviceRoleKey,
+      )
+      const heartbeatFailure = await leaseHeartbeat.stop()
+      if (heartbeatFailure) {
+        throw new ScheduledSupabaseCircuitOpenError('scheduled_runtime_lease_renewal')
+      }
+      const recovery = await scheduledRuntimeCoordinatorCallWithTimeout(
+        'record_recovery_success',
+        coordinator.recordRecoverySuccess({ leaseId }),
+      )
+      leaseFinalized = recovery.applied
+      if (!recovery.applied) {
+        throw new ScheduledSupabaseCircuitOpenError('scheduled_runtime_recovery_completion')
+      }
+      console.info(JSON.stringify({
+        event: 'scheduled_runtime_recovery_probe_succeeded',
+        mode: recovery.state.mode,
+        recoverySuccesses: recovery.state.recoverySuccesses,
+        scheduledTime: controller.scheduledTime,
+      }))
+      return
+    }
+
+    // This remains the first database action in every normal minute cycle. The
+    // RPC is idempotent by jobRunId, and its hard deadline prevents a stalled
+    // pool from keeping overlapping Worker invocations alive for several minutes.
     try {
       automation = await rpc<Record<string, unknown>>(
         config,
@@ -9190,7 +9484,12 @@ async function runScheduledWorkerCycle(
       )
     } catch (error) {
       if (isScheduledContainmentError(error)) throw error
-      automation = scheduledFailure(error instanceof Error ? error.message : 'Unknown timekeeping automation failure')
+      automation = scheduledRequiredLaneFailure(
+        requiredLaneFailures,
+        'timekeeping_automation',
+        error,
+        'Unknown timekeeping automation failure',
+      )
       console.error(JSON.stringify({ event: 'timekeeping_automation_failed', ...automation }))
     }
 
@@ -9198,6 +9497,16 @@ async function runScheduledWorkerCycle(
     // lane. Claim and finish them before patrol, document, HR, or general-email
     // work so a noncritical failure cannot strand a critical timekeeping notice.
     const timekeepingNotifications = await processNotificationJobs(environment, 25, rpc, 'timekeeping')
+    if (timekeepingNotifications.failed.length > 0) {
+      requiredLaneFailures.push({
+        lane: 'timekeeping_notification_delivery',
+        message: `${timekeepingNotifications.failed.length} critical timekeeping notification delivery attempt(s) failed.`,
+      })
+      console.error(JSON.stringify({
+        event: 'timekeeping_notification_delivery_failed',
+        failureCount: timekeepingNotifications.failed.length,
+      }))
+    }
 
     if (attendanceSafetyRefreshDue) {
       try {
@@ -9209,7 +9518,12 @@ async function runScheduledWorkerCycle(
         )
       } catch (error) {
         if (isScheduledContainmentError(error)) throw error
-        attendanceScheduleRefresh = scheduledFailure(error instanceof Error ? error.message : 'Unknown attendance schedule refresh failure')
+        attendanceScheduleRefresh = scheduledRequiredLaneFailure(
+          requiredLaneFailures,
+          'attendance_alert_schedule_refresh',
+          error,
+          'Unknown attendance schedule refresh failure',
+        )
         console.error(JSON.stringify({ event: 'attendance_alert_schedule_refresh_failed', ...attendanceScheduleRefresh }))
       }
     } else {
@@ -9225,7 +9539,12 @@ async function runScheduledWorkerCycle(
       )
     } catch (error) {
       if (isScheduledContainmentError(error)) throw error
-      alertLifecycle = scheduledFailure(error instanceof Error ? error.message : 'Unknown operational-alert lifecycle failure')
+      alertLifecycle = scheduledRequiredLaneFailure(
+        requiredLaneFailures,
+        'operational_alert_lifecycle',
+        error,
+        'Unknown operational-alert lifecycle failure',
+      )
       console.error(JSON.stringify({ event: 'operational_alert_lifecycle_reconciliation_failed', ...alertLifecycle }))
     }
 
@@ -9254,7 +9573,12 @@ async function runScheduledWorkerCycle(
       )
     } catch (error) {
       if (isScheduledContainmentError(error)) throw error
-      offboardingDue = scheduledFailure(error instanceof Error ? error.message : 'Unknown offboarding queue refresh failure')
+      offboardingDue = scheduledRequiredLaneFailure(
+        requiredLaneFailures,
+        'hr_offboarding_due_cases',
+        error,
+        'Unknown offboarding queue refresh failure',
+      )
       console.error(JSON.stringify({ event: 'offboarding_due_refresh_failed', ...offboardingDue }))
     }
 
@@ -9275,22 +9599,39 @@ async function runScheduledWorkerCycle(
       )
     } catch (error) {
       if (isScheduledContainmentError(error)) throw error
-      coverageNotifications = scheduledFailure(error instanceof Error ? error.message : 'Unknown coverage notification failure')
+      coverageNotifications = scheduledRequiredLaneFailure(
+        requiredLaneFailures,
+        'shift_coverage_notifications',
+        error,
+        'Unknown coverage notification failure',
+      )
       console.error(JSON.stringify({ event: 'shift_coverage_notifications_failed', ...coverageNotifications }))
     }
 
     const notifications = await processNotificationJobs(environment, 25, rpc, 'noncritical')
-    await processPushJobs(environment, rpc)
+    const pushJobs = await processPushJobs(environment, rpc)
+    if (pushJobs.status === 'deferred') {
+      requiredLaneFailures.push({
+        lane: 'push_delivery',
+        message: 'Push delivery was deferred after an application failure.',
+      })
+    }
 
-    let sygtasksScheduledWork: Record<string, unknown> | null = null
+    let sygtasksScheduledWork: Record<string, unknown>
     try {
       sygtasksScheduledWork = await processSygTasksReminderJobs(environment, rpc)
       console.info(JSON.stringify({ event: 'sygtasks_scheduled_work_processed', sygtasksScheduledWork }))
     } catch (error) {
       if (isScheduledContainmentError(error)) throw error
+      sygtasksScheduledWork = scheduledRequiredLaneFailure(
+        requiredLaneFailures,
+        'sygtasks_scheduled_work',
+        error,
+        'Unknown scheduled task processing failure',
+      )
       console.error(JSON.stringify({
         event: 'sygtasks_scheduled_work_failed',
-        message: error instanceof Error ? error.message : 'Unknown scheduled task processing failure',
+        ...sygtasksScheduledWork,
       }))
     }
 
@@ -9330,18 +9671,79 @@ async function runScheduledWorkerCycle(
       notifications,
       offboardingDue,
       patrol,
+      pushJobs,
+      requiredLaneFailures,
       scheduledAnnouncements,
       scheduledTime: controller.scheduledTime,
       signatureFinalization,
       sygtasksScheduledWork,
       timekeepingNotifications,
     }))
+    const heartbeatFailure = await leaseHeartbeat.stop()
+    if (heartbeatFailure) {
+      throw new ScheduledSupabaseCircuitOpenError('scheduled_runtime_lease_renewal')
+    }
+    if (requiredLaneFailures.length > 0) {
+      console.error(JSON.stringify({
+        event: 'scheduled_runtime_full_success_withheld',
+        failedLanes: requiredLaneFailures.map(({ lane }) => lane),
+        scheduledTime: controller.scheduledTime,
+      }))
+      return
+    }
+    const completion = await scheduledRuntimeCoordinatorCallWithTimeout(
+      'record_full_success',
+      coordinator.recordFullSuccess({
+        leaseId,
+        sourceCommit: sourceCommit.value,
+      }),
+    )
+    leaseFinalized = completion.applied
+    if (!completion.applied) {
+      console.error(JSON.stringify({
+        event: 'scheduled_runtime_completion_ignored',
+        reason: 'stale_or_expired_lease',
+        scheduledTime: controller.scheduledTime,
+      }))
+    }
   } catch (error) {
-    if (isScheduledContainmentError(error)) {
-      const containmentStatus = error instanceof ScheduledSupabaseUnavailableError ? error.status : null
+    const heartbeatFailure = await leaseHeartbeat.stop()
+    if (error instanceof ScheduledRuntimeCoordinatorTimeoutError) {
+      // A timed-out mutation has an ambiguous outcome. Keep the renewable lease
+      // fenced until its bounded expiry instead of racing it with a release.
+      leaseFinalized = true
+    }
+    const effectiveError = heartbeatFailure && !isScheduledContainmentError(error)
+      ? new ScheduledSupabaseCircuitOpenError('scheduled_runtime_lease_renewal')
+      : error
+    if (isScheduledContainmentError(effectiveError)) {
+      const containmentStatus = effectiveError instanceof ScheduledSupabaseUnavailableError ? effectiveError.status : null
+      try {
+        const failure = await scheduledRuntimeCoordinatorCallWithTimeout(
+          'record_failure',
+          coordinator.recordFailure({
+            leaseId,
+            operation: circuit.failedOperation ?? effectiveError.operation,
+            status: circuit.failedStatus ?? containmentStatus,
+            timedOut: circuit.timedOut || containmentStatus === 504,
+          }),
+        )
+        leaseFinalized = failure.applied
+      } catch (coordinatorError) {
+        if (coordinatorError instanceof ScheduledRuntimeCoordinatorTimeoutError) {
+          // Preserve the lease fence while the failure mutation outcome is
+          // ambiguous. A later cycle can safely continue after lease expiry.
+          leaseFinalized = true
+        }
+        console.error(JSON.stringify({
+          event: 'scheduled_runtime_failure_record_failed',
+          message: coordinatorError instanceof Error ? coordinatorError.message : 'Scheduled runtime failure could not be persisted.',
+          scheduledTime: controller.scheduledTime,
+        }))
+      }
       console.error(JSON.stringify({
         event: 'scheduled_work_contained',
-        failedOperation: circuit.failedOperation ?? error.operation,
+        failedOperation: circuit.failedOperation ?? effectiveError.operation,
         scheduledTime: controller.scheduledTime,
         status: circuit.failedStatus ?? containmentStatus,
         timedOut: circuit.timedOut || containmentStatus === 504,
@@ -9350,10 +9752,25 @@ async function runScheduledWorkerCycle(
     }
     console.error(JSON.stringify({
       event: 'scheduled_work_failed',
-      message: error instanceof Error ? error.message : 'Unknown scheduled work failure',
+      message: effectiveError instanceof Error ? effectiveError.message : 'Unknown scheduled work failure',
       scheduledTime: controller.scheduledTime,
     }))
   } finally {
+    await leaseHeartbeat.stop()
+    if (!leaseFinalized) {
+      try {
+        await scheduledRuntimeCoordinatorCallWithTimeout(
+          'release_cycle',
+          coordinator.releaseCycle({ leaseId }),
+        )
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: 'scheduled_runtime_lease_release_failed',
+          message: error instanceof Error ? error.message : 'Scheduled runtime lease release failed.',
+          scheduledTime: controller.scheduledTime,
+        }))
+      }
+    }
     clearTimeout(scheduledBudgetTimeout)
   }
 }
@@ -9385,7 +9802,7 @@ export default {
           { allow: 'GET, HEAD' },
         )
       } else {
-        response = readiness(environment, requestId)
+        response = await readiness(environment, requestId)
         if (request.method === 'HEAD') {
           response = new Response(null, { headers: response.headers, status: response.status })
         }
