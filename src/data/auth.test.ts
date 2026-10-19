@@ -59,12 +59,14 @@ describe('auth helpers', () => {
 describe('signOut', () => {
   it('keeps remembered-device trust available for the next login', async () => {
     localStorage.setItem('sygshift:trusted-device-token:v1', 'remembered-device-token')
+    sessionStorage.setItem('sygshift:view-date-selections:v1', JSON.stringify({ ownerId: 'employee-a', selections: {} }))
     supabaseMock.client.auth.signOut.mockResolvedValueOnce({ error: null })
 
     await signOut()
 
     expect(supabaseMock.deactivateSharedIdentitySupabaseSession).toHaveBeenCalledOnce()
     expect(localStorage.getItem('sygshift:trusted-device-token:v1')).toBe('remembered-device-token')
+    expect(sessionStorage.getItem('sygshift:view-date-selections:v1')).toBeNull()
   })
 })
 

@@ -36,6 +36,7 @@ import {
 } from '../lib/supabase'
 import { lastCompletedPayrollWeek } from '../lib/time'
 import { personalDisplayTimeZone } from '../lib/usTimeZones'
+import { bindViewDateSelectionOwner, clearViewDateSelections } from '../lib/sessionViewDateSelection'
 import { MaintenanceNotice, MaintenanceUnavailablePanel } from './MaintenanceNotice'
 import { getMaintenanceStatus, maintenanceFeatureForPath } from '../data/maintenance'
 import { deriveSystemServiceStatus, getSystemReadiness } from '../data/systemStatus'
@@ -589,6 +590,7 @@ export function AppShell() {
       clearSessionScopedQueryCaches(queryClient)
       deactivateSharedIdentitySupabaseSession()
       clearSharedIdentitySession()
+      clearViewDateSelections()
       setAuthSessionId(null)
       setSessionContext(null)
       setAuthMessage(message)
@@ -764,6 +766,7 @@ export function AppShell() {
         clearSessionScopedQueryCaches(queryClient)
         deactivateSharedIdentitySupabaseSession()
         clearSharedIdentitySession()
+        clearViewDateSelections()
         setSessionContext(null)
         setAuthRecoveryRequired(false)
         setAuthLoading(false)
@@ -775,6 +778,7 @@ export function AppShell() {
         if (!isCurrentSessionGeneration(generation)) return
         if (sharedRestoreOutcome !== 'retrying') clearSessionRecoveryTimer(true)
         queryClient.setQueryData(['session-context'], context)
+        bindViewDateSelectionOwner(context.employeeId)
         setSessionContext(context)
         setAuthMessage(null)
         setAuthRecoveryRequired(false)
@@ -899,6 +903,7 @@ export function AppShell() {
           void clearPushSession()
           if (!getSharedIdentitySessionScope()) clearSharedIdentitySession()
           deactivateSharedIdentitySupabaseSession()
+          clearViewDateSelections()
           setAuthSessionId(null)
           setSessionContext(null)
           setAuthRecoveryRequired(false)

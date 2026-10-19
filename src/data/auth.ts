@@ -5,6 +5,7 @@ import { clearSecurityKeySession } from '../lib/securityKeySession'
 import { clearSharedIdentityServerSession, getSharedIdentitySessionScope } from '../lib/sharedIdentitySession'
 import { clearPushSession } from './pushNotifications'
 import { cancelLoginSound } from '../lib/notificationSounds'
+import { clearViewDateSelections } from '../lib/sessionViewDateSelection'
 
 export const AUTH_EMAIL_DOMAIN = 'accounts.sygshift.invalid'
 export const USERNAME_PATTERN = /^[a-z][a-z0-9]{1,62}$/
@@ -160,6 +161,7 @@ export async function signOut(): Promise<void> {
   } finally {
     deactivateSharedIdentitySupabaseSession()
     clearSecurityKeySession()
+    clearViewDateSelections()
     if (sharedIdentitySession) publishSharedIdentityBrowserEvent('cleared')
   }
 }

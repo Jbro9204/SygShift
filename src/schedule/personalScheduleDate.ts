@@ -9,12 +9,14 @@ export interface PersonalScheduleDateBasis {
 }
 
 export function usePersonalScheduleDateBasis({
+  anchorWeek = true,
   employeeId,
   enabled,
   onAnchorWeek,
   serverTime,
   timeZone,
 }: {
+  anchorWeek?: boolean
   employeeId?: string | null
   enabled: boolean
   onAnchorWeek: Dispatch<SetStateAction<Date>>
@@ -45,9 +47,9 @@ export function usePersonalScheduleDateBasis({
     }
     if (anchoredBasisKey === basisKey) return
 
-    onAnchorWeek(currentWeek)
+    if (anchorWeek) onAnchorWeek(currentWeek)
     setAnchoredBasisKey(basisKey)
-  }, [anchoredBasisKey, basisKey, currentWeek, enabled, onAnchorWeek])
+  }, [anchorWeek, anchoredBasisKey, basisKey, currentWeek, enabled, onAnchorWeek])
 
   return {
     currentWeek,

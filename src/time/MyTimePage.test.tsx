@@ -1,12 +1,13 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MyTimePage } from './MyTimePage'
 
 const mocks = vi.hoisted(() => ({
   dashboardOperationalDate: '2026-09-06',
   employeeTimeZone: 'America/Denver',
+  sessionEmployeeId: 'employee-a',
   payrollFromDate: '2026-09-06',
   payrollThroughDate: '2026-09-19',
   recentEvents: [] as Array<Record<string, unknown>>,
@@ -15,10 +16,10 @@ const mocks = vi.hoisted(() => ({
   serverTimestamp: '2026-09-06T16:00:00Z',
 }))
 vi.mock('../lib/supabase', () => ({ isSupabaseConfigured: true }))
-vi.mock('../data/auth', () => ({ getSessionContext: async () => ({ permissions: ['time.self.view'] }) }))
+vi.mock('../data/auth', () => ({ getSessionContext: async () => ({ employeeId: mocks.sessionEmployeeId, permissions: ['time.self.view'] }) }))
 vi.mock('../data/timekeeping', async (original) => ({ ...await original<typeof import('../data/timekeeping')>(),
   getTimekeepingDashboard: async () => ({
-    employee: { id: 'employee', displayName: 'Test Employee', timeZone: mocks.employeeTimeZone, username: 'test.employee' },
+    employee: { id: mocks.sessionEmployeeId, displayName: 'Test Employee', timeZone: mocks.employeeTimeZone, username: 'test.employee' },
     operationalDate: mocks.dashboardOperationalDate,
     serverTimestamp: mocks.serverTimestamp,
     recentEvents: mocks.recentEvents,
@@ -67,12 +68,14 @@ describe('My Time pay-period history', () => {
   beforeEach(() => {
     mocks.dashboardOperationalDate = '2026-09-06'
     mocks.employeeTimeZone = 'America/Denver'
+    mocks.sessionEmployeeId = 'employee-a'
     mocks.payrollFromDate = '2026-09-06'
     mocks.payrollThroughDate = '2026-09-19'
     mocks.recentEvents = []
     mocks.requestCorrection.mockReset()
     mocks.requestCorrection.mockResolvedValue({})
     mocks.serverTimestamp = '2026-09-06T16:00:00Z'
+    window.sessionStorage.clear()
   })
 
   it('offers the next-day assigned shift in the call-off form', async () => {
@@ -107,10 +110,89 @@ describe('My Time pay-period history', () => {
     expect(screen.queryByText('Post 2026-09-06')).not.toBeInTheDocument()
     fireEvent.change(picker, { target: { value: '2' } })
     await screen.findByText('Post 2026-08-09')
-    await waitFor(() => expect(mocks.review).toHaveBeenCalledWith({ employeeId: 'employee', fromDate: '2026-08-09', throughDate: '2026-08-22' }))
+    await waitFor(() => expect(mocks.review).toHaveBeenCalledWith({ employeeId: 'employee-a', fromDate: '2026-08-09', throughDate: '2026-08-22' }))
     expect(todayMetric).toHaveTextContent('1.00 hrs')
     fireEvent.change(picker, { target: { value: '0' } })
     await screen.findByText('Post 2026-09-06')
+  })
+
+  it('restores the exact historical period after app navigation remounts My Time', async () => {
+    mocks.review.mockImplementation(async ({ employeeId, fromDate, throughDate }) => ({
+      fromDate,
+      throughDate,
+      pendingCorrections: [],
+      serverTimestamp: mocks.serverTimestamp,
+      rows: [{ breakMinutes: 0, employeeId, exceptionCodes: [], locationName: `Post ${fromDate}`, operationalDate: fromDate, overtimeMinutes: 0, paidMinutes: 60, payrollReady: true, regularMinutes: 60, rowKind: 'time_event', shiftId: null, unpaidGapMinutes: 0 }],
+    }))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/time/my-time']}>
+          <Routes>
+            <Route path="/time/my-time" element={<><Link to="/other">Leave My Time</Link><MyTimePage /></>} />
+            <Route path="/other" element={<Link to="/time/my-time">Return to My Time</Link>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    const picker = await screen.findByRole('combobox', { name: 'Pay period' })
+    fireEvent.change(picker, { target: { value: '2' } })
+    await screen.findByText('Post 2026-08-09')
+    fireEvent.click(screen.getByRole('link', { name: 'Leave My Time' }))
+    fireEvent.click(await screen.findByRole('link', { name: 'Return to My Time' }))
+
+    expect(await screen.findByRole('combobox', { name: 'Pay period' })).toHaveValue('2')
+    expect(await screen.findByText('Post 2026-08-09')).toBeVisible()
+    expect(screen.getByText('08/09/2026 - 08/22/2026')).toBeVisible()
+    await waitFor(() => expect(mocks.review).toHaveBeenLastCalledWith({ employeeId: 'employee-a', fromDate: '2026-08-09', throughDate: '2026-08-22' }))
+  })
+
+  it('refreshes data on focus and visibility changes without replacing the selected period', async () => {
+    mocks.review.mockImplementation(async ({ employeeId, fromDate, throughDate }) => ({
+      fromDate,
+      throughDate,
+      pendingCorrections: [],
+      serverTimestamp: mocks.serverTimestamp,
+      rows: [{ breakMinutes: 0, employeeId, exceptionCodes: [], locationName: `Post ${fromDate}`, operationalDate: fromDate, overtimeMinutes: 0, paidMinutes: 60, payrollReady: true, regularMinutes: 60, rowKind: 'time_event', shiftId: null, unpaidGapMinutes: 0 }],
+    }))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={queryClient}><MemoryRouter><MyTimePage /></MemoryRouter></QueryClientProvider>)
+    const picker = await screen.findByRole('combobox', { name: 'Pay period' })
+    fireEvent.change(picker, { target: { value: '1' } })
+    await screen.findByText('Post 2026-08-23')
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('focus'))
+    await queryClient.invalidateQueries({ queryKey: ['my-time-payroll-period'] })
+    await queryClient.invalidateQueries({ queryKey: ['my-time-review'] })
+
+    expect(screen.getByRole('combobox', { name: 'Pay period' })).toHaveValue('1')
+    expect(await screen.findByText('Post 2026-08-23')).toBeVisible()
+    await waitFor(() => expect(mocks.review).toHaveBeenLastCalledWith({ employeeId: 'employee-a', fromDate: '2026-08-23', throughDate: '2026-09-05' }))
+  })
+
+  it('clears the prior range when the authenticated employee changes', async () => {
+    mocks.review.mockImplementation(async ({ employeeId, fromDate, throughDate }) => ({
+      fromDate,
+      throughDate,
+      pendingCorrections: [],
+      serverTimestamp: mocks.serverTimestamp,
+      rows: [{ breakMinutes: 0, employeeId, exceptionCodes: [], locationName: `${employeeId} ${fromDate}`, operationalDate: fromDate, overtimeMinutes: 0, paidMinutes: 60, payrollReady: true, regularMinutes: 60, rowKind: 'time_event', shiftId: null, unpaidGapMinutes: 0 }],
+    }))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={queryClient}><MemoryRouter><MyTimePage /></MemoryRouter></QueryClientProvider>)
+    const picker = await screen.findByRole('combobox', { name: 'Pay period' })
+    fireEvent.change(picker, { target: { value: '2' } })
+    await screen.findByText('employee-a 2026-08-09')
+
+    mocks.sessionEmployeeId = 'employee-b'
+    queryClient.setQueryData(['session-context'], { employeeId: 'employee-b', permissions: ['time.self.view'] })
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Pay period' })).toHaveValue('0'))
+    expect(await screen.findByText('employee-b 2026-09-06')).toBeVisible()
+    expect(screen.queryByText('employee-a 2026-08-09')).not.toBeInTheDocument()
+    await waitFor(() => expect(mocks.review).toHaveBeenLastCalledWith({ employeeId: 'employee-b', fromDate: '2026-09-06', throughDate: '2026-09-19' }))
   })
 
   it('keeps one crossing timecard while using payroll-week allocations for employee totals', async () => {

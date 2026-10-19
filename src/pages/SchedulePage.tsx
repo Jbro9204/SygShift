@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
 import { AlertCircle, BellRing, CalendarCheck2, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Copy, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Route, Search, Send, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import { ScheduleTimeBasisPanel, type ScheduleTimePreviewRow } from '../components/ScheduleTimeBasisPanel'
@@ -59,6 +59,14 @@ import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatDualClockTime, formatDualTime, operationalToday } from '../lib/time'
 import { continentalUsTimeZoneLabel, continentalUsTimeZones, personalDisplayTimeZone } from '../lib/usTimeZones'
+import {
+  bindViewDateSelectionOwner,
+  readViewDateSelection,
+  saveViewDateSelection,
+  validViewDateKey,
+  type ScheduleDateSelection,
+  type ViewDateSelectionSurface,
+} from '../lib/sessionViewDateSelection'
 import { scheduleTeamViewPermissions } from '../app/accessPolicy'
 import { scheduledOvertimePreviewBlocksSave } from '../scheduleDraftEdit'
 import { downloadScheduleCalendar } from '../schedule/calendar'
@@ -2378,13 +2386,23 @@ function ImportedShiftCard({ shift }: { shift: ImportedScheduleShift }) {
 
 export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler' } = {}) {
   const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
   const boardScrollRef = useRef<HTMLElement | null>(null)
   const topScrollRef = useRef<HTMLDivElement | null>(null)
   const isSchedulerHome = mode === 'scheduler'
+  const selectionSurface: ViewDateSelectionSurface = isSchedulerHome ? 'scheduler' : 'schedule'
+  const requestedWeekKey = searchParams.get('week')
+  const requestedRange = searchParams.get('range')
+  const requestedEmployeeRange: EmployeeScheduleRange | null = requestedRange === '1w' || requestedRange === '2w' || requestedRange === 'month'
+    ? requestedRange
+    : null
   const today = useMemo(() => operationalToday(), [])
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(today, { weekStartsOn: 0 }))
+  const [weekStart, setWeekStart] = useState(() => validViewDateKey(requestedWeekKey)
+    ? startOfWeek(dateKeyToLocalDate(requestedWeekKey), { weekStartsOn: 0 })
+    : startOfWeek(today, { weekStartsOn: 0 }))
   const [search, setSearch] = useState('')
-  const [employeeScheduleRange, setEmployeeScheduleRange] = useState<EmployeeScheduleRange>('2w')
+  const [employeeScheduleRange, setEmployeeScheduleRange] = useState<EmployeeScheduleRange>(requestedEmployeeRange ?? '2w')
+  const [selectionOwnerId, setSelectionOwnerId] = useState<string | null>(null)
   const [siteFilter, setSiteFilter] = useState('all')
   const [scheduleView, setScheduleView] = useState<'site' | 'employee'>('site')
   const [employeeFilter, setEmployeeFilter] = useState('all')
@@ -2424,13 +2442,20 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     })
   }, [today])
   const [openShiftForm, setOpenShiftForm] = useState<OpenShiftFormState>(() => defaultOpenShiftForm(weekKey))
+  const sessionQuery = useQuery({
+    queryKey: ['session-context'],
+    queryFn: getSessionContext,
+    enabled: isSupabaseConfigured,
+  })
+  const activeSelectionOwnerId = sessionQuery.data?.employeeId ?? null
+  const selectionReady = Boolean(activeSelectionOwnerId && selectionOwnerId === activeSelectionOwnerId)
   const scheduleQuery = useQuery({
     queryKey: ['weekly-schedule', weekKey],
     queryFn: () => getWeeklySchedule(weekKey),
-    enabled: isSupabaseConfigured,
+    enabled: isSupabaseConfigured && selectionReady,
   })
   useEffect(() => {
-    if (!isSupabaseConfigured) return
+    if (!isSupabaseConfigured || !selectionReady) return
     const client = getSupabaseClient()
     const refresh = () => {
       void queryClient.invalidateQueries({ queryKey: ['weekly-schedule'] })
@@ -2444,16 +2469,11 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shift_coverage_cases' }, refresh)
       .subscribe()
     return () => { void client.removeChannel(channel) }
-  }, [queryClient, weekKey])
+  }, [queryClient, selectionReady, weekKey])
   const importedPreviewQuery = useQuery({
     queryKey: ['imported-schedule-preview', weekKey],
     queryFn: () => getImportedSchedulePreview(weekKey),
     enabled: false,
-  })
-  const sessionQuery = useQuery({
-    queryKey: ['session-context', 'schedule'],
-    queryFn: getSessionContext,
-    enabled: isSupabaseConfigured,
   })
   const scheduleServerTimeQuery = useQuery({
     enabled: isSupabaseConfigured,
@@ -2496,15 +2516,63 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     ?? hasVacancyPatrolRequestPermission
   const personalScheduleTimeZone = personalDisplayTimeZone(sessionQuery.data?.timeZone ?? 'America/Denver')
   const {
+    currentWeek: personalScheduleCurrentWeek,
     isReady: personalScheduleDateReady,
     today: personalScheduleToday,
   } = usePersonalScheduleDateBasis({
+    anchorWeek: false,
     employeeId: sessionQuery.data?.employeeId,
     enabled: employeeOnlySchedule,
     onAnchorWeek: setWeekStart,
     serverTime: scheduleServerTimeQuery.data?.serverTime,
     timeZone: personalScheduleTimeZone,
   })
+  useEffect(() => {
+    if (!activeSelectionOwnerId || !sessionQuery.isSuccess) return
+    const ownerChanged = selectionOwnerId !== null && selectionOwnerId !== activeSelectionOwnerId
+    bindViewDateSelectionOwner(activeSelectionOwnerId)
+    const storedSelection = ownerChanged ? null : readViewDateSelection(activeSelectionOwnerId, selectionSurface) as ScheduleDateSelection | null
+    const requestedSelection = !ownerChanged && validViewDateKey(requestedWeekKey)
+      ? { range: requestedEmployeeRange ?? undefined, weekStartsOn: requestedWeekKey }
+      : null
+    const candidate = requestedSelection ?? storedSelection
+    const defaultWeek = employeeOnlySchedule ? personalScheduleCurrentWeek : startOfWeek(today, { weekStartsOn: 0 })
+    if (!candidate && !defaultWeek) return
+
+    const resolvedWeek = candidate
+      ? startOfWeek(dateKeyToLocalDate(candidate.weekStartsOn), { weekStartsOn: 0 })
+      : defaultWeek!
+    const nextWeekKey = format(resolvedWeek, 'yyyy-MM-dd')
+    const nextRange = candidate?.range ?? (!ownerChanged ? requestedEmployeeRange : null) ?? '2w'
+    const nextSelection = { range: nextRange, weekStartsOn: nextWeekKey }
+
+    setWeekStart((current) => format(current, 'yyyy-MM-dd') === nextWeekKey ? current : resolvedWeek)
+    setEmployeeScheduleRange((current) => current === nextRange ? current : nextRange)
+    setOpenShiftForm((current) => selectionOwnerId === activeSelectionOwnerId ? current : defaultOpenShiftForm(nextWeekKey))
+    setSelectionOwnerId(activeSelectionOwnerId)
+    saveViewDateSelection(activeSelectionOwnerId, selectionSurface, nextSelection)
+
+    if (requestedWeekKey !== nextWeekKey || (!isSchedulerHome && requestedEmployeeRange !== nextRange)) {
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.set('week', nextWeekKey)
+      if (isSchedulerHome) nextParams.delete('range')
+      else nextParams.set('range', nextRange)
+      setSearchParams(nextParams, { replace: true })
+    }
+  }, [
+    activeSelectionOwnerId,
+    employeeOnlySchedule,
+    isSchedulerHome,
+    personalScheduleCurrentWeek,
+    requestedEmployeeRange,
+    requestedWeekKey,
+    searchParams,
+    selectionOwnerId,
+    selectionSurface,
+    sessionQuery.isSuccess,
+    setSearchParams,
+    today,
+  ])
   const employeeScheduleStart = useMemo(() => employeeScheduleDisplayStart(weekStart), [weekStart])
   const employeeScheduleDays = useMemo(
     () => Array.from({ length: employeeScheduleWeekCount(employeeScheduleRange) * 7 }, (_, index) => addDays(employeeScheduleStart, index)),
@@ -2515,7 +2583,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     [employeeScheduleDays],
   )
   const employeeScheduleRangeQuery = useQuery({
-    enabled: isSupabaseConfigured && employeeOnlySchedule && personalScheduleDateReady,
+    enabled: isSupabaseConfigured && employeeOnlySchedule && personalScheduleDateReady && selectionReady,
     queryFn: async () => Promise.all(employeeScheduleWeekKeys.map((key) => getWeeklySchedule(key))),
     queryKey: ['personal-schedule-range', employeeScheduleWeekKeys.join('|')],
     retry: false,
@@ -2540,7 +2608,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const availabilityQuery = useQuery({
     queryKey: ['availability-workspace', weekKey, format(weekEnd, 'yyyy-MM-dd')],
     queryFn: () => getAvailabilityWorkspace(weekKey, format(weekEnd, 'yyyy-MM-dd')),
-    enabled: isSupabaseConfigured && canEditScheduler,
+    enabled: isSupabaseConfigured && canEditScheduler && selectionReady,
   })
   const availableSites = useMemo(() => {
     const sites = new Map<string, { id: string, name: string, time_zone: string, supports_ep_truep_payroll: boolean }>()
@@ -3440,8 +3508,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }
 
   function jumpToWeek(nextWeekStart: Date) {
-    const nextWeekKey = format(nextWeekStart, 'yyyy-MM-dd')
-    setWeekStart(nextWeekStart)
+    const normalizedWeekStart = startOfWeek(nextWeekStart, { weekStartsOn: 0 })
+    const nextWeekKey = format(normalizedWeekStart, 'yyyy-MM-dd')
     setOpenShiftForm(defaultOpenShiftForm(nextWeekKey))
     setOpenShiftEmployeeSearch('')
     setBuilderMessage(null)
@@ -3450,6 +3518,29 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     setNotifyScheduleOpen(false)
     setSelectedSchedulerDayKey(null)
     setVacancyPatrolShiftId(null)
+    if (activeSelectionOwnerId) {
+      saveViewDateSelection(activeSelectionOwnerId, selectionSurface, {
+        range: employeeScheduleRange,
+        weekStartsOn: nextWeekKey,
+      })
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.set('week', nextWeekKey)
+      if (isSchedulerHome) nextParams.delete('range')
+      else nextParams.set('range', employeeScheduleRange)
+      setSearchParams(nextParams, { replace: true })
+    }
+  }
+
+  function selectEmployeeScheduleRange(nextRange: EmployeeScheduleRange) {
+    if (!activeSelectionOwnerId) return
+    saveViewDateSelection(activeSelectionOwnerId, selectionSurface, {
+      range: nextRange,
+      weekStartsOn: weekKey,
+    })
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('week', weekKey)
+    nextParams.set('range', nextRange)
+    setSearchParams(nextParams, { replace: true })
   }
 
   function handleCreateOpenShift(event: FormEvent<HTMLFormElement>) {
@@ -4688,7 +4779,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           onJumpToWeek={jumpToWeek}
           range={employeeScheduleRange}
           search={search}
-          setRange={setEmployeeScheduleRange}
+          setRange={selectEmployeeScheduleRange}
           setSearch={setSearch}
           shifts={employeePersonalScheduleShifts}
           today={personalScheduleToday}

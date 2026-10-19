@@ -40,6 +40,13 @@ import {
   type TimekeepingShift,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
+import {
+  bindViewDateSelectionOwner,
+  readViewDateSelection,
+  saveViewDateSelection,
+  validViewDateKey,
+  type MyTimeDateSelection,
+} from '../lib/sessionViewDateSelection'
 import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { dateKeyInTimeZone, formatDualTimeRange, formatOperationalDateTime } from '../lib/time'
 import { continentalUsTimeZoneLabel, continentalUsTimeZoneShortLabel } from '../lib/usTimeZones'
@@ -83,7 +90,15 @@ export function MyTimePage() {
   const [attendanceReportNote, setAttendanceReportNote] = useState('')
   const [correctionEvent, setCorrectionEvent] = useState<TimekeepingEvent | null>(null)
   const [missingTimeRequestOpen, setMissingTimeRequestOpen] = useState(false)
-  const [periodOffset, setPeriodOffset] = useState(0)
+  const requestedFromDate = searchParams.get('from')
+  const requestedThroughDate = searchParams.get('through')
+  const requestedRange = useMemo(() => validViewDateKey(requestedFromDate)
+    && validViewDateKey(requestedThroughDate)
+    && requestedFromDate <= requestedThroughDate
+    ? { fromDate: requestedFromDate, throughDate: requestedThroughDate }
+    : null, [requestedFromDate, requestedThroughDate])
+  const [selectedRange, setSelectedRange] = useState<MyTimeDateSelection | null>(requestedRange)
+  const [selectionOwnerId, setSelectionOwnerId] = useState<string | null>(null)
   const sessionQuery = useQuery({
     queryFn: getSessionContext,
     queryKey: ['session-context'],
@@ -92,7 +107,7 @@ export function MyTimePage() {
   const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
   const dashboardQuery = useQuery({
     queryFn: () => getTimekeepingDashboard(),
-    queryKey: ['my-time-dashboard'],
+    queryKey: ['my-time-dashboard', sessionQuery.data?.employeeId],
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     refetchInterval: 15_000,
   })
@@ -101,19 +116,34 @@ export function MyTimePage() {
   const periodQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     queryFn: getPayrollPeriodContext,
-    queryKey: ['my-time-payroll-period'],
+    queryKey: ['my-time-payroll-period', sessionQuery.data?.employeeId],
   })
-  const payrollPeriod = periodQuery.data
+  const payrollPeriod = useMemo(() => periodQuery.data
     ? payrollPeriodFromBoundary(periodQuery.data)
-    : currentPayrollPeriod(dashboard?.serverTimestamp ? new Date(dashboard.serverTimestamp) : undefined)
-  const availablePeriods = periodQuery.data?.availablePeriods.length ? periodQuery.data.availablePeriods : [{ offset: 0, ...payrollPeriod }]
-  const selectedPeriod = availablePeriods.find((period) => period.offset === periodOffset) ?? availablePeriods[0]
+    : currentPayrollPeriod(dashboard?.serverTimestamp ? new Date(dashboard.serverTimestamp) : undefined), [dashboard?.serverTimestamp, periodQuery.data])
+  const availablePeriods = useMemo(
+    () => periodQuery.data?.availablePeriods.length
+      ? periodQuery.data.availablePeriods
+      : [{ offset: 0, ...payrollPeriod }],
+    [payrollPeriod, periodQuery.data?.availablePeriods],
+  )
+  const selectedPeriod = availablePeriods.find((period) => (
+    period.fromDate === selectedRange?.fromDate && period.throughDate === selectedRange.throughDate
+  )) ?? availablePeriods[0]
+  const activeSelectionOwnerId = sessionQuery.data?.employeeId ?? null
+  const selectionReady = Boolean(
+    activeSelectionOwnerId
+    && selectionOwnerId === activeSelectionOwnerId
+    && selectedRange
+    && selectedPeriod.fromDate === selectedRange.fromDate
+    && selectedPeriod.throughDate === selectedRange.throughDate,
+  )
   const missingTimeHistoryFromDate = format(
     subDays(new Date(`${payrollPeriod.throughDate}T12:00:00`), 365),
     'yyyy-MM-dd',
   )
   const reviewQuery = useQuery({
-    enabled: isSupabaseConfigured && ownTimeAllowed && Boolean(dashboard?.employee.id) && periodQuery.isSuccess,
+    enabled: isSupabaseConfigured && ownTimeAllowed && Boolean(dashboard?.employee.id) && periodQuery.isSuccess && selectionReady,
     queryFn: () => getOwnTimekeepingReview({
       employeeId: dashboard?.employee.id ?? '',
       fromDate: selectedPeriod.fromDate,
@@ -131,6 +161,54 @@ export function MyTimePage() {
     queryFn: () => getMissingTimeRequestWorkspace(missingTimeHistoryFromDate, payrollPeriod.throughDate),
     queryKey: ['my-missing-time-workspace', missingTimeHistoryFromDate, payrollPeriod.throughDate],
   })
+
+  useEffect(() => {
+    if (!activeSelectionOwnerId || !periodQuery.isSuccess || availablePeriods.length === 0) return
+    const ownerChanged = selectionOwnerId !== null && selectionOwnerId !== activeSelectionOwnerId
+    bindViewDateSelectionOwner(activeSelectionOwnerId)
+    const storedRange = ownerChanged ? null : readViewDateSelection(activeSelectionOwnerId, 'my-time')
+    const candidate = ownerChanged ? null : requestedRange ?? storedRange
+    const resolved = availablePeriods.find((period) => (
+      period.fromDate === candidate?.fromDate && period.throughDate === candidate.throughDate
+    )) ?? availablePeriods[0]
+    const nextRange = { fromDate: resolved.fromDate, throughDate: resolved.throughDate }
+
+    setSelectedRange((current) => current?.fromDate === nextRange.fromDate && current.throughDate === nextRange.throughDate
+      ? current
+      : nextRange)
+    setSelectionOwnerId(activeSelectionOwnerId)
+    saveViewDateSelection(activeSelectionOwnerId, 'my-time', nextRange)
+
+    if (requestedFromDate !== nextRange.fromDate || requestedThroughDate !== nextRange.throughDate) {
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.set('from', nextRange.fromDate)
+      nextParams.set('through', nextRange.throughDate)
+      setSearchParams(nextParams, { replace: true })
+    }
+  }, [
+    activeSelectionOwnerId,
+    availablePeriods,
+    periodQuery.isSuccess,
+    requestedRange,
+    requestedFromDate,
+    requestedThroughDate,
+    searchParams,
+    selectionOwnerId,
+    setSearchParams,
+  ])
+
+  function selectPayPeriod(offset: number) {
+    const period = availablePeriods.find((candidate) => candidate.offset === offset) ?? availablePeriods[0]
+    if (!activeSelectionOwnerId || !period) return
+    const nextRange = { fromDate: period.fromDate, throughDate: period.throughDate }
+    setSelectedRange(nextRange)
+    setSelectionOwnerId(activeSelectionOwnerId)
+    saveViewDateSelection(activeSelectionOwnerId, 'my-time', nextRange)
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('from', nextRange.fromDate)
+    nextParams.set('through', nextRange.throughDate)
+    setSearchParams(nextParams, { replace: true })
+  }
 
   const reviewPeriod = reviewQuery.data
     ? { fromDate: reviewQuery.data.fromDate, throughDate: reviewQuery.data.throughDate }
@@ -227,7 +305,7 @@ export function MyTimePage() {
     )
   }
 
-  if (sessionQuery.isPending || (ownTimeAllowed && (dashboardQuery.isPending || periodQuery.isPending))) {
+  if (sessionQuery.isPending || (ownTimeAllowed && (dashboardQuery.isPending || periodQuery.isPending || !selectionReady))) {
     return (
       <main className="page page--sygshift-time">
         <DataStatePanel icon={Timer} title="Loading My Time">
@@ -308,11 +386,11 @@ export function MyTimePage() {
       <section className="my-time-dashboard-grid">
         <section className="time-card my-time-summary-card">
           <TimeSectionHeader
-            eyebrow={periodOffset === 0 ? 'Current pay period' : 'Previous pay period'}
+            eyebrow={selectedPeriod.offset === 0 ? 'Current pay period' : 'Previous pay period'}
             summary={`${formatUsDateKey(reviewPeriod.fromDate)} - ${formatUsDateKey(reviewPeriod.throughDate)}`}
             title="Your Hours"
           />
-          <label className="my-time-period-picker"><span>Pay period</span><select aria-label="Pay period" onChange={(event) => setPeriodOffset(Number(event.target.value))} value={selectedPeriod.offset}>{availablePeriods.map((period) => <option key={period.offset} value={period.offset}>{period.offset === 0 ? 'Current period' : period.offset === 1 ? 'Previous period' : 'Two periods ago'} · {formatUsDateKey(period.fromDate)} – {formatUsDateKey(period.throughDate)}</option>)}</select><small>History is for review. Contact Timekeeping about errors; selecting a period does not change your live clock or approved payroll.</small></label>
+          <label className="my-time-period-picker"><span>Pay period</span><select aria-label="Pay period" onChange={(event) => selectPayPeriod(Number(event.target.value))} value={selectedPeriod.offset}>{availablePeriods.map((period) => <option key={period.offset} value={period.offset}>{period.offset === 0 ? 'Current period' : period.offset === 1 ? 'Previous period' : 'Two periods ago'} · {formatUsDateKey(period.fromDate)} – {formatUsDateKey(period.throughDate)}</option>)}</select><small>History is for review. Contact Timekeeping about errors; selecting a period does not change your live clock or approved payroll.</small></label>
           <div className="time-command-grid my-time-summary-card__metrics" aria-busy={periodQuery.isPending || reviewQuery.isPending}>
             <TimeMetricCard detail="Paid time recorded today." icon={Clock3} label="Today" value={currentReviewQuery.isPending ? 'Loading…' : currentReviewQuery.isError ? 'Unavailable' : `${payrollHours(totals.today)} hrs`} />
             <TimeMetricCard detail="Paid time for the current week." icon={CalendarDays} label="This Week" value={currentReviewQuery.isPending ? 'Loading…' : currentReviewQuery.isError ? 'Unavailable' : `${payrollHours(totals.week)} hrs`} />

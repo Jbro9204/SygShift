@@ -29,6 +29,26 @@ function PersonalScheduleHarness({
   return <span>{basis.isReady ? format(weekStart, 'yyyy-MM-dd') : 'verifying'}</span>
 }
 
+function PreservedWeekHarness({ serverTime }: { serverTime: string }) {
+  const [weekStart, setWeekStart] = useState(() => new Date(2026, 7, 9, 12))
+  const basis = usePersonalScheduleDateBasis({
+    anchorWeek: false,
+    employeeId: '11111111-1111-4111-8111-111111111111',
+    enabled: true,
+    onAnchorWeek: setWeekStart,
+    serverTime,
+    timeZone: 'America/New_York',
+  })
+
+  return (
+    <span>
+      {basis.isReady && basis.currentWeek
+        ? `${format(weekStart, 'yyyy-MM-dd')} (current ${format(basis.currentWeek, 'yyyy-MM-dd')})`
+        : 'verifying'}
+    </span>
+  )
+}
+
 describe('personal schedule trusted-date gate', () => {
   it('loads an already-matching first week and refreshes at employee-local Sunday midnight', async () => {
     const onLoad = vi.fn()
@@ -51,5 +71,13 @@ describe('personal schedule trusted-date gate', () => {
 
     await waitFor(() => expect(screen.getByText('2026-09-27')).toBeInTheDocument())
     expect(onLoad).toHaveBeenLastCalledWith('2026-09-27')
+  })
+
+  it('can refresh the trusted current-date basis without replacing a historical selection', async () => {
+    const view = render(<PreservedWeekHarness serverTime="2026-09-27T03:59:59.000Z" />)
+    await waitFor(() => expect(screen.getByText('2026-08-09 (current 2026-09-20)')).toBeInTheDocument())
+
+    view.rerender(<PreservedWeekHarness serverTime="2026-09-27T04:00:00.000Z" />)
+    await waitFor(() => expect(screen.getByText('2026-08-09 (current 2026-09-27)')).toBeInTheDocument())
   })
 })
