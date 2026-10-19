@@ -1,7 +1,7 @@
 # Automatic Scheduled Recovery and Release Safety
 
 Date: 10/19/2026
-Status: Implementation in progress; production release pending
+Status: Released and verified in production
 
 ## Problem and user impact
 
@@ -63,45 +63,55 @@ The exact provider-internal cause of the Supabase interruption is still unknown.
 
 ## Verification record
 
-Targeted coordinator tests: Pending
+Targeted scheduler/worker/status tests: 95 passed
 
-Worker scheduler/readiness tests: Pending
+Full Vitest suite: 2,204 passed, 1 skipped across 379 files
 
-System-status tests: Pending
+TypeScript and zero-warning lint: Passed
 
-Release-gate tests: Pending
+Release-gate tests: 74 passed
 
-`pnpm check`: Pending
+`pnpm check`: Passed
 
-Mandatory `tests/e2e/time-clock-workflow.spec.ts`: Pending
+Mandatory `tests/e2e/time-clock-workflow.spec.ts`: Passed in both production gates
 
-Fresh production build after browser tests: Pending
-Independent review: Pending
+Fresh production build after browser tests: Passed in both production gates; static-asset contract passed
+
+Independent review: No remaining P0/P1 findings after scheduler and release-control red-team reviews
 
 ## Lifecycle and deployment record
 
-Supabase migration: None planned
+Supabase migration: None
 
-Cloudflare Durable Object bootstrap commit: Pending
+Cloudflare Durable Object bootstrap source commit: `ec91c8ef055744c6eaeb540bb02d7ddd5f2b0e24`
 
-Cloudflare Durable Object bootstrap version/deployment: Pending
+Cloudflare Durable Object bootstrap version: `2b0604e3-ec49-4ad2-a581-a72e616208e2`
 
-Operational implementation commit: Pending
+Cloudflare Durable Object bootstrap deployment: `263033fe-3e02-4236-b59b-3c051340cb55`
 
-Git push to `origin/main`: Pending
+Operational implementation commit: `54d021cd85e137739d5db33c9cf7418b613bf4d0`
 
-Operational Cloudflare Worker version/deployment: Pending
+Git push to `origin/main`: Verified for both release source commits
 
-Candidate Version URL available: Pending
+Operational Cloudflare Worker version: `b7393269-4ee0-4efa-b1e1-32605579a864`
 
-Prior rollback version: Pending
+Operational Cloudflare deployment: `41dda212-5220-4619-a1b6-9df826430cd0`
 
-Production root/login verification: Pending
+Candidate Version URL available: No; Wrangler did not provide one for this Durable Object Worker
 
-Production `/api/v1/health`: Pending
+Prior rollback version: `2b0604e3-ec49-4ad2-a581-a72e616208e2`
 
-Production `/api/v1/ready`: Pending
-Consecutive scheduled recovery/full-cycle verification: Pending
+Production root/login verification: HTTP 200; updated client shell served
+
+Production `/api/v1/health`: HTTP 200, `status: ok`
+
+Production `/api/v1/ready`: HTTP 200, `ready: true`, scheduler `closed`
+
+Authenticated workspace: Refreshed, secure-access verification completed, and the signed-in operations workspace rendered
+
+Scheduled full-cycle verification: `2026-10-19T16:13:58.560Z`, owned by commit `54d021cd85e137739d5db33c9cf7418b613bf4d0`
+
+Release outcome: Promoted successfully; no rollback required
 
 ## Remaining limitations
 

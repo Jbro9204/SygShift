@@ -1,7 +1,7 @@
 # Scheduled Runtime Recovery and Safe Release Runbook
 
 Date: 10/19/2026
-Implementation status: Pending final verification and production release
+Implementation status: Released and verified in production
 
 ## Purpose
 
@@ -167,36 +167,37 @@ Do not use a raw deployment as a routine shortcut. The lifecycle path is reserve
 
 ## Verification checklist
 
-- [ ] Coordinator state persists across separate minute invocations.
-- [ ] Concurrent invocations produce one lease holder and zero uncoordinated database calls.
-- [ ] Cooldown skips do not contact Supabase.
-- [ ] An expired lease can be recovered safely.
-- [ ] Recovery performs only the read-only probe and starts no mutating scheduled lane.
-- [ ] Two successful recovery cycles are required before full work resumes.
-- [ ] A failed recovery returns the circuit to `open`.
-- [ ] Readiness reports degraded state without directly probing Supabase.
-- [ ] Normal full cycles still run in the established serialized order.
-- [ ] Production release requires a clean, pushed, exact `origin/main` commit.
-- [ ] Browser tests are followed by a fresh production build.
-- [ ] Candidate URL availability is reported accurately.
-- [ ] Post-promotion checks distinguish a bad Worker from an upstream outage.
-- [ ] Automatic rollback targets and verifies the exact prior Worker version.
-- [ ] Durable Object/config lifecycle bootstrap and dependent behavior are separate releases.
-- [ ] No employee, schedule, punch, payroll, identity, notification, message, or audit record is rewritten by recovery checks.
+- [x] Coordinator state persists across separate minute invocations.
+- [x] Concurrent invocations produce one lease holder and zero uncoordinated database calls.
+- [x] Cooldown skips do not contact Supabase.
+- [x] An expired lease can be recovered safely.
+- [x] Recovery performs only the read-only probe and starts no mutating scheduled lane.
+- [x] Two successful recovery cycles are required before full work resumes.
+- [x] A failed recovery returns the circuit to `open`.
+- [x] Readiness reports degraded state without directly probing Supabase.
+- [x] Normal full cycles still run in the established serialized order.
+- [x] Production release requires a clean, pushed, exact `origin/main` commit.
+- [x] Browser tests are followed by a fresh production build.
+- [x] Candidate URL availability is reported accurately.
+- [x] Post-promotion checks distinguish a bad Worker from an upstream outage.
+- [x] Automatic rollback targets and verifies the exact prior Worker version.
+- [x] Durable Object/config lifecycle bootstrap and dependent behavior are separate releases.
+- [x] No employee, schedule, punch, payroll, identity, notification, message, or audit record is rewritten by recovery checks.
 
 ## Current release record
 
-Implementation commit: Pending
+Implementation commit: `54d021cd85e137739d5db33c9cf7418b613bf4d0`
 
-Bootstrap commit: Pending
+Bootstrap source commit: `ec91c8ef055744c6eaeb540bb02d7ddd5f2b0e24`
 
-Cloudflare bootstrap version/deployment: Pending
+Cloudflare bootstrap version/deployment: `2b0604e3-ec49-4ad2-a581-a72e616208e2` / `263033fe-3e02-4236-b59b-3c051340cb55`
 
-Cloudflare operational version/deployment: Pending
+Cloudflare operational version/deployment: `b7393269-4ee0-4efa-b1e1-32605579a864` / `41dda212-5220-4619-a1b6-9df826430cd0`
 
-Automated test results: Pending
+Automated test results: 2,204 Vitest tests passed, 1 skipped; 74 release tests passed; typecheck, lint, build, static assets, and mandatory Time Clock Playwright workflow passed
 
-Live root/login/health/readiness verification: Pending
-Observed recovery-cycle verification: Pending
+Live root/login/health/readiness verification: HTTP 200; readiness healthy with a closed, fresh scheduler owned by the exact operational commit
+
+Observed full-cycle verification: `2026-10-19T16:13:58.560Z`; authenticated workspace also rendered after secure-access verification
 
 Do not replace these fields with estimates. Record exact identifiers and results only after the corresponding step has completed.
