@@ -253,20 +253,18 @@ test('reconciles a timed-out deploy that completed remotely as deployed', async 
   assert.equal(result.activeVersionId, candidateVersionId)
 })
 
-test('returns an explicit not-applied result when a timed-out deploy left the exact prior version active', async () => {
+test('requires manual intervention when a timed-out deploy leaves the prior version active', async () => {
   const harness = lifecycleHarness({
     deploy: async () => { throw new Error('The release command timed out.') },
   })
-  const result = await runLifecycleBootstrapDeployment(
-    options(),
-    { run: harness.run, sleep: async () => undefined },
-  )
 
-  assert.equal(result.outcome, lifecycleDeploymentOutcomes.notApplied)
-  assert.equal(result.deployed, false)
-  assert.equal(result.deployCommandFailed, true)
-  assert.equal(result.activeVersionId, priorVersionId)
-  assert.equal(result.reconciliationAttempts, 3)
+  await assert.rejects(
+    runLifecycleBootstrapDeployment(
+      options(),
+      { run: harness.run, sleep: async () => undefined },
+    ),
+    /prior active version does not prove.*lifecycle changes were not applied.*manual intervention/s,
+  )
 })
 
 test('waits through early prior-version reads when a timed-out lifecycle deployment applies late', async () => {

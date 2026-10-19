@@ -11,7 +11,6 @@ const gitShaPattern = /^[0-9a-f]{40}$/i
 export const lifecycleDeploymentOutcomes = Object.freeze({
   deployed: 'deployed',
   dryRun: 'dry_run',
-  notApplied: 'not_applied',
 })
 
 class UnexpectedLifecycleVersionError extends Error {}
@@ -161,10 +160,7 @@ async function reconcileLifecycleDeployment(
     lastVersionId = observation.activeVersionId
     const candidateConfirmed = observation.state === 'candidate'
       && consecutiveState >= options.reconciliationPasses
-    const priorConfirmedAtDeadline = observation.state === 'prior'
-      && attempt === options.reconciliationAttempts
-      && consecutiveState >= options.reconciliationPasses
-    if (candidateConfirmed || priorConfirmedAtDeadline) {
+    if (candidateConfirmed) {
       return {
         activeVersionId: observation.activeVersionId,
         attempts: attempt,
@@ -178,7 +174,9 @@ async function reconcileLifecycleDeployment(
   }
 
   throw new Error(
-    'Lifecycle deployment state could not be reconciled; manual intervention is required.',
+    'Lifecycle deployment state could not be reconciled to the exact source-tagged version; '
+    + 'the prior active version does not prove that migrations or other lifecycle changes were not applied. '
+    + 'manual intervention is required.',
   )
 }
 
@@ -285,16 +283,13 @@ export async function runLifecycleBootstrapDeployment(inputOptions, injected = {
     priorVersionId,
     sourceCommit,
   )
-  const deployed = reconciliation.state === 'candidate'
 
   return {
     activeVersionId: reconciliation.activeVersionId,
     deployCommandFailed,
-    deployed,
+    deployed: true,
     dryRun: false,
-    outcome: deployed
-      ? lifecycleDeploymentOutcomes.deployed
-      : lifecycleDeploymentOutcomes.notApplied,
+    outcome: lifecycleDeploymentOutcomes.deployed,
     priorVersionId,
     reconciliationAttempts: reconciliation.attempts,
     reconciliationStatusReadErrors: reconciliation.hadReadErrors,
