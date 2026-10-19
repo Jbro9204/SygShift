@@ -7,7 +7,18 @@
 - Preserved all historical check-mark reactions as ordinary visible/removable reactions. Editing an instruction clears its earlier acknowledgments while preserving and auditing the message revision.
 - Added mobile/desktop action, count, identity, failure/retry, reload, multiple-user, direct-chat, channel, membership, edit, and security coverage.
 - Rehearsed both installation and exact-function forward recovery against linked production under outer rollback transactions; both passed with no ledger or schema residue. The isolated history dry run selected only migration `20261019130405`.
-- Full verification and production identifiers are recorded in `docs/changelogs/CHANGELOG_2026-10-19_SYGSPHERE_MESSAGE_ACKNOWLEDGMENT.md` after activation.
+- Applied and ledgered migration `20261019130405`, passed the installed rollback-only regression, preserved all 14 historical check-mark reactions, and left zero acknowledgment or acknowledgment-audit test rows. The changed SygSphere functions have zero database-lint errors and both Supabase advisors report zero errors.
+- Released source `9a185e2bcd59697d3443f6f7e545916ba91a3d41` as Cloudflare Worker version `3909afa1-b032-4505-ad55-e61329e55336`. Both Worker origins passed health, readiness, exact-asset parity, and authenticated no-write UI verification.
+- Released the separate Sygilant client from source `e18141fa9b414f139b0bf99d6227fc5a4acfb2f8` as Pages deployment `1ecfbbe9-ac17-4ce4-bd22-89c946f15808` after the shared backend was active. The custom and immutable origins returned `200` on the required routes, and authenticated UI verification confirmed the compatible group/channel controls without creating an acknowledgment.
+- Pre-release source fallback is `rollback/pre-sygsphere-message-acknowledgment-20261019`; database fallback is the forward-only recovery at `supabase/recovery/20261019130406_sygsphere_message_acknowledgment_recovery.sql`, which preserves evidence while restoring the prior API functions.
+- Full verification and production identifiers are recorded in `docs/changelogs/CHANGELOG_2026-10-19_SYGSPHERE_MESSAGE_ACKNOWLEDGMENT.md`.
+
+## 10/19/2026 - My Time and Schedule Date Selection Retention
+
+- Preserved historical My Time and Schedule selections independently for the signed-in session across app navigation, browser-tab switching, visibility refresh, and background data refresh.
+- Defaulted to the current period only when no valid saved selection exists, kept Today/current-period controls intact, and cleared account-scoped state on sign-out or account change without changing schedules, punches, payroll, permissions, or timezone policy.
+- Passed the complete quality gate and mandatory Time Clock matrix, then released implementation `7350f1e` through source checkpoint `3dc8007` and Cloudflare Worker version `6222fdac-24b7-43f7-80bf-bbd14b47ba78`.
+- Both production origins passed health, readiness, exact-asset parity, and authenticated historical-range verification. The independent source fallback is `rollback/pre-date-selection-retention-20261019`.
 
 ## 10/18/2026 - Payroll Hours Reconciliation Repair
 

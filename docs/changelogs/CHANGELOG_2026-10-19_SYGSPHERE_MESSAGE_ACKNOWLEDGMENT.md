@@ -1,7 +1,7 @@
 # SygSphere Message Acknowledgment
 
 Date: October 19, 2026
-Status: Release candidate validated; production activation recorded after deployment
+Status: Released and verified in production
 
 ## Outcome
 
@@ -48,11 +48,14 @@ Direct messages intentionally retain their existing read-receipt and reaction be
 
 ## Production activation
 
-- SygShift source commit: pending
-- Cloudflare Worker version: pending
-- Sygilant source commit: pending
-- Cloudflare Pages deployment: pending
+- SygShift source commit: `9a185e2bcd59697d3443f6f7e545916ba91a3d41`
+- Cloudflare Worker version: `3909afa1-b032-4505-ad55-e61329e55336`
+- Sygilant source commit: `e18141fa9b414f139b0bf99d6227fc5a4acfb2f8`
+- Cloudflare Pages deployment: `1ecfbbe9-ac17-4ce4-bd22-89c946f15808`
 - Full SygShift quality gate: **passed**
 - Mandatory Time Clock matrix: **42/42 passed**
-- Full Sygilant quality/audit gate: pending
-- Production health, readiness, asset, and authenticated-workspace verification: pending
+- Full Sygilant product/source/lint/build gate: **passed**. Four unrelated, pre-existing Windows CRLF-sensitive text assertions remain documented; the involved files were unchanged and the assertions pass after LF normalization.
+- Production database activation and the installed rollback-only regression passed. Migration `20261019130405` is ledgered; the private table and helper are installed; all 14 historical check-mark reactions remain unchanged; the regression left zero acknowledgment and zero acknowledgment-audit rows; Supabase Security and Performance Advisors report zero errors; and the changed SygSphere functions have zero database-lint errors.
+- `app.sygilant.us` and `sygshift.sygilant.workers.dev` returned `200` for the application, health, and readiness endpoints. Their live index and all 10 referenced assets matched the accepted local build exactly.
+- Authenticated production verification confirmed the explicit action in a private team channel, no action in a direct conversation, no action on the signed-in author's own messages, and preservation of an existing check-mark reaction. No acknowledgment or synthetic production chat record was created during verification.
+- The Sygilant custom domain and immutable Pages deployment returned `200` for the root, password-recovery, SygSphere, and health routes. The full production deployment checker passed on the custom domain, and authenticated production verification confirmed the compatible action, zero-count state, and separation from reactions and read receipts.
