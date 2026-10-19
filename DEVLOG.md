@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 10/19/2026 - SygSphere Message Acknowledgment
+
+- Added explicit, idempotent acknowledgment for group/channel instructions without adding events to the message stream or treating a view/read receipt as acknowledgment.
+- Added a dedicated forced-RLS private relation behind the existing participant-gated SygSphere request boundary. Removed participants cannot fetch identities or acknowledge, and clients have no direct table/private-helper access.
+- Preserved all historical check-mark reactions as ordinary visible/removable reactions. Editing an instruction clears its earlier acknowledgments while preserving and auditing the message revision.
+- Added mobile/desktop action, count, identity, failure/retry, reload, multiple-user, direct-chat, channel, membership, edit, and security coverage.
+- Rehearsed both installation and exact-function forward recovery against linked production under outer rollback transactions; both passed with no ledger or schema residue. The isolated history dry run selected only migration `20261019130405`.
+- Full verification and production identifiers are recorded in `docs/changelogs/CHANGELOG_2026-10-19_SYGSPHERE_MESSAGE_ACKNOWLEDGMENT.md` after activation.
+
 ## 10/18/2026 - Payroll Hours Reconciliation Repair
 
 - Separated operational workday totals from payroll allocation slices so employee detail, hours breakdown, and

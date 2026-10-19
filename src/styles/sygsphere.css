@@ -157,12 +157,13 @@ body:has(.sidebar--open) .sphere-mobile-launcher{display:none!important}
 .sphere-workspace .sphere-composer textarea{font-size:var(--sp-message-text)}
 .sphere-result span{font-size:var(--sp-message-text)}
 .sphere-workspace .sphere-message-actions>button,.sphere-message-actions summary{font-size:var(--sp-action-text)}
+.sphere-workspace .sphere-message-actions>button.sphere-acknowledge--active{color:var(--sp-ink);border-color:color-mix(in srgb,var(--sp-gold) 58%,var(--sp-border));background:var(--sp-accent)}
 .sphere-text-size{display:flex;align-items:center;gap:7px;color:var(--sp-muted)}
 .sphere-workspace .sphere-text-size select{width:auto;min-height:38px;padding:7px 30px 7px 9px;font-size:13px}
 .sphere-avatar{overflow:hidden;text-transform:uppercase}
 .sphere-avatar img{width:100%;height:100%;display:block;object-fit:cover}
 .sphere-avatar{position:relative}.sphere-avatar__presence{position:absolute;right:1px;bottom:1px;width:10px;height:10px;border:2px solid var(--sp-panel);border-radius:999px;background:#879092}.sphere-avatar__presence--active{background:#55a47b}.sphere-avatar__presence--away{background:#d3ab55}.sphere-avatar__presence--offline,.sphere-avatar__presence--never_active{background:#879092}
-.sphere-message-actions>details:has(.sphere-read-panel){position:relative;margin-left:auto}.sphere-message-actions>details:has(.sphere-read-panel)>summary{display:flex;align-items:center;gap:3px;color:var(--sp-muted);font-size:10px}.sphere-read-panel{position:absolute;z-index:8;right:0;bottom:calc(100% + 6px);width:min(290px,calc(100vw - 46px));max-height:280px;overflow:auto;padding:8px;border:1px solid var(--sp-border);border-radius:12px;background:var(--sp-panel);box-shadow:0 8px 24px #0004}.sphere-read-panel ul{list-style:none;margin:0;padding:0}.sphere-read-panel li{display:flex;align-items:center;gap:9px;padding:8px;border-radius:9px}.sphere-read-panel li+li{border-top:1px solid var(--sp-border)}.sphere-read-panel .sphere-avatar{width:30px;height:30px;flex-basis:30px}.sphere-read-panel li>span{min-width:0}.sphere-read-panel strong,.sphere-read-panel time{display:block}.sphere-read-panel strong{font-size:12px}.sphere-read-panel time{margin-top:2px;color:var(--sp-muted);font-size:10px;white-space:normal}.sphere-message-actions>details:not([open]):hover>.sphere-read-panel,.sphere-message-actions>details:not([open]):focus-within>.sphere-read-panel{display:block!important}
+.sphere-message-actions>details:has(.sphere-read-panel){position:relative;margin-left:auto}.sphere-message-actions>details:has(.sphere-read-panel)>summary,.sphere-message-actions>details:has(.sphere-ack-panel)>summary{display:flex;align-items:center;gap:3px;color:var(--sp-muted);font-size:10px}.sphere-read-panel,.sphere-ack-panel{position:absolute;z-index:8;right:0;bottom:calc(100% + 6px);width:min(290px,calc(100vw - 46px));max-height:280px;overflow:auto;padding:8px;border:1px solid var(--sp-border);border-radius:12px;background:var(--sp-panel);box-shadow:0 8px 24px #0004}.sphere-read-panel ul,.sphere-ack-panel ul{list-style:none;margin:0;padding:0}.sphere-read-panel li,.sphere-ack-panel li{display:flex;align-items:center;gap:9px;padding:8px;border-radius:9px}.sphere-read-panel li+li,.sphere-ack-panel li+li{border-top:1px solid var(--sp-border)}.sphere-read-panel .sphere-avatar,.sphere-ack-panel .sphere-avatar{width:30px;height:30px;flex-basis:30px}.sphere-read-panel li>span{min-width:0}.sphere-read-panel strong,.sphere-read-panel time,.sphere-ack-panel strong{display:block}.sphere-read-panel strong,.sphere-ack-panel strong{font-size:12px}.sphere-read-panel time{margin-top:2px;color:var(--sp-muted);font-size:10px;white-space:normal}.sphere-message-actions>details:not([open]):hover>.sphere-read-panel,.sphere-message-actions>details:not([open]):focus-within>.sphere-read-panel,.sphere-message-actions>details:not([open]):hover>.sphere-ack-panel,.sphere-message-actions>details:not([open]):focus-within>.sphere-ack-panel{display:block!important}
 .sphere-presence--active{background:#55a47b}.sphere-presence--offline,.sphere-presence--never_active{background:#879092}
 .sphere-detail .sphere-member>.sphere-avatar{display:inline-flex}
 .sphere-mention{display:inline;padding:1px 4px;border-radius:5px;background:color-mix(in srgb,var(--sp-gold) 22%,transparent);color:inherit;font-weight:750}
@@ -266,8 +267,10 @@ body:has(.sidebar--open) .sphere-mobile-launcher{display:none!important}
 .sphere-presence--away{background:#d48d18}
 .sphere-presence--offline{background:#737c80}
 .sphere-presence--never_active{background:var(--sp-panel);box-shadow:inset 0 0 0 2px #737c80,0 0 0 2px var(--sp-panel),0 0 0 3px color-mix(in srgb,var(--sp-text) 24%,transparent)}
-.sphere-read-panel .sphere-avatar{width:36px;height:36px;flex-basis:36px;border-radius:12px}
+.sphere-read-panel .sphere-avatar,.sphere-ack-panel .sphere-avatar{width:36px;height:36px;flex-basis:36px;border-radius:12px}
 @media(max-width:760px){
+  .sphere-workspace .sphere-message-actions>button.sphere-acknowledge{min-width:44px;min-height:44px}
+  .sphere-message-actions>details:has(.sphere-ack-panel)>summary{min-width:44px;min-height:44px;justify-content:center}
   .sphere-message>.sphere-avatar{
     width:var(--sp-mobile-message-avatar);
     height:var(--sp-mobile-message-avatar);

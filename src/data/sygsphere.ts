@@ -11,11 +11,16 @@ const personSchema = z.object({
   active: z.boolean().optional(), typing: z.boolean().optional(),
 })
 const mentionSchema = z.object({ id: z.string().uuid(), name: z.string(), username: z.string(), label: z.string().optional() })
+const acknowledgmentSchema = z.object({
+  mine: z.boolean(), count: z.number().int().nonnegative(),
+  people: z.array(z.object({ id: z.string().uuid(), name: z.string(), photoPath: z.string().nullable().default(null) })),
+})
 const messageSchema = z.object({
   id: z.string().uuid(), sequence: z.number(), conversationId: z.string().uuid(), authorId: z.string().uuid(), authorName: z.string(),
   body: z.string(), parentId: z.string().nullable(), createdAt: z.string(), editedAt: z.string().nullable(), deleted: z.boolean(), pinned: z.boolean(), saved: z.boolean(), read: z.boolean(),
   readBy: z.array(z.object({ id: z.string(), name: z.string(), photoPath: z.string().nullable().default(null), readAt: z.string() })), replyCount: z.number(), unreadReplies: z.number(),
-  reactions: z.array(z.object({ emoji: z.string(), count: z.number(), mine: z.boolean() })), mentions: z.array(mentionSchema).default([]),
+  reactions: z.array(z.object({ emoji: z.string(), count: z.number(), mine: z.boolean() })),
+  acknowledgment: acknowledgmentSchema.default({ mine: false, count: 0, people: [] }), mentions: z.array(mentionSchema).default([]),
 })
 const conversationBaseSchema = z.object({
   id: z.string().uuid(), kind: z.enum(['direct', 'group', 'channel']), name: z.string(), description: z.string(),
@@ -77,6 +82,7 @@ export async function sphereConversation(conversationId: string) {
 }
 export const sphereMessages = async (conversationId: string, parentId: string | null = null, before?: number, pinned = false) => z.array(messageSchema).parse(await sphereRequest('messages', { conversationId, parentId, before, pinned }))
 export const sphereMessage = async (conversationId: string, messageId: string) => messageSchema.parse(await sphereRequest('message', { conversationId, messageId }))
+export const sphereAcknowledge = async (conversationId: string, messageId: string) => messageSchema.parse(await sphereRequest('acknowledge', { conversationId, messageId }))
 export const sphereSearch = async (query: string, saved = false, before?: number) => z.array(messageSchema).parse(await sphereRequest(saved ? 'saved' : 'search', { query, before }))
 export const sphereCreate = async (input: { kind: string; name: string; members: string[] }) => z.object({ id: z.string() }).parse(await sphereRequest('create', input))
 export const sphereSend = async (input: { conversationId: string; parentId: string | null; clientId: string; body: string; mentions: SphereMention[] }) => messageSchema.parse(await sphereRequest('send', { ...input, mentionIds: sphereMentionIds(input.body, input.mentions) }))
