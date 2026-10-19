@@ -101,4 +101,3 @@ $test$;
 
 select * from pg_temp.hr_lint_functional_result;
 rollback;
-
