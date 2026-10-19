@@ -1,7 +1,7 @@
 # My Time and Schedule Date Selection Retention
 
 Date: October 19, 2026
-Status: Implementation checkpoint verified; production deployment is recorded separately after the SygSphere release gate
+Status: Released and verified in production
 
 ## Outcome
 
@@ -35,11 +35,18 @@ SygShift now preserves an employee's selected historical dates while moving betw
 - Mandatory desktop/mobile Time Clock workflow: **42/42 passed**.
 - Source whitespace validation passed.
 
-## Checkpoint and fallback
+## Release and fallback
 
 - Pre-change rollback tag: `rollback/pre-date-selection-retention-20261019`
 - Pre-change commit: `7186e23cf2295d76b38303bd4ebd6bddca00c6d3`
 - Date-selection implementation commit: `7350f1e`
+- Released source checkpoint: `3dc800770e64777dc0217c906cddb9355d2a0358`
 - The SygSphere acknowledgment update begins only after a separate post-date-selection fallback tag is created.
+- Post-date-selection fallback tag: `rollback/pre-sygsphere-message-acknowledgment-20261019`
+- Cloudflare Worker version: `6222fdac-24b7-43f7-80bf-bbd14b47ba78`
+- Both production origins returned `200` for root, health, and readiness; the custom origin also returned `200` for `/login`.
+- The signed-in SygSphere workspace opened successfully after refreshing to the released build.
+- Production `index.html` and all ten referenced entry assets matched the final local production build byte-for-byte.
+- Production `index.html` SHA-256: `9785b0e43d96f5e972c463aa8aa15b414a43506d388eead2a02c22282e1a0216`
 
-The production commit, Cloudflare deployment identifier, health/readiness result, and exact live-asset verification will be appended to the final release record after deployment.
+The following SygSphere acknowledgment release is isolated behind its own database gate and fallback tags; it is not part of this date-selection deployment.
