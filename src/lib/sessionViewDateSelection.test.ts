@@ -52,4 +52,3 @@ describe('session view date selections', () => {
     expect(window.sessionStorage.getItem(storageKey)).toBeNull()
   })
 })
-

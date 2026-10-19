@@ -112,4 +112,3 @@ export function saveViewDateSelection<Surface extends ViewDateSelectionSurface>(
 export function validViewDateKey(value: string | null | undefined): value is string {
   return dateKeySchema.safeParse(value).success
 }
-
