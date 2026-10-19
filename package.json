@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm release:test && pnpm build",
     "inventory:access": "node tools/access-control-inventory.mjs --verify",
     "inventory:access:production": "node tools/capture-production-access-baseline.mjs",
     "inventory:access:boundaries": "node tools/capture-production-role-boundaries.mjs",
@@ -44,7 +44,9 @@
     "verify:access:preserved": "node tools/verify-production-access-preservation.mjs outputs/access-control/production-access-baseline-08-21-2026-before-enforcement.json outputs/access-control/production-access-baseline-08-21-2026.json",
     "verify:access:admin-baseline": "node tools/verify-production-admin-permission-baseline.mjs outputs/access-control/production-access-baseline-08-30-2026-before-admin-baseline.json outputs/access-control/production-access-baseline-08-30-2026.json",
     "preview": "pnpm build && vite preview",
-    "deploy": "pnpm build && wrangler deploy",
+    "deploy": "node tools/release-production.mjs",
+    "deploy:lifecycle-bootstrap": "node tools/deploy-lifecycle-bootstrap.mjs",
+    "release:test": "node --test tools/production-release-core.test.mjs tools/lifecycle-bootstrap-core.test.mjs",
     "bootstrap:admin": "node tools/bootstrap-admin.mjs"
   },
   "dependencies": {

@@ -1,6 +1,6 @@
 # SygShift Build and Handoff Guide
 
-Last reviewed: 08/03/2026
+Last reviewed: 10/19/2026
 
 This is the operational source of truth for maintaining SygShift. It is written so a qualified maintainer can open the repository on a different workstation, recover the current state, make a production-safe change, and hand the system back without relying on prior conversation history.
 
@@ -405,21 +405,59 @@ Use the repository configuration in `wrangler.jsonc`.
 
 For a release that requires employee communication or protected access, follow `docs/operations/MAINTENANCE_RELEASE_RUNBOOK.md`. Maintenance is controlled from **Administration → System Operations** and remains inactive unless an authorized System Admin explicitly schedules a window. Use notice-only mode when writes do not need to pause. When protection is necessary, select only the affected features and keep the employee Time Clock available whenever safely possible.
 
-Production deployment:
+Before a normal production release:
+
+- confirm the release does not add or change a Durable Object class, binding, migration, cron trigger, or other `wrangler.jsonc` lifecycle configuration;
+- configure the dedicated read-only release canary when available; and
+- choose a safe release tag containing only letters, numbers, periods, underscores, or hyphens.
+
+Normal production deployment with the release canary configured in the operator environment:
 
 ```powershell
-pnpm check
-pnpm deploy
+pnpm deploy -- --tag=<release-tag> --message="<release summary>" --rollback-safe
 ```
 
-After deployment, verify:
+Supply `SYGSHIFT_RELEASE_CANARY_EMAIL` and `SYGSHIFT_RELEASE_CANARY_PASSWORD` from the approved operator secret source; `SYGSHIFT_RELEASE_CANARY_USERNAME` may bind verification to the expected account. Never record the values in source, documentation, screenshots, logs, or the client bundle.
+
+Without a configured canary, the operator must explicitly accept the weaker anonymous boundary probe:
 
 ```powershell
+pnpm deploy -- --tag=<release-tag> --message="<release summary>" --rollback-safe --allow-boundary-probe
+```
+
+The command verifies existing production and upstream availability, requires a clean `HEAD` that exactly matches `origin/main`, runs `pnpm check`, runs the mandatory Time Clock browser workflow, rebuilds production after Playwright, records the current Worker version, uploads one candidate, and promotes that exact candidate. It runs candidate Worker checks when Cloudflare exposes a Version URL and always performs repeated post-promotion production/upstream checks.
+
+If the promoted Worker remains unhealthy while upstream services are repeatedly healthy, the command rolls back and verifies the exact recorded prior version. If upstream services are unhealthy, it stops and reports a provider outage instead of pretending that a Worker rollback will repair the provider. A missing candidate Version URL must be reported as unavailable, not passed.
+
+After any release, independently verify:
+
+```powershell
+Invoke-WebRequest https://app.sygilant.us/
+Invoke-WebRequest https://app.sygilant.us/login
 Invoke-RestMethod https://app.sygilant.us/api/v1/health
 Invoke-RestMethod https://app.sygilant.us/api/v1/ready
 ```
 
 Then verify the changed live workflow with the appropriate role. A successful Wrangler upload is not the same as a verified release.
+
+### Durable Object and configuration lifecycle releases
+
+Do not use the normal candidate/promotion path to introduce a new Durable Object class, binding, migration, cron trigger, or another Worker lifecycle/configuration change. Cloudflare version upload does not replace the lifecycle work performed by a reviewed `wrangler deploy`, and rolling back across a newly applied Durable Object migration may be unsafe.
+
+Use two committed releases:
+
+1. **Infrastructure bootstrap:** add only the class export, binding/migration/configuration, generated types, isolated tests, and the reviewed lifecycle gate when it is not already present. Keep dependent runtime behavior disabled. Push the bootstrap commit, then use the lifecycle gate to run the complete quality checks and apply one atomic deployment tagged with the exact 40-character source commit:
+
+   ```powershell
+   pnpm deploy:lifecycle-bootstrap -- --confirm-lifecycle-bootstrap --message="Bootstrap scheduled runtime coordinator"
+   ```
+
+   The command fetches `origin/main`, requires a completely clean worktree and exact `HEAD == origin/main`, runs `pnpm check`, the mandatory Time Clock browser workflow, and a fresh production build, then repeats the fetch, clean-worktree check, and exact commit comparison immediately before Wrangler. Only then does one strict `wrangler deploy` apply the lifecycle configuration and matching Worker source with the mandatory `source-<40-character SHA>` tag and `SYGSHIFT_SOURCE_COMMIT` value. Use `--dry-run` with the same command to validate Wrangler without applying the deployment.
+
+   Never deploy Step A while Step B remains as unstaged or untracked files in the same checkout. The normal release gate reads the deployed source tag and refuses to promote later code if `wrangler.jsonc` changed anywhere after that lifecycle baseline. Do not bypass this script with a hand-written Wrangler command.
+2. **Operational behavior:** after the bootstrap version is healthy, commit and push the behavior that consumes it. Use the normal release gate above. The verified bootstrap version is the rollback floor for this second release.
+
+Never use the raw lifecycle deployment path as a routine shortcut. Record its exact commit, Cloudflare version/deployment, configuration change, and live verification. The complete scheduler-specific procedure is in `docs/runbooks/SCHEDULED_RUNTIME_RECOVERY.md`.
 
 Before and after a protected release, confirm the maintenance status endpoint reports the intended active, upcoming, and recently completed states. Every window must have an automatic end time; never rely only on a person remembering to restore access.
 

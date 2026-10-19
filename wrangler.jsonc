@@ -24,6 +24,10 @@
       {
         "name": "TENANT_COMMS",
         "class_name": "TenantCommsDurableObject"
+      },
+      {
+        "name": "SCHEDULE_COORDINATOR",
+        "class_name": "ScheduledRuntimeCoordinator"
       }
     ]
   },
@@ -39,6 +43,10 @@
     {
       "tag": "v3-document-scanner-retired",
       "deleted_classes": ["DocumentScannerContainer"]
+    },
+    {
+      "tag": "v4-scheduled-runtime-coordinator",
+      "new_sqlite_classes": ["ScheduledRuntimeCoordinator"]
     }
   ],
   "send_email": [

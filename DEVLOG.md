@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 10/19/2026 - Automatic Scheduled Recovery and Release Safety (Pending Release)
+
+- Added a Durable Object coordinator design that persists the scheduled circuit across minute invocations, serializes work with renewable expiring leases, and skips cooldown/overlap cycles before they contact Supabase.
+- Added a strictly read-only recovery path that checks maintenance status without starting any mutating scheduled lane and requires two successful recovery cycles before a later, separately leased invocation may resume full work.
+- Added degraded readiness for missing, open, recovering, or stale coordinator state without creating another direct Supabase probe during an outage.
+- Added a production release gate for baseline Worker/upstream checks, exact clean `origin/main` source, the complete local gate, mandatory Time Clock browser checks, a fresh post-Playwright production build, candidate upload/check when a Version URL exists, exact promotion, repeated verification, and exact-version rollback when upstream remains healthy.
+- Documented a mandatory two-step release for new Durable Object/configuration lifecycle state: deploy and verify the behavior-neutral bootstrap first, then release dependent behavior with the verified bootstrap as the rollback floor.
+- Production verification, exact commits, Cloudflare versions/deployments, and final test counts remain **Pending** and must not be inferred from this entry. The active runbook and release record are `docs/runbooks/SCHEDULED_RUNTIME_RECOVERY.md` and `docs/changelogs/CHANGELOG_2026-10-19_AUTOMATIC_RECOVERY_AND_RELEASE_SAFETY.md`.
+
 ## 10/19/2026 - Secure Access Incident Recovery
 
 - Restored production after a project-wide Supabase data-plane outage left keyed Auth, REST, Storage, session-context, and required-action checks unavailable while Cloudflare health and readiness remained healthy.
