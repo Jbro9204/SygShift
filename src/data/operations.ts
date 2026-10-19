@@ -11,6 +11,9 @@ const notificationCenterSchema = z.object({
     pending: z.number().int().nonnegative(),
     delivered: z.number().int().nonnegative(),
     failed: z.number().int().nonnegative(),
+    suppressed: z.number().int().nonnegative().optional(),
+    canceled: z.number().int().nonnegative().optional(),
+    retryExhausted: z.number().int().nonnegative().optional(),
   }),
   page: z.object({
     number: z.number().int().positive(),
@@ -24,7 +27,7 @@ const notificationCenterSchema = z.object({
     aggregateType: z.string(),
     aggregateId: z.string().uuid().nullable(),
     subject: z.string(),
-    status: z.enum(['queued', 'delivered', 'failed']),
+    status: z.enum(['queued', 'delivered', 'failed', 'suppressed', 'canceled', 'retry_exhausted']),
     recipientCount: z.number().int().nonnegative(),
     attemptCount: z.number().int().nonnegative(),
     availableAt: z.string(),
@@ -105,7 +108,7 @@ export type OperationsReport = z.infer<typeof operationsReportSchema>
 export type NotificationProcessResult = z.infer<typeof notificationProcessSchema>
 
 export async function getNotificationCenter(input: {
-  status?: 'all' | 'queued' | 'delivered' | 'failed'
+  status?: 'all' | 'queued' | 'delivered' | 'failed' | 'suppressed' | 'canceled' | 'retry_exhausted'
   search?: string
   dateFrom?: string | null
   dateThrough?: string | null
