@@ -283,6 +283,13 @@ export async function runLifecycleBootstrapDeployment(inputOptions, injected = {
     priorVersionId,
     sourceCommit,
   )
+  if (deployCommandFailed) {
+    throw new Error(
+      'The lifecycle deployment command did not complete cleanly. The exact source-tagged version is active, '
+      + 'but traffic state alone cannot prove that all migrations, triggers, routes, and other lifecycle settings completed; '
+      + 'manual intervention is required.',
+    )
+  }
 
   return {
     activeVersionId: reconciliation.activeVersionId,

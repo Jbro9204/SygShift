@@ -235,22 +235,21 @@ test('strips release probe credentials from every lifecycle child command', asyn
   }
 })
 
-test('reconciles a timed-out deploy that completed remotely as deployed', async () => {
+test('requires manual intervention when a timed-out deploy leaves the exact candidate active', async () => {
   const harness = lifecycleHarness({
     deploy: async (_arguments, control) => {
       control.setActiveVersion(candidateVersionId)
       throw new Error('The release command timed out.')
     },
   })
-  const result = await runLifecycleBootstrapDeployment(
-    options(),
-    { run: harness.run, sleep: async () => undefined },
-  )
 
-  assert.equal(result.outcome, lifecycleDeploymentOutcomes.deployed)
-  assert.equal(result.deployed, true)
-  assert.equal(result.deployCommandFailed, true)
-  assert.equal(result.activeVersionId, candidateVersionId)
+  await assert.rejects(
+    runLifecycleBootstrapDeployment(
+      options(),
+      { run: harness.run, sleep: async () => undefined },
+    ),
+    /traffic state alone cannot prove.*lifecycle settings completed.*manual intervention/s,
+  )
 })
 
 test('requires manual intervention when a timed-out deploy leaves the prior version active', async () => {
@@ -267,7 +266,7 @@ test('requires manual intervention when a timed-out deploy leaves the prior vers
   )
 })
 
-test('waits through early prior-version reads when a timed-out lifecycle deployment applies late', async () => {
+test('requires manual intervention when a timed-out lifecycle deployment becomes active late', async () => {
   const harness = lifecycleHarness({
     deploy: async () => { throw new Error('The release command timed out.') },
     deploymentStatus: async (check, control) => {
@@ -280,14 +279,14 @@ test('waits through early prior-version reads when a timed-out lifecycle deploym
       }
     },
   })
-  const result = await runLifecycleBootstrapDeployment(
-    options({ reconciliationAttempts: 5 }),
-    { run: harness.run, sleep: async () => undefined },
-  )
 
-  assert.equal(result.outcome, lifecycleDeploymentOutcomes.deployed)
-  assert.equal(result.activeVersionId, candidateVersionId)
-  assert.equal(result.reconciliationAttempts, 4)
+  await assert.rejects(
+    runLifecycleBootstrapDeployment(
+      options({ reconciliationAttempts: 5 }),
+      { run: harness.run, sleep: async () => undefined },
+    ),
+    /traffic state alone cannot prove.*lifecycle settings completed.*manual intervention/s,
+  )
 })
 
 test('fails closed when deployment reconciliation observes an unexpected third version', async () => {
