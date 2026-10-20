@@ -200,13 +200,34 @@ test('requires deployed Worker metadata to contain an exact source commit tag', 
   }), priorVersionId), /did not match/)
 })
 
-test('runs pnpm commands without a Windows shell or cmd shim', async (context) => {
-  if (!process.env.npm_execpath) {
-    context.skip('This smoke check runs through the pnpm release:test script.')
-    return
-  }
-  const result = await createCommandRunner()(['--version'], { cwd: process.cwd(), env: process.env })
-  assert.match(result.stdout.trim(), /^\d+\.\d+\.\d+/)
+test('runs pnpm commands without a Windows shell or cmd shim', async () => {
+  const child = new EventEmitter()
+  child.stdout = new EventEmitter()
+  child.stderr = new EventEmitter()
+  child.kill = () => true
+  let invocation
+  const packageManagerPath = 'C:/tools/pnpm.cjs'
+  const runner = createCommandRunner({
+    packageManagerCli: () => packageManagerPath,
+    platform: 'win32',
+    spawn: (command, arguments_, options) => {
+      invocation = { arguments_, command, options }
+      queueMicrotask(() => {
+        child.stdout.emit('data', '11.25.0\n')
+        child.emit('close', 0)
+      })
+      return child
+    },
+  })
+
+  const result = await runner(['--version'], { cwd: 'C:/repo', env: { PATH: 'C:/toolchain/bin' } })
+
+  assert.equal(result.stdout.trim(), '11.25.0')
+  assert.equal(invocation.command, process.execPath)
+  assert.deepEqual(invocation.arguments_, [packageManagerPath, '--version'])
+  assert.equal(invocation.options.shell, false)
+  assert.equal(invocation.options.windowsHide, true)
+  assert.equal('detached' in invocation.options, false)
 })
 
 test('terminates a command that exceeds its deadline', async () => {

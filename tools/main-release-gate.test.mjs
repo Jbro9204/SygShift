@@ -795,6 +795,8 @@ test('closes a failed newly-created lock before safely unlinking its owned token
 })
 
 test('surfaces rollback guidance when the checkout lock cannot be unlinked after shared-lock acquisition fails', async () => {
+  const repositoryRoot = process.cwd()
+  const localLockPath = join(repositoryRoot, '.git', 'main-release.lock')
   const stored = new Map()
   let openCount = 0
   const fileSystem = {
@@ -818,7 +820,7 @@ test('surfaces rollback guidance when the checkout lock cannot be unlinked after
     writeFile: async () => assert.fail('Quarantine metadata is not reached during acquisition rollback.'),
   }
   const run = async (_command, arguments_) => {
-    if (arguments_[0] === 'rev-parse') return { stderr: '', stdout: 'C:/repo/.git/main-release.lock\n' }
+    if (arguments_[0] === 'rev-parse') return { stderr: '', stdout: `${localLockPath}\n` }
     if (arguments_[0] === 'remote') return { stderr: '', stdout: 'https://github.com/Jbro9204/SygShift.git\n' }
     throw new Error(`Unexpected Git command: ${arguments_.join(' ')}`)
   }
@@ -826,15 +828,22 @@ test('surfaces rollback guidance when the checkout lock cannot be unlinked after
     acquireMainReleaseLock({
       fileSystem,
       localSha,
-      repositoryRoot: 'C:/repo',
+      repositoryRoot,
       run,
-      sharedLockDirectory: 'C:/shared-locks',
+      sharedLockDirectory: join(repositoryRoot, '.shared-locks'),
     }),
-    /Another main release verification is already running.*checkout lock could not be rolled back.*lock may remain at C:\/repo\/\.git\/main-release\.lock.*simulated local rollback unlink failure/s,
+    (error) => {
+      assert.match(error.message, /Another main release verification is already running.*checkout lock could not be rolled back/s)
+      assert.ok(error.message.includes(`lock may remain at ${localLockPath}`))
+      assert.match(error.message, /simulated local rollback unlink failure/)
+      return true
+    },
   )
 })
 
 test('surfaces the exact lock path when a newly-created lock cannot be closed', async () => {
+  const repositoryRoot = process.cwd()
+  const localLockPath = join(repositoryRoot, '.git', 'main-release.lock')
   const fileSystem = {
     mkdir: async () => assert.fail('The shared lock directory is not reached after a local close failure.'),
     open: async () => ({
@@ -846,7 +855,7 @@ test('surfaces the exact lock path when a newly-created lock cannot be closed', 
     writeFile: async () => assert.fail('Quarantine metadata is not reached after a local close failure.'),
   }
   const run = async (_command, arguments_) => {
-    if (arguments_[0] === 'rev-parse') return { stderr: '', stdout: 'C:/repo/.git/main-release.lock\n' }
+    if (arguments_[0] === 'rev-parse') return { stderr: '', stdout: `${localLockPath}\n` }
     if (arguments_[0] === 'remote') return { stderr: '', stdout: 'https://github.com/Jbro9204/SygShift.git\n' }
     throw new Error(`Unexpected Git command: ${arguments_.join(' ')}`)
   }
@@ -854,11 +863,15 @@ test('surfaces the exact lock path when a newly-created lock cannot be closed', 
     acquireMainReleaseLock({
       fileSystem,
       localSha,
-      repositoryRoot: 'C:/repo',
+      repositoryRoot,
       run,
-      sharedLockDirectory: 'C:/shared-locks',
+      sharedLockDirectory: join(repositoryRoot, '.shared-locks'),
     }),
-    /simulated close failure.*lock may remain at C:\/repo\/\.git\/main-release\.lock/,
+    (error) => {
+      assert.match(error.message, /simulated close failure/)
+      assert.ok(error.message.includes(`lock may remain at ${localLockPath}`))
+      return true
+    },
   )
 })
 
