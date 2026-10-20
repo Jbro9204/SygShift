@@ -4,6 +4,7 @@ import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 import { getSupabaseClient } from '../lib/supabase'
 
 const notificationCenterSchema = z.object({
+  deliveryVisibility: z.literal('legacy').optional(),
   permissions: z.object({
     canManage: z.boolean(),
   }).optional().default({ canManage: false }),
@@ -115,7 +116,7 @@ export async function getNotificationCenter(input: {
   page?: number
   pageSize?: 5 | 10 | 20
 } = {}): Promise<NotificationCenter> {
-  const { data, error } = await getSupabaseClient().rpc('get_notification_center', {
+  const { data, error } = await getSupabaseClient().rpc('get_notification_center_v2', {
     target_date_from: input.dateFrom || null,
     target_date_through: input.dateThrough || null,
     target_page: input.page ?? 1,

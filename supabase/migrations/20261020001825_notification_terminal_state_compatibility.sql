@@ -1,8 +1,9 @@
 begin;
 
 -- SygShift owns these three queues. Existing data and applied migrations remain intact.
-set local lock_timeout = '5s';
-set local statement_timeout = '30s';
+set local lock_timeout = '2s';
+set local statement_timeout = '5s';
+set local transaction_timeout = '2s';
 
 -- Fail closed if the verified production contract has drifted since capture.
 do $$
@@ -40,6 +41,13 @@ $$;
 do $$
 declare routine record; actual_hash text; actual_acl text;
 begin
+  if exists (select 1 from supabase_migrations.schema_migrations where version in ('20261019230338','20261020001825')) then
+    raise exception 'The held notification migration is already recorded; prepare a new forward migration.';
+  end if;
+  if exists (select 1 from pg_proc procedure join pg_namespace namespace on namespace.oid=procedure.pronamespace
+      where namespace.nspname='public' and procedure.proname='get_notification_center_v2') then
+    raise exception 'A versioned notification reader already exists; review its ownership before creating it.';
+  end if;
   for routine in select * from (values
     ('public.service_log_email_delivery(text,text,uuid,text,text,text,text)', 'a9f7b920d06e324278c0628837206cd4', '{postgres=X/postgres,service_role=X/postgres}'),
     ('public.retry_notification_job(uuid)', 'bf86cb342fe7f7109d3bb6d6644aed5c', '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}'),
@@ -53,12 +61,42 @@ begin
     if actual_hash is distinct from routine.definition_hash or actual_acl is distinct from routine.acl then
       raise exception 'Verified notification audit/retry/read function drifted: %', routine.signature;
     end if;
+    if routine.signature='public.get_notification_center(text,text,date,date,integer,integer)' and not exists (
+      select 1 from pg_proc procedure where procedure.oid=to_regprocedure(routine.signature)
+        and pg_get_userbyid(procedure.proowner)='postgres' and procedure.prosecdef and procedure.provolatile='s'
+        and procedure.proconfig=array['search_path=""']::text[] and procedure.prorettype='jsonb'::regtype
+    ) then
+      raise exception 'Verified notification reader owner/security/configuration drifted.';
+    end if;
   end loop;
   if (select pg_get_constraintdef(oid) from pg_constraint
       where conrelid='private.email_delivery_audit'::regclass and conname='email_delivery_audit_status')
     is distinct from 'CHECK ((delivery_status = ANY (ARRAY[''sent''::text, ''failed''::text, ''suppressed_blocked_domain''::text])))' then
     raise exception 'Verified email audit status contract drifted.';
   end if;
+end;
+$$;
+
+-- Old claimers clear last_error and persist attempted_at/count BEFORE the
+-- provider call; generic/employee claimers do not persist an ownership lease.
+-- Neither age nor a recorded error proves all overlapping attempts ended.
+-- Refuse every nonterminal claimed row, even a recorded transient failure.
+-- Hold a short write barrier while inspecting all three queues, eliminating
+-- the claim/check race. Abort and release it immediately on any uncertainty;
+-- never wait for a provider result or disable employee urgent/clock access.
+lock table private.notification_outbox,public.support_ticket_notifications,
+  public.employee_notification_email_deliveries in share row exclusive mode;
+do $$
+declare queue_name text; unresolved integer;
+begin
+  foreach queue_name in array array['private.notification_outbox','public.support_ticket_notifications','public.employee_notification_email_deliveries'] loop
+    execute format('select count(*) from %s where delivered_at is null and failed_at is null
+      and (attempt_count>0 or attempted_at is not null)',queue_name) into unresolved;
+    if unresolved>0 then
+      raise exception using errcode='55000',message=format(
+        'Notification handoff blocked: %s has %s unresolved provider result(s). Preserve evidence and confirm outcomes before deployment.',queue_name,unresolved);
+    end if;
+  end loop;
 end;
 $$;
 
@@ -85,12 +123,10 @@ alter table private.notification_outbox
 with prior as materialized (
   select id, failed_at, terminal_outcome, attempted_at, attempt_count, last_error
   from private.notification_outbox
-  where delivered_at is null and (failed_at is not null or attempt_count >= 5)
+  where delivered_at is null and failed_at is not null
 ), changed as (
   update private.notification_outbox delivery
-  set terminal_outcome = case when prior.failed_at is null then 'retry_exhausted'
-      else private.notification_terminal_outcome(prior.last_error) end,
-    failed_at = coalesce(prior.failed_at, clock_timestamp())
+  set terminal_outcome = private.notification_terminal_outcome(prior.last_error)
   from prior where delivery.id = prior.id
   returning delivery.id, prior.failed_at as prior_failed_at, prior.terminal_outcome as prior_terminal_outcome,
     prior.attempted_at, prior.attempt_count, prior.last_error, delivery.failed_at, delivery.terminal_outcome
@@ -112,12 +148,10 @@ alter table public.support_ticket_notifications
 with prior as materialized (
   select id, failed_at, terminal_outcome, attempted_at, attempt_count, last_error
   from public.support_ticket_notifications
-  where delivered_at is null and (failed_at is not null or attempt_count >= 5)
+  where delivered_at is null and failed_at is not null
 ), changed as (
   update public.support_ticket_notifications delivery
-  set terminal_outcome = case when prior.failed_at is null then 'retry_exhausted'
-      else private.notification_terminal_outcome(prior.last_error) end,
-    failed_at = coalesce(prior.failed_at, clock_timestamp())
+  set terminal_outcome = private.notification_terminal_outcome(prior.last_error)
   from prior where delivery.id = prior.id
   returning delivery.id, prior.failed_at as prior_failed_at, prior.terminal_outcome as prior_terminal_outcome,
     prior.attempted_at, prior.attempt_count, prior.last_error, delivery.failed_at, delivery.terminal_outcome
@@ -139,12 +173,10 @@ alter table public.employee_notification_email_deliveries
 with prior as materialized (
   select id, failed_at, terminal_outcome, attempted_at, attempt_count, last_error
   from public.employee_notification_email_deliveries
-  where delivered_at is null and (failed_at is not null or attempt_count >= 5)
+  where delivered_at is null and failed_at is not null
 ), changed as (
   update public.employee_notification_email_deliveries delivery
-  set terminal_outcome = case when prior.failed_at is null then 'retry_exhausted'
-      else private.notification_terminal_outcome(prior.last_error) end,
-    failed_at = coalesce(prior.failed_at, clock_timestamp())
+  set terminal_outcome = private.notification_terminal_outcome(prior.last_error)
   from prior where delivery.id = prior.id
   returning delivery.id, prior.failed_at as prior_failed_at, prior.terminal_outcome as prior_terminal_outcome,
     prior.attempted_at, prior.attempt_count, prior.last_error, delivery.failed_at, delivery.terminal_outcome
@@ -413,9 +445,11 @@ begin
 end;
 $$;
 
--- Preserve authorization, filters and pagination in the verified reader; report leaf generations.
+-- Already-open browsers keep the legacy shape and queued/delivered/failed statuses.
+-- Both paginated versions report only leaf generations so authorized retries do not retain
+-- superseded failures in the active job state or inflate recipient counts.
 do $$
-declare original_definition text; updated_definition text;
+declare original_definition text; legacy_definition text; updated_definition text;
   status_expression text := $status$case
     when bool_or(outbox.terminal_outcome='failed') then 'failed'
     when bool_or(outbox.terminal_outcome='retry_exhausted') then 'retry_exhausted'
@@ -425,21 +459,31 @@ declare original_definition text; updated_definition text;
     else 'canceled' end$status$;
 begin
   select pg_get_functiondef('public.get_notification_center(text,text,date,date,integer,integer)'::regprocedure) into original_definition;
-  updated_definition := regexp_replace(original_definition,
-    'case\s+when bool_or\(outbox.failed_at is not null\) then ''failed''\s+when bool_and\(outbox.delivered_at is not null\) then ''delivered''\s+else ''queued''\s+end', status_expression, 'g');
-  updated_definition := replace(updated_definition, 'from private.notification_outbox outbox',
+  legacy_definition := replace(original_definition, 'from private.notification_outbox outbox',
     'from private.notification_outbox outbox where not exists (select 1 from private.notification_outbox retry where retry.retry_of_notification_id=outbox.id)');
+  if legacy_definition=original_definition
+    or (length(legacy_definition)-length(replace(legacy_definition,'retry.retry_of_notification_id=outbox.id','')))/length('retry.retry_of_notification_id=outbox.id') <> 3 then
+    raise exception 'Legacy notification leaf transformation failed.';
+  end if;
+  execute legacy_definition;
+
+  updated_definition := replace(legacy_definition, 'FUNCTION public.get_notification_center(', 'FUNCTION public.get_notification_center_v2(');
+  updated_definition := regexp_replace(updated_definition,
+    'case\s+when bool_or\(outbox.failed_at is not null\) then ''failed''\s+when bool_and\(outbox.delivered_at is not null\) then ''delivered''\s+else ''queued''\s+end', status_expression, 'g');
   updated_definition := replace(updated_definition, '''failed'', count(*) filter (where status = ''failed'')',
     '''failed'', count(*) filter (where status = ''failed''), ''suppressed'', count(*) filter (where status = ''suppressed''), ''canceled'', count(*) filter (where status = ''canceled''), ''retryExhausted'', count(*) filter (where status = ''retry_exhausted'')');
-  if updated_definition=original_definition or updated_definition like '%bool_or(outbox.failed_at is not null)%'
+  if updated_definition not like '%FUNCTION public.get_notification_center_v2(%' or updated_definition like '%bool_or(outbox.failed_at is not null)%'
     or updated_definition not like '%''retryExhausted''%' then raise exception 'Notification reader transformation failed.'; end if;
   execute updated_definition;
 end;
 $$;
-create or replace function public.get_notification_center()
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select public.get_notification_center('all'::text,null::text,null::date,null::date,1,10);
-$$;
+-- New functions start with PUBLIC execute by default; explicitly match the
+-- existing authenticated/service reader boundary in this same transaction.
+alter function public.get_notification_center_v2(text,text,date,date,integer,integer) owner to postgres;
+revoke all on function public.get_notification_center_v2(text,text,date,date,integer,integer) from public, anon, authenticated, service_role;
+grant execute on function public.get_notification_center_v2(text,text,date,date,integer,integer) to authenticated, service_role;
+-- The older no-argument summary/recent API remains byte-identical, including
+-- its separate existing authorization and 25-record history contract.
 
 notify pgrst, 'reload schema';
 commit;

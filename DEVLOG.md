@@ -1,5 +1,11 @@
 # SygShift Development Log
 
+## 10/19/2026 - Notification Client Compatibility Candidate
+
+- Prepared an isolated versioned notification reader so already-open clients keep their exact legacy response keys and three-state enum while new clients explicitly opt into terminal states. Retry generations retain correct leaf counts/status; the older summary/recent API stays unchanged.
+- Corrected the held migration's in-flight fifth-attempt race: unknown provider outcomes block a bounded installation instead of being terminalized and made eligible for resend. All three queue handoffs, old/new parsers, authorization, races, retry generations, and guarded forward reader recovery passed local rollback regressions with original row hashes restored.
+- Full quality gate passed (2,228 tests and 95 release checks); actual Notification Center/Time Clock browser checks passed 46/46, with a fresh build after browser testing. This is a review candidate, with no production mutation or provider call. Normal readiness/canary gates and verified provider outcomes remain prerequisites for release.
+
 ## 10/19/2026 - Overnight Database Stabilization
 
 - Captured and verified a protected native production application backup and complete definition/migration snapshots; successfully restored the archive into an isolated local PostgreSQL database.

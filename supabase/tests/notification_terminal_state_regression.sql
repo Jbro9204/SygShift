@@ -162,7 +162,7 @@ begin
   assert not exists(select 1 from private.notification_outbox parent join private.notification_outbox child
     on child.retry_of_notification_id=parent.id where parent.terminal_outcome in ('suppressed','canceled')),
     'Bulk retry revived an intentional suppression or cancellation.';
-  claimed := public.get_notification_center('all','terminal_state_regression',null,null,1,20);
+  claimed := public.get_notification_center_v2('all','terminal_state_regression',null,null,1,20);
   assert claimed->'summary' ? 'suppressed' and claimed->'summary' ? 'canceled' and claimed->'summary' ? 'retryExhausted',
     'Delivery operations lost distinct terminal statuses.';
   assert exists(select 1 from jsonb_array_elements(claimed->'batches') batch where batch->>'id'=generation_id::text and batch->>'status'='queued'),

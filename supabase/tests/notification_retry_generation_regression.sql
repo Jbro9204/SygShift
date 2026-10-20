@@ -56,10 +56,14 @@ begin
   assert grandchild_id is not null;
   result_value := public.retry_notification_job(accepted_id);
   assert (result_value->>'retried')::integer=0, 'Retrying a batch with an active leaf duplicated a generation.';
-  center_value := public.get_notification_center('all','retry_generation_review',null,null,1,20);
+  center_value := public.get_notification_center_v2('all','retry_generation_review',null,null,1,20);
   select item into batch_value from jsonb_array_elements(center_value->'batches') item where item->>'aggregateId'=aggregate_key::text;
   assert batch_value->>'status'='queued' and (batch_value->>'recipientCount')::integer=2,
     'Parent failures leaked into the status or recipient count of active leaves.';
+  center_value := public.get_notification_center('queued','retry_generation_review',null,null,1,20);
+  assert exists(select 1 from jsonb_array_elements(center_value->'batches') item
+    where item->>'aggregateId'=aggregate_key::text and item->>'status'='queued' and (item->>'recipientCount')::integer=2),
+    'Legacy clients retained superseded failures or inflated retry recipient counts.';
 
   perform set_config('request.jwt.claims','{"role":"service_role"}',true);
   perform set_config('request.jwt.claim.role','service_role',true);
@@ -69,9 +73,13 @@ begin
   assert (select to_jsonb(delivery)=child_before from private.notification_outbox delivery where id=child_id), 'Failed child evidence changed during retry generation.';
   perform set_config('request.jwt.claims',jsonb_build_object('sub',actor_auth,'role','authenticated','aal','aal2')::text,true);
   perform set_config('request.jwt.claim.role','authenticated',true);
-  center_value := public.get_notification_center('delivered','retry_generation_review',null,null,1,20);
+  center_value := public.get_notification_center_v2('delivered','retry_generation_review',null,null,1,20);
   assert exists(select 1 from jsonb_array_elements(center_value->'batches') item where item->>'aggregateId'=aggregate_key::text and item->>'status'='delivered'),
     'Completed leaf generations remained failed in delivery history.';
+  center_value := public.get_notification_center('delivered','retry_generation_review',null,null,1,20);
+  assert exists(select 1 from jsonb_array_elements(center_value->'batches') item
+    where item->>'aggregateId'=aggregate_key::text and item->>'status'='delivered' and (item->>'recipientCount')::integer=2),
+    'Legacy clients retained an obsolete failed status after acceptance.';
   result_value := public.retry_notification_job(accepted_id);
   assert (result_value->>'retried')::integer=0, 'A completed batch created another retry.';
 end;
