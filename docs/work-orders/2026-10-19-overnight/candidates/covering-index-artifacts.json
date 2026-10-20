@@ -1,0 +1,48 @@
+{
+  "preparedAt": "2026-10-20T00:29:14.831Z",
+  "version": "20261020001516",
+  "installed": false,
+  "sourceEnvelope": "one exact complete UTF-8 source string; standalone concurrent DDL; no BEGIN/COMMIT",
+  "artifacts": [
+    {
+      "path": "docs/work-orders/2026-10-19-overnight/candidates/20261020001516_cover_active_shift_timekeeping_candidates.sql",
+      "sha256": "8375774382342cd457ae39cece2f1eac8a4ae8e5351c0839f5171242f9d6d75d"
+    },
+    {
+      "path": "docs/work-orders/2026-10-19-overnight/candidates/20261020002135_recover_active_shift_timekeeping_covering_index.sql",
+      "sha256": "89cbb0cc87e436022d38547c400a2964e7718256fbfde50b260a3e57d98e9dea"
+    },
+    {
+      "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-preflight.sql",
+      "sha256": "8cbd3998e6dd382eb6cd3d6d7850175d60c509f9a6dd730cc46210fcdf4c642d"
+    },
+    {
+      "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-release.psql",
+      "sha256": "db42f666e69809ec9b5633c3847407c514435f54cfde1ab8eff3ad8ad3466082"
+    },
+    {
+      "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-resume-ledger.psql",
+      "sha256": "5faed558a36c7fb6d3008c4a03e747d98ffd0e842514af864d767e2cbc7c2cdb"
+    },
+    {
+      "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-failed-build-cleanup.psql",
+      "sha256": "981e5306b48c7cdc099dcd984a19f716ccc8a15aad0bc59fbc846bd2d42f0a8e"
+    },
+    {
+      "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-forward-recovery.psql",
+      "sha256": "007e78f3ac211dd8f05dc9103cc814894554209ce88ac42ebe5b040c8d406191"
+    },
+    {
+      "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-resume-recovery-ledger.psql",
+      "sha256": "918261a61ae5531571d8ec9e06ef14b8b9b0ac6b75c2220d766083d6744cbd2a"
+    },
+    {
+      "path": "docs/work-orders/2026-10-19-overnight/candidates/invoke-covering-index-native.ps1",
+      "sha256": "32cd1f53264b5fbaea01974d78aab6202e5894056a1d742192ccc6fd9da55d3c"
+    },
+    {
+      "path": "docs/work-orders/2026-10-19-overnight/candidates/supabase-prod-ca-2021.crt",
+      "sha256": "700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7"
+    }
+  ]
+}

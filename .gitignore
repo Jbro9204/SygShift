@@ -76,3 +76,6 @@ __pycache__/
 *.njsproj
 *.sln
 *.sw?
+
+# Public provider CA pinned by the reviewed native TLS protocol; no private key.
+!docs/work-orders/2026-10-19-overnight/candidates/supabase-prod-ca-2021.crt

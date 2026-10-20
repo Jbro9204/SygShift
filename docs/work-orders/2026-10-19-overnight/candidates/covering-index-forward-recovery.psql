@@ -1,0 +1,83 @@
+\set ON_ERROR_STOP on
+-- Native psql control file; never pass to db push / a transactional migration runner.
+-- Source SHA256: 8375774382342cd457ae39cece2f1eac8a4ae8e5351c0839f5171242f9d6d75d
+set role postgres;
+do $release_lock$ begin if not pg_try_advisory_lock(191019,20001516) then raise lock_not_available using message='Another timekeeping covering-index release owns the deployment lock';end if;end $release_lock$;
+begin read only;
+do $bounds$ begin
+ if current_database()<>'postgres' or current_user<>'postgres' or inet_server_port()<>5432 then raise check_violation using message='Online index database/role/port precondition failed';end if;
+ if current_setting('lock_timeout')<>'2s' or current_setting('statement_timeout')<>'30s' then raise check_violation using message='Online index startup timeouts must be 2s lock / 30s statement';end if;
+ if (select pg_get_userbyid(relowner) from pg_class where oid='public.shifts'::regclass)<>'postgres' then raise check_violation using message='Shift relation owner drift';end if;
+ if (select count(*) from pg_roles r cross join lateral unnest(r.rolconfig) c(setting) where r.rolname in ('authenticated','authenticator') and c.setting='statement_timeout=8s')<>2 or exists(select 1 from pg_roles r cross join lateral unnest(r.rolconfig) c(setting) where r.rolname in ('authenticated','authenticator') and c.setting like 'statement_timeout=%' and c.setting<>'statement_timeout=8s') then raise check_violation using message='Authenticated timeout differs from unchanged 8s boundary';end if;
+ if not exists(select 1 from pg_class where oid='public.shifts'::regclass and relkind='r' and relrowsecurity and not relforcerowsecurity) then raise check_violation using message='Shift RLS/relation contract differs';end if;
+ if (select count(*) from (values ('id','uuid'),('starts_at','timestamp with time zone'),('ends_at','timestamp with time zone'),('schedule_id','uuid'),('canceled_at','timestamp with time zone')) expected(name,type) join pg_attribute a on a.attrelid='public.shifts'::regclass and a.attname=expected.name and a.atttypid=expected.type::regtype and not a.attisdropped)<>5 then raise check_violation using message='Shift covering-index column type contract differs';end if;
+ if not exists(select 1 from pg_index i join pg_attribute a on a.attrelid=i.indrelid and a.attname='id' where i.indrelid='public.shifts'::regclass and i.indisprimary and i.indisvalid and i.indnkeyatts=1 and i.indkey[0]=a.attnum) then raise check_violation using message='Shift UUID id primary key contract differs';end if;
+end $bounds$;
+do $functions$ declare expected jsonb; actual jsonb; begin
+ for expected in select value from jsonb_array_elements($expected$[{"acl":"{postgres=X/postgres}","config":["search_path=\"\""],"defaults":"({CONST :consttype 2950 :consttypmod -1 :constcollid 0 :constlen 16 :constbyval false :constisnull true :location -1 :constvalue <>})","identity":"private.get_effective_time_events(uuid)","owner":"postgres","security_definer":true,"source_hash":"e4e6ab15b4a6bdca294cc4d250398396","volatility":"s"},{"acl":"{postgres=X/postgres,service_role=X/postgres}","config":["search_path=\"\""],"defaults":null,"identity":"private.get_timekeeping_review_base(date,date)","owner":"postgres","security_definer":true,"source_hash":"2bf025842841d13fa8a4f9facab445e7","volatility":"v"},{"acl":"{postgres=X/postgres,service_role=X/postgres}","config":["search_path=\"\""],"defaults":null,"identity":"private.get_timekeeping_review_operations_base(date,date)","owner":"postgres","security_definer":true,"source_hash":"54a94325d91b44d34e7c4e9f59aa79ce","volatility":"v"},{"acl":"{postgres=X/postgres,service_role=X/postgres}","config":["search_path=\"\""],"defaults":null,"identity":"private.get_timekeeping_review_pre_payroll_week_allocation(date,date)","owner":"postgres","security_definer":true,"source_hash":"50d56676c0b0daa7d2f795dc85e1b074","volatility":"v"},{"acl":"{postgres=X/postgres,service_role=X/postgres}","config":["search_path=\"\""],"defaults":null,"identity":"private.get_timekeeping_review_preferred_name_boundary_base(date,date)","owner":"postgres","security_definer":true,"source_hash":"8b3d65f5db03d490831f3f5e62786a5e","volatility":"v"},{"identity":"public.get_timekeeping_review(date,date)","source_hash":"9656bc6ff66fdf926a0c09c5f4852d24","owner":"postgres","acl":"{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}","config":["search_path=\"\""],"security_definer":true,"volatility":"v","defaults":null}]$expected$::jsonb) loop
+ select jsonb_build_object('identity',expected->>'identity','source_hash',md5(pg_get_functiondef(oid)),'owner',pg_get_userbyid(proowner),'acl',proacl::text,'config',proconfig,'security_definer',prosecdef,'volatility',provolatile::text,'defaults',proargdefaults::text) into strict actual from pg_proc where oid=(expected->>'identity')::regprocedure;
+ if actual is distinct from expected then raise check_violation using message='Exact installed timekeeping function/source/security precondition failed';end if;
+ end loop;
+end $functions$;
+do $installed_ledger$ declare installed record; begin
+ select * into strict installed from supabase_migrations.schema_migrations where version='20261020001516';
+ if installed.name<>'cover_active_shift_timekeeping_candidates' or installed.statements is distinct from array[$exact_source$-- Reserved by Supabase CLI; staged candidate pending independent release review.
+-- Execute this single statement outside any explicit or implicit transaction block.
+-- The reviewed release protocol enforces lock_timeout=2s and statement_timeout=30s
+-- using native connection startup settings before this file is executed.
+-- This 30s DDL budget does not change the authenticated review RPC timeout (8s).
+CREATE INDEX CONCURRENTLY shifts_timekeeping_candidate_cover_idx
+ON public.shifts (id) INCLUDE (starts_at, ends_at, schedule_id)
+WHERE canceled_at IS NULL;
+$exact_source$] then raise check_violation using message='Original installed covering-index ledger/source differs';end if;
+ if exists(select 1 from supabase_migrations.schema_migrations where version='20261020002135') then raise duplicate_object using message='Forward covering-index recovery already ledgered';end if;
+end $installed_ledger$;
+do $index$ declare candidate record; begin
+ select i.*,c.relkind,c.relam,c.reloptions,c.relacl,c.reltablespace,c.relpersistence,pg_get_userbyid(c.relowner) as owner,pg_get_indexdef(c.oid) as definition into strict candidate from pg_class c join pg_index i on i.indexrelid=c.oid where c.oid='public.shifts_timekeeping_candidate_cover_idx'::regclass;
+ if candidate.indrelid<>'public.shifts'::regclass or candidate.owner<>'postgres' or candidate.definition<>$definition$CREATE INDEX shifts_timekeeping_candidate_cover_idx ON public.shifts USING btree (id) INCLUDE (starts_at, ends_at, schedule_id) WHERE (canceled_at IS NULL)$definition$ or candidate.indisunique or candidate.indisprimary or candidate.indisexclusion or candidate.relkind<>'i' or candidate.relpersistence<>'p' or candidate.reloptions is not null or candidate.relacl is not null or candidate.reltablespace<>0 or (candidate.indisvalid and (not candidate.indisready or not candidate.indislive)) then raise check_violation using message='Exact owned covering-index definition/state precondition failed';end if;
+end $index$;
+do $health$ begin
+ if (select count(*) from pg_stat_activity where datname=current_database())>=48 then raise check_violation using message='Online index connection headroom gate failed';end if;
+ if exists(select 1 from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and (cardinality(pg_blocking_pids(pid))>0 or (xact_start is not null and xact_start<clock_timestamp()-interval '30 seconds'))) then raise check_violation using message='Online index blocker/old-transaction gate failed';end if;
+ if exists(select 1 from pg_index where indrelid='public.shifts'::regclass and indexrelid is distinct from to_regclass('public.shifts_timekeeping_candidate_cover_idx') and (not indisvalid or not indisready)) then raise check_violation using message='Shift relation already has an invalid/unready index';end if;
+end $health$;
+commit;
+\ir 20261020002135_recover_active_shift_timekeeping_covering_index.sql
+begin;
+do $bounds$ begin
+ if current_database()<>'postgres' or current_user<>'postgres' or inet_server_port()<>5432 then raise check_violation using message='Online index database/role/port precondition failed';end if;
+ if current_setting('lock_timeout')<>'2s' or current_setting('statement_timeout')<>'30s' then raise check_violation using message='Online index startup timeouts must be 2s lock / 30s statement';end if;
+ if (select pg_get_userbyid(relowner) from pg_class where oid='public.shifts'::regclass)<>'postgres' then raise check_violation using message='Shift relation owner drift';end if;
+ if (select count(*) from pg_roles r cross join lateral unnest(r.rolconfig) c(setting) where r.rolname in ('authenticated','authenticator') and c.setting='statement_timeout=8s')<>2 or exists(select 1 from pg_roles r cross join lateral unnest(r.rolconfig) c(setting) where r.rolname in ('authenticated','authenticator') and c.setting like 'statement_timeout=%' and c.setting<>'statement_timeout=8s') then raise check_violation using message='Authenticated timeout differs from unchanged 8s boundary';end if;
+ if not exists(select 1 from pg_class where oid='public.shifts'::regclass and relkind='r' and relrowsecurity and not relforcerowsecurity) then raise check_violation using message='Shift RLS/relation contract differs';end if;
+ if (select count(*) from (values ('id','uuid'),('starts_at','timestamp with time zone'),('ends_at','timestamp with time zone'),('schedule_id','uuid'),('canceled_at','timestamp with time zone')) expected(name,type) join pg_attribute a on a.attrelid='public.shifts'::regclass and a.attname=expected.name and a.atttypid=expected.type::regtype and not a.attisdropped)<>5 then raise check_violation using message='Shift covering-index column type contract differs';end if;
+ if not exists(select 1 from pg_index i join pg_attribute a on a.attrelid=i.indrelid and a.attname='id' where i.indrelid='public.shifts'::regclass and i.indisprimary and i.indisvalid and i.indnkeyatts=1 and i.indkey[0]=a.attnum) then raise check_violation using message='Shift UUID id primary key contract differs';end if;
+end $bounds$;
+do $functions$ declare expected jsonb; actual jsonb; begin
+ for expected in select value from jsonb_array_elements($expected$[{"acl":"{postgres=X/postgres}","config":["search_path=\"\""],"defaults":"({CONST :consttype 2950 :consttypmod -1 :constcollid 0 :constlen 16 :constbyval false :constisnull true :location -1 :constvalue <>})","identity":"private.get_effective_time_events(uuid)","owner":"postgres","security_definer":true,"source_hash":"e4e6ab15b4a6bdca294cc4d250398396","volatility":"s"},{"acl":"{postgres=X/postgres,service_role=X/postgres}","config":["search_path=\"\""],"defaults":null,"identity":"private.get_timekeeping_review_base(date,date)","owner":"postgres","security_definer":true,"source_hash":"2bf025842841d13fa8a4f9facab445e7","volatility":"v"},{"acl":"{postgres=X/postgres,service_role=X/postgres}","config":["search_path=\"\""],"defaults":null,"identity":"private.get_timekeeping_review_operations_base(date,date)","owner":"postgres","security_definer":true,"source_hash":"54a94325d91b44d34e7c4e9f59aa79ce","volatility":"v"},{"acl":"{postgres=X/postgres,service_role=X/postgres}","config":["search_path=\"\""],"defaults":null,"identity":"private.get_timekeeping_review_pre_payroll_week_allocation(date,date)","owner":"postgres","security_definer":true,"source_hash":"50d56676c0b0daa7d2f795dc85e1b074","volatility":"v"},{"acl":"{postgres=X/postgres,service_role=X/postgres}","config":["search_path=\"\""],"defaults":null,"identity":"private.get_timekeeping_review_preferred_name_boundary_base(date,date)","owner":"postgres","security_definer":true,"source_hash":"8b3d65f5db03d490831f3f5e62786a5e","volatility":"v"},{"identity":"public.get_timekeeping_review(date,date)","source_hash":"9656bc6ff66fdf926a0c09c5f4852d24","owner":"postgres","acl":"{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}","config":["search_path=\"\""],"security_definer":true,"volatility":"v","defaults":null}]$expected$::jsonb) loop
+ select jsonb_build_object('identity',expected->>'identity','source_hash',md5(pg_get_functiondef(oid)),'owner',pg_get_userbyid(proowner),'acl',proacl::text,'config',proconfig,'security_definer',prosecdef,'volatility',provolatile::text,'defaults',proargdefaults::text) into strict actual from pg_proc where oid=(expected->>'identity')::regprocedure;
+ if actual is distinct from expected then raise check_violation using message='Exact installed timekeeping function/source/security precondition failed';end if;
+ end loop;
+end $functions$;
+do $installed_ledger$ declare installed record; begin
+ select * into strict installed from supabase_migrations.schema_migrations where version='20261020001516';
+ if installed.name<>'cover_active_shift_timekeeping_candidates' or installed.statements is distinct from array[$exact_source$-- Reserved by Supabase CLI; staged candidate pending independent release review.
+-- Execute this single statement outside any explicit or implicit transaction block.
+-- The reviewed release protocol enforces lock_timeout=2s and statement_timeout=30s
+-- using native connection startup settings before this file is executed.
+-- This 30s DDL budget does not change the authenticated review RPC timeout (8s).
+CREATE INDEX CONCURRENTLY shifts_timekeeping_candidate_cover_idx
+ON public.shifts (id) INCLUDE (starts_at, ends_at, schedule_id)
+WHERE canceled_at IS NULL;
+$exact_source$] then raise check_violation using message='Original installed covering-index ledger/source differs';end if;
+ if exists(select 1 from supabase_migrations.schema_migrations where version='20261020002135') then raise duplicate_object using message='Forward covering-index recovery already ledgered';end if;
+end $installed_ledger$;
+do $index_absent$ begin if to_regclass('public.shifts_timekeeping_candidate_cover_idx') is not null then raise check_violation using message='Covering-index forward recovery must leave index absent';end if;end $index_absent$;
+insert into supabase_migrations.schema_migrations(version,name,statements) values('20261020002135','recover_active_shift_timekeeping_covering_index',array[$exact_recovery_source$-- Inactive forward recovery reserved by CLI; activate only after review/gates.
+-- Standalone online DDL; the exact guarded recovery protocol checks the installed
+-- original ledger/source and owned index before dropping only this index.
+DROP INDEX CONCURRENTLY public.shifts_timekeeping_candidate_cover_idx;
+$exact_recovery_source$]);
+commit;
+select jsonb_build_object('recoveredAt',clock_timestamp(),'version','20261020002135','sourceSha256','89cbb0cc87e436022d38547c400a2964e7718256fbfde50b260a3e57d98e9dea','originalVersionRetained',exists(select 1 from supabase_migrations.schema_migrations where version='20261020001516'),'indexAbsent',to_regclass('public.shifts_timekeeping_candidate_cover_idx') is null) as recovery;
+select pg_advisory_unlock(191019,20001516);
