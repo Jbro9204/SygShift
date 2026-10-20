@@ -423,6 +423,7 @@ interface EmailAuditContext {
 
 interface EmailDeliveryResult {
   sent: string[]
+  providerReferences: Map<string, string>
   suppressed: string[]
   failed: Array<{ recipient: string, error: string, code?: string }>
 }
@@ -1000,6 +1001,7 @@ async function logEmailDelivery(
   context: EmailAuditContext,
   failureDetail?: string | null,
   rpc: RpcInvoker = callRpc,
+  providerReference: string | null = null,
 ): Promise<void> {
   const config = configuredSupabase(environment)
   if (!config) return
@@ -1011,7 +1013,7 @@ async function logEmailDelivery(
       target_failure_detail: failureDetail ?? null,
       target_intended_recipient: recipient,
       target_notification_type: context.notificationType,
-      target_provider_reference: null,
+      target_provider_reference: providerReference,
       target_related_record_id: context.relatedRecordId ?? null,
       target_related_record_type: context.relatedRecordType ?? null,
     },
@@ -1035,7 +1037,7 @@ async function sendAuditedEmail(
   const uniqueRecipients = [...new Set((Array.isArray(recipients) ? recipients : [recipients])
     .map((recipient) => recipient.trim().toLowerCase())
     .filter(Boolean))]
-  const result: EmailDeliveryResult = { failed: [], sent: [], suppressed: [] }
+  const result: EmailDeliveryResult = { failed: [], providerReferences: new Map(), sent: [], suppressed: [] }
 
   for (const recipient of uniqueRecipients) {
     if (isBlockedEmailRecipient(environment, recipient)) {
@@ -1045,8 +1047,9 @@ async function sendAuditedEmail(
       }
       continue
     }
+    let acceptance: unknown
     try {
-      await environment.EMAIL.send({
+      acceptance = await environment.EMAIL.send({
         from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
         html: brandedEmailHtml(message, environment.SYGSHIFT_PUBLIC_APP_URL),
         replyTo,
@@ -1054,13 +1057,28 @@ async function sendAuditedEmail(
         text: message.text,
         to: recipient,
       })
-      result.sent.push(recipient)
-      if (auditMode === 'inline') await logEmailDelivery(environment, recipient, 'sent', context, null, rpc)
     } catch (error) {
       const { code, detail } = emailDeliveryFailure(error)
       result.failed.push({ code, error: detail, recipient })
       if (auditMode === 'inline') await logEmailDelivery(environment, recipient,
         code === providerRecipientSuppressedCode ? 'suppressed_provider_recipient' : 'failed', context, detail, rpc)
+      continue
+    }
+    result.sent.push(recipient)
+    // The structured binding returns an opaque messageId. Older/local mocks
+    // may return no result; acceptance still stands and no ID is invented.
+    if (acceptance && typeof acceptance === 'object' && 'messageId' in acceptance
+      && typeof acceptance.messageId === 'string' && acceptance.messageId.length > 0) {
+      result.providerReferences.set(recipient, acceptance.messageId)
+    }
+    if (auditMode === 'inline') {
+      try {
+        await logEmailDelivery(environment, recipient, 'sent', context, null, rpc, result.providerReferences.get(recipient) ?? null)
+      } catch {
+        // An audit outage cannot turn provider acceptance into a delivery
+        // failure, which could invite a duplicate send or clear a success mark.
+        console.error(JSON.stringify({ event: 'email_delivery_audit_deferred', notificationType: context.notificationType }))
+      }
     }
   }
 
@@ -1074,7 +1092,7 @@ async function logDeferredEmailDelivery(
   rpc: RpcInvoker,
 ): Promise<void> {
   for (const recipient of result.sent) {
-    await logEmailDelivery(environment, recipient, 'sent', context, null, rpc)
+    await logEmailDelivery(environment, recipient, 'sent', context, null, rpc, result.providerReferences.get(recipient) ?? null)
   }
   for (const recipient of result.suppressed) {
     await logEmailDelivery(environment, recipient, 'suppressed_blocked_domain', context, 'Suppressed — Blocked Domain', rpc)
@@ -7320,7 +7338,7 @@ async function sendWelcomeEmail(
     throw new ApiError('email_recipient_suppressed', 409, 'Email was suppressed because the recipient domain is temporarily blocked.')
   }
   if (result.failed.length > 0) throw new ApiError('email_delivery_failed', 502, result.failed[0].error)
-  return result
+  return { failed: result.failed, sent: result.sent, suppressed: result.suppressed }
 }
 
 async function recordOnboardingDelivery(
