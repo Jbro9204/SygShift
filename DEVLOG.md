@@ -3,10 +3,12 @@
 ## 10/19/2026 - Overnight Database Stabilization
 
 - Captured and verified a protected native production application backup and complete definition/migration snapshots; successfully restored the archive into an isolated local PostgreSQL database.
-- Prepared seven fingerprint-gated HR/import SQL corrections, exact forward recovery, hosted rollback functional probes, and isolated positive automation/import regressions. The identity-backfill temporary-table lint finding is verified contextual noise; its production gate remains closed.
-- Prepared timekeeping planner/collection repairs with exact payload equality and payroll preservation regressions; notification changes remain a coordinated database/browser/Worker release candidate.
+- Installed seven fingerprint-gated HR/import SQL corrections and verified their functional regressions. The identity-backfill temporary-table lint finding is verified contextual noise; its production gate remains closed.
+- Installed four timekeeping planner/collection repairs with exact ordered-payload and payroll preservation regressions. A measured concurrent covering index then reduced installed maximum probes to 5.370/5.149 seconds under the unchanged eight-second ceiling; all thirteen fresh integrity checks passed. Load variance remains monitored.
+- Installed timestamp-only shift audit suppression, three narrow authorization corrections, and scoped urgent employee sick/call-off access during maintenance. Installed workflow, security, recovery and rollback-cleanup checks passed. Ten forward versions bring the ledger from 366 to 376; no application was deployed.
+- Notification terminal-state changes remain an isolated tested database/browser/Worker candidate. Existing browser compatibility, normal readiness and authenticated canary requirements must pass before activation.
 - Recovered owning migration sources and recorded unresolved history equivalence without altering applied history. Full stage status and production identifiers are maintained in the overnight work-order report and dated stabilization changelog.
-- Production application release remains gated while the approved read-only maintenance window prevents a fresh scheduled full cycle. No readiness or maintenance gate is bypassed. Shutdown requires Jordan's new explicit approval.
+- Production application release remains gated while the approved read-only maintenance window prevents a fresh scheduled full cycle. No readiness or maintenance gate is bypassed. Jordan's latest instruction revokes automatic shutdown; leave the computer running.
 
 ## 10/19/2026 - Automatic Scheduled Recovery and Release Safety
 

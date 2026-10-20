@@ -1,0 +1,894 @@
+{
+  "generatedAt": "2026-10-20T00:58:54.646Z",
+  "scope": "Source and documentation only; private ignored backups/evidence excluded; this inventory excludes its own hash.",
+  "trees": [
+    {
+      "root": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone",
+      "base": "a900ebcf3b2334b5ed2fccc3f0c1b4d1aa6f0f7d",
+      "head": "f1193df30e4090cb9b7acf29f9019c89d1ee55bd",
+      "branch": "fix/payroll-hours-reconciliation-20261018",
+      "files": [
+        {
+          "path": ".gitignore",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\.gitignore",
+          "exists": true,
+          "sha256": "22361c7ee79f053fbf85436d16a48cf620a43b03b9d940a4cb952c0e3f9f73c3"
+        },
+        {
+          "path": "DEVLOG.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\DEVLOG.md",
+          "exists": true,
+          "sha256": "4269a81a69799d242dd6ef400e73cc9c8a8b1dfd975fcef8286b652870192e2b"
+        },
+        {
+          "path": "docs/changelogs/CHANGELOG_2026-10-19_AUTHORIZATION_AND_MIGRATION_BASELINE.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\changelogs\\CHANGELOG_2026-10-19_AUTHORIZATION_AND_MIGRATION_BASELINE.md",
+          "exists": true,
+          "sha256": "c5b50119690c8feefb3d108d1a45b2fc06c935bb6241d713442e9b9447a78f08"
+        },
+        {
+          "path": "docs/changelogs/CHANGELOG_2026-10-19_OVERNIGHT_DATABASE_STABILIZATION.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\changelogs\\CHANGELOG_2026-10-19_OVERNIGHT_DATABASE_STABILIZATION.md",
+          "exists": true,
+          "sha256": "c833006eb38a19c66b917509e0cbd3449d083ae38d297b4b08a13629ac35084c"
+        },
+        {
+          "path": "docs/changelogs/CHANGELOG_2026-10-19_SHIFT_TIMESTAMP_AUDIT_REPAIR.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\changelogs\\CHANGELOG_2026-10-19_SHIFT_TIMESTAMP_AUDIT_REPAIR.md",
+          "exists": true,
+          "sha256": "4dd6de34f7b0200669dada309f39c703b5859d366a13ac439a684210e72307cd"
+        },
+        {
+          "path": "docs/changelogs/CHANGELOG_2026-10-19_TIMEKEEPING_COVERING_INDEX.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\changelogs\\CHANGELOG_2026-10-19_TIMEKEEPING_COVERING_INDEX.md",
+          "exists": true,
+          "sha256": "be8e1dd0445837fc6ceb0146419ec96f5c5e32344c6d358dc015813acf923d3f"
+        },
+        {
+          "path": "docs/changelogs/CHANGELOG_2026-10-19_TIMEKEEPING_REVIEW_TIMEOUT_REPAIR.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\changelogs\\CHANGELOG_2026-10-19_TIMEKEEPING_REVIEW_TIMEOUT_REPAIR.md",
+          "exists": true,
+          "sha256": "3c9483a26419f9433bff202dccd65a92a7200639c58c19a9d66d5b6f2305bc10"
+        },
+        {
+          "path": "docs/changelogs/CHANGELOG_2026-10-19_URGENT_EMPLOYEE_MAINTENANCE_ACCESS.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\changelogs\\CHANGELOG_2026-10-19_URGENT_EMPLOYEE_MAINTENANCE_ACCESS.md",
+          "exists": true,
+          "sha256": "3c89a4fa1f9c1c1840b07ba8a6a3db33d77fbc46a9d23443b950e1bef2328c54"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/APPROVED_WORK_ORDER.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\APPROVED_WORK_ORDER.md",
+          "exists": true,
+          "sha256": "010d39b4e60b70003d3af0565aded92bb338f4ab86feb6199c3d218a7477f27f"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/AUTHORIZATION_CANDIDATE.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\AUTHORIZATION_CANDIDATE.md",
+          "exists": true,
+          "sha256": "dac8279490f541c9ef1c03b89a9610887ebd2de5fd0f542702677d686c758425"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/AUTHORIZATION_REVIEW.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\AUTHORIZATION_REVIEW.md",
+          "exists": true,
+          "sha256": "677938cdceef887a0067aebea7f602fde62b29fc72b05f907260c0a23781bc8b"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/CLIENT_LICENSING_INTEGRITY.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\CLIENT_LICENSING_INTEGRITY.md",
+          "exists": true,
+          "sha256": "4c4248b86ae110b2a637a23a1c516bdc29a4584c760873f4c87daec0cc18ab0a"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/EMAIL_PROVIDER_REFERENCE.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\EMAIL_PROVIDER_REFERENCE.md",
+          "exists": true,
+          "sha256": "205bdfb07e35a735dbc7c454886b2d35f2f5c0f70c1674b5c36a26c861505b2e"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/FINAL_HEALTH_AND_CALLER_EVIDENCE.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\FINAL_HEALTH_AND_CALLER_EVIDENCE.md",
+          "exists": true,
+          "sha256": "2377b5bb5688a5d977b71ff4a5b3d92cb8e70a0bd30561e3ea3076c8a654b7b4"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/HARDENING_PLAN.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\HARDENING_PLAN.md",
+          "exists": true,
+          "sha256": "5a7e595760d6d264e2a33d24048ee96b24446171ddbe13c819a5700e315623d4"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/LIVE_ACTIVITY_INTEGRITY.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\LIVE_ACTIVITY_INTEGRITY.md",
+          "exists": true,
+          "sha256": "f16053f7416a52cc96c7f826584d199a4128623702f8f2ae00a0143b224f9882"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/MIGRATION_OWNERSHIP_RECOVERY.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\MIGRATION_OWNERSHIP_RECOVERY.md",
+          "exists": true,
+          "sha256": "11541902860ffd34a1b255bedb087a45ba8c76d05ee42b5be3ab1837c7fba4ba"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/MORNING_REPORT.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\MORNING_REPORT.md",
+          "exists": true,
+          "sha256": "42f3dd889d4ec6002e393073816f0aa1e3668b435fa258e83a2a7684aaf60fb4"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/NOTIFICATION_CLIENT_COMPATIBILITY.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\NOTIFICATION_CLIENT_COMPATIBILITY.md",
+          "exists": true,
+          "sha256": "64e94c742d5e2720853ffd9e652791984ba0944f6f20cb17f3f7c74416e5307f"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/PRIOR_AUDIT.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\PRIOR_AUDIT.md",
+          "exists": true,
+          "sha256": "959735b0166d5a2024fb5866737d249ff9972cbbe06458d5d2cb9172e4af5d42"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/SERVED_SCHEMA_CALLER_TRACE.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\SERVED_SCHEMA_CALLER_TRACE.md",
+          "exists": true,
+          "sha256": "a77388ce388f1a5228a892d66466f716ef4cfebf8c7cebedd05e6e076e86faab"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/SHIFT_AUDIT_TIMESTAMP_REPAIR.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\SHIFT_AUDIT_TIMESTAMP_REPAIR.md",
+          "exists": true,
+          "sha256": "a04176a179e1fd1da94c575f22acb3be7d8c640102c25f132b08432b606b4394"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/STRANDED_PROVIDER_OUTCOME.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\STRANDED_PROVIDER_OUTCOME.md",
+          "exists": true,
+          "sha256": "79fab7c72371febdb49d9f9a5b8aeba2760b5f6d14a0922a1d2d1096854cbfaa"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/TIMEKEEPING_COVERING_INDEX.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\TIMEKEEPING_COVERING_INDEX.md",
+          "exists": true,
+          "sha256": "3b0990d7ed9da79989bdd00b11d1c7006daf4ce2221762538372ee18475d58df"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/URGENT_MAINTENANCE_ACCESS.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\URGENT_MAINTENANCE_ACCESS.md",
+          "exists": true,
+          "sha256": "4a9a606a5175eea0dadda53317b78d3210d8eaffb662f2fdc4f43ca143263c39"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/URGENT_MAINTENANCE_UI_PROOF.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\URGENT_MAINTENANCE_UI_PROOF.md",
+          "exists": true,
+          "sha256": "fb338ef1ac9406726daa6a142893b3ab46d9d4611165dfe0b4b21f950a03a17a"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/20261020001516_cover_active_shift_timekeeping_candidates.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\20261020001516_cover_active_shift_timekeeping_candidates.sql",
+          "exists": true,
+          "sha256": "8375774382342cd457ae39cece2f1eac8a4ae8e5351c0839f5171242f9d6d75d"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/20261020002135_recover_active_shift_timekeeping_covering_index.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\20261020002135_recover_active_shift_timekeeping_covering_index.sql",
+          "exists": true,
+          "sha256": "89cbb0cc87e436022d38547c400a2964e7718256fbfde50b260a3e57d98e9dea"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/authorization_boundary_fallback.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\authorization_boundary_fallback.sql",
+          "exists": true,
+          "sha256": "9709dd65e8fff273e49b027c842b2117a1a430aaab1f208eca705063a3faef72"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/authorization_boundary_repair.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\authorization_boundary_repair.sql",
+          "exists": true,
+          "sha256": "7936690ad20783bd01bab0bb52cc9aa3fc0dcdf14643dd2831aefb358eaa5df8"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-artifacts.json",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\covering-index-artifacts.json",
+          "exists": true,
+          "sha256": "5c72004e45378fb3b9113bdf9d2ebc57c68daff57aaf4c1a800b9374fbf71443"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-failed-build-cleanup.psql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\covering-index-failed-build-cleanup.psql",
+          "exists": true,
+          "sha256": "981e5306b48c7cdc099dcd984a19f716ccc8a15aad0bc59fbc846bd2d42f0a8e"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-forward-recovery.psql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\covering-index-forward-recovery.psql",
+          "exists": true,
+          "sha256": "007e78f3ac211dd8f05dc9103cc814894554209ce88ac42ebe5b040c8d406191"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-preflight.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\covering-index-preflight.sql",
+          "exists": true,
+          "sha256": "8cbd3998e6dd382eb6cd3d6d7850175d60c509f9a6dd730cc46210fcdf4c642d"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-release.psql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\covering-index-release.psql",
+          "exists": true,
+          "sha256": "db42f666e69809ec9b5633c3847407c514435f54cfde1ab8eff3ad8ad3466082"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-resume-ledger.psql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\covering-index-resume-ledger.psql",
+          "exists": true,
+          "sha256": "5faed558a36c7fb6d3008c4a03e747d98ffd0e842514af864d767e2cbc7c2cdb"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/covering-index-resume-recovery-ledger.psql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\covering-index-resume-recovery-ledger.psql",
+          "exists": true,
+          "sha256": "918261a61ae5531571d8ec9e06ef14b8b9b0ac6b75c2220d766083d6744cbd2a"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/employee_urgent_maintenance_access.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\employee_urgent_maintenance_access.sql",
+          "exists": true,
+          "sha256": "9669a71f19623e315039f319c675e8d2248ff61e9359595d275949e5f52a8c73"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/employee_urgent_maintenance_capability_objects.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\employee_urgent_maintenance_capability_objects.sql",
+          "exists": true,
+          "sha256": "64794e771d13e403aaba9527816eb770cc717de96460a57b844444c0b91b9103"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/employee_urgent_maintenance_recovery.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\employee_urgent_maintenance_recovery.sql",
+          "exists": true,
+          "sha256": "5ad03d51071abf8d7146095429820b9a44bb0ac99862bfabb82a3b6d4a0858ad"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/invoke-covering-index-native.ps1",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\invoke-covering-index-native.ps1",
+          "exists": true,
+          "sha256": "32cd1f53264b5fbaea01974d78aab6202e5894056a1d742192ccc6fd9da55d3c"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/supabase-prod-ca-2021.crt",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\supabase-prod-ca-2021.crt",
+          "exists": true,
+          "sha256": "700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/candidates/tests/test-covering-online-lifecycle.mjs",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\candidates\\tests\\test-covering-online-lifecycle.mjs",
+          "exists": true,
+          "sha256": "3b90ecba1b9c0efaa8001d5baf46263929579e8c2930ad9d0f19fb0ba72e3817"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/migration-ownership-final-v2.json",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\migration-ownership-final-v2.json",
+          "exists": true,
+          "sha256": "8a0349070ef49bee125e88b36b1aacd20880f6060da85a71c088ac8838c5b143"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/migration-ownership-manifest.json",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\migration-ownership-manifest.json",
+          "exists": true,
+          "sha256": "f4325dec807577be9bc5fcc43d4a2d55f119414de43f0f0723103dea1826f1ec"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/migration-ownership-post-urgent-v2.json",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\migration-ownership-post-urgent-v2.json",
+          "exists": true,
+          "sha256": "1bae65420b82b393462c3071f96d1a4b9948784fcb97202e35a957129e2bb850"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/migration-ownership-pre-authorization-v2.json",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\migration-ownership-pre-authorization-v2.json",
+          "exists": true,
+          "sha256": "9b433e4a950a205ef08cf58be1bda0a5b7fa082ab99e5c091637ec3b2fa41423"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/migration-ownership-pre-category-v2.json",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\migration-ownership-pre-category-v2.json",
+          "exists": true,
+          "sha256": "7b13c05d0750cdee2c762e9c4799670821de32ccff8a8a47252b16c150e96418"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/migration-ownership-pre-covering-index-v2.json",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\migration-ownership-pre-covering-index-v2.json",
+          "exists": true,
+          "sha256": "4b9d938136e9129855a31d114ea27ba63a9b2b9cca936ae9c0653730ed1d6ffe"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/migration-ownership-pre-occurrence-v2.json",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\migration-ownership-pre-occurrence-v2.json",
+          "exists": true,
+          "sha256": "c21a6a9c53caf50eefc1c1c42e57204a65f76b398fcc93870d00f71d4b3d4c94"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/migration-ownership-pre-urgent-v2.json",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\migration-ownership-pre-urgent-v2.json",
+          "exists": true,
+          "sha256": "92ad60d67fea540c7b23d4ef68bcf6179ac57a0f3dff484aabc143d3623ae6c4"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/migration-source-ownership-decisions.json",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\migration-source-ownership-decisions.json",
+          "exists": true,
+          "sha256": "9d39464f48d821259493f5c06a36ff25ed04d56e15c215d5bf12bf15eb3cecbb"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/staged/20261019232727_suppress_shift_timestamp_only_audit.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\staged\\20261019232727_suppress_shift_timestamp_only_audit.sql",
+          "exists": true,
+          "sha256": "0d3426dd8dfc03bd36ea6c913b192ac0a54db6cc2820b366e62845d39dd4d184"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/staged/20261019233511_recover_shift_timestamp_audit_writer.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\staged\\20261019233511_recover_shift_timestamp_audit_writer.sql",
+          "exists": true,
+          "sha256": "2c4a8aca859e055b109578c8c7982652f76f6e11ff51ae1d53682ad4b7626a90"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/staged/20261019233625_authorization_boundary_hardening.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\staged\\20261019233625_authorization_boundary_hardening.sql",
+          "exists": true,
+          "sha256": "45e46e53488ada10a6b68e25332dfabd10eff75e12229ee5a79c73aee3a26138"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/staged/20261019233735_recover_authorization_boundary_definitions.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\staged\\20261019233735_recover_authorization_boundary_definitions.sql",
+          "exists": true,
+          "sha256": "512af1763f566af147a1c2eef40ef40c95c15a8e07c852f27588336744b6c644"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/staged/20261019235642_preserve_employee_urgent_maintenance_access.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\staged\\20261019235642_preserve_employee_urgent_maintenance_access.sql",
+          "exists": true,
+          "sha256": "b8635550ce7afd568f197c8789cb023fb56eef5d96020254cbbb94c022c924b2"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/staged/20261019235644_recover_employee_urgent_maintenance_functions.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\2026-10-19-overnight\\staged\\20261019235644_recover_employee_urgent_maintenance_functions.sql",
+          "exists": true,
+          "sha256": "635730e7242f2684d7020f5508f93e3048e24de3bbd36f9b04248bbf375c242a"
+        },
+        {
+          "path": "docs/work-orders/NOTIFICATION_TERMINAL_STATE_REPAIR_2026-10-19.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\NOTIFICATION_TERMINAL_STATE_REPAIR_2026-10-19.md",
+          "exists": true,
+          "sha256": "95e2f8010397685ec9a56171b7f3af256eabcbe368f3cb5184f507047ae97306"
+        },
+        {
+          "path": "docs/work-orders/TIMEKEEPING_TIMEOUT_REPAIR_2026-10-19.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\docs\\work-orders\\TIMEKEEPING_TIMEOUT_REPAIR_2026-10-19.md",
+          "exists": true,
+          "sha256": "cf61a3c64cf16414ca164b7d216767bfef67289742d75945c32adfdf15026c4a"
+        },
+        {
+          "path": "package.json",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\package.json",
+          "exists": true,
+          "sha256": "42fefb829e2f86d359ad4065d121313b062e2f5738ef1d8ce4ca773e3319dc22"
+        },
+        {
+          "path": "supabase/migrations/20260921182231_support_ticket_email_redesign.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20260921182231_support_ticket_email_redesign.sql",
+          "exists": true,
+          "sha256": "8d9cee42149ae4b6c270094f3b1aa40d033c5ea5c664de3db866f65656760985"
+        },
+        {
+          "path": "supabase/migrations/20260921185816_support_ticket_notification_detail.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20260921185816_support_ticket_notification_detail.sql",
+          "exists": true,
+          "sha256": "161cfe87c2bf07cd6d6dae1f8b7fec5ca93c1183902d6205d9c9e9ef1f0e04ef"
+        },
+        {
+          "path": "supabase/migrations/20260922233000_schedule_client_readiness_selector.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20260922233000_schedule_client_readiness_selector.sql",
+          "exists": true,
+          "sha256": "f1c07b6c53d7bce469410490d1a404786b26cdf6fad55a804ac7ae0fb1f530ac"
+        },
+        {
+          "path": "supabase/migrations/20261019230418_repair_verified_hr_import_lint_errors.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20261019230418_repair_verified_hr_import_lint_errors.sql",
+          "exists": true,
+          "sha256": "57696eb52bd50bdf61766fd6dcbb55472a099a2a88994f54b3c46c2c08f37183"
+        },
+        {
+          "path": "supabase/migrations/20261019230425_materialize_effective_time_event_candidate_priority.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20261019230425_materialize_effective_time_event_candidate_priority.sql",
+          "exists": true,
+          "sha256": "6959928e0aff29f9876368ff058aecd7f57e77640952504e8002cbca706e32d9"
+        },
+        {
+          "path": "supabase/migrations/20261019230743_collect_timekeeping_review_rows_once.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20261019230743_collect_timekeeping_review_rows_once.sql",
+          "exists": true,
+          "sha256": "1b84cf3ab3cce38289ece1e9d097cffe1c57996f1a2f6609f869aaad37ffac4e"
+        },
+        {
+          "path": "supabase/migrations/20261019232727_suppress_shift_timestamp_only_audit.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20261019232727_suppress_shift_timestamp_only_audit.sql",
+          "exists": true,
+          "sha256": "0d3426dd8dfc03bd36ea6c913b192ac0a54db6cc2820b366e62845d39dd4d184"
+        },
+        {
+          "path": "supabase/migrations/20261019233625_authorization_boundary_hardening.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20261019233625_authorization_boundary_hardening.sql",
+          "exists": true,
+          "sha256": "45e46e53488ada10a6b68e25332dfabd10eff75e12229ee5a79c73aee3a26138"
+        },
+        {
+          "path": "supabase/migrations/20261019234005_group_timekeeping_payroll_categories_by_employee.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20261019234005_group_timekeeping_payroll_categories_by_employee.sql",
+          "exists": true,
+          "sha256": "1adf7f8b5347fa357e2156c60c8e21e497d58199d71541971cd02ade96b57a90"
+        },
+        {
+          "path": "supabase/migrations/20261019235117_materialize_timekeeping_occurrence_gaps.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20261019235117_materialize_timekeeping_occurrence_gaps.sql",
+          "exists": true,
+          "sha256": "4c20e8989fcf96ecc3fde41b2797a5764d6d3dae87e832a3515a4b505df6d00f"
+        },
+        {
+          "path": "supabase/migrations/20261019235642_preserve_employee_urgent_maintenance_access.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20261019235642_preserve_employee_urgent_maintenance_access.sql",
+          "exists": true,
+          "sha256": "b8635550ce7afd568f197c8789cb023fb56eef5d96020254cbbb94c022c924b2"
+        },
+        {
+          "path": "supabase/migrations/20261020001516_cover_active_shift_timekeeping_candidates.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\migrations\\20261020001516_cover_active_shift_timekeeping_candidates.sql",
+          "exists": true,
+          "sha256": "8375774382342cd457ae39cece2f1eac8a4ae8e5351c0839f5171242f9d6d75d"
+        },
+        {
+          "path": "supabase/recovery/20261019230418_hr_import_lint_forward_recovery.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\recovery\\20261019230418_hr_import_lint_forward_recovery.sql",
+          "exists": true,
+          "sha256": "b2bb87e72dcfdbc8a5c131f62ed02900ddb68a5817071bb77ef5e8b0702584a1"
+        },
+        {
+          "path": "supabase/recovery/20261019230425_effective_time_event_candidate_priority_recovery.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\recovery\\20261019230425_effective_time_event_candidate_priority_recovery.sql",
+          "exists": true,
+          "sha256": "190880d9efeb6eb742d92cf1948e783b4b67ae87dd2811227f2261be507819f4"
+        },
+        {
+          "path": "supabase/recovery/20261019230743_timekeeping_row_collection_recovery.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\recovery\\20261019230743_timekeeping_row_collection_recovery.sql",
+          "exists": true,
+          "sha256": "b3524fc5d1c3687a7cfd4359509c69bf07214ae33d2da3b785b879b289cdfc2f"
+        },
+        {
+          "path": "supabase/recovery/20261019233511_recover_shift_timestamp_audit_writer.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\recovery\\20261019233511_recover_shift_timestamp_audit_writer.sql",
+          "exists": true,
+          "sha256": "2c4a8aca859e055b109578c8c7982652f76f6e11ff51ae1d53682ad4b7626a90"
+        },
+        {
+          "path": "supabase/recovery/20261019233735_recover_authorization_boundary_definitions.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\recovery\\20261019233735_recover_authorization_boundary_definitions.sql",
+          "exists": true,
+          "sha256": "512af1763f566af147a1c2eef40ef40c95c15a8e07c852f27588336744b6c644"
+        },
+        {
+          "path": "supabase/recovery/20261019234005_payroll_category_grouping_recovery.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\recovery\\20261019234005_payroll_category_grouping_recovery.sql",
+          "exists": true,
+          "sha256": "1de2d910274852817f4bc81ae843923965342e905295e6a49063a936378cac78"
+        },
+        {
+          "path": "supabase/recovery/20261019235117_occurrence_gap_materialization_recovery.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\recovery\\20261019235117_occurrence_gap_materialization_recovery.sql",
+          "exists": true,
+          "sha256": "0d9db98dadc55456b19d8facfa532b70e3e4ca21ad373e08904db7483a4d65c5"
+        },
+        {
+          "path": "supabase/recovery/20261019235644_recover_employee_urgent_maintenance_functions.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\recovery\\20261019235644_recover_employee_urgent_maintenance_functions.sql",
+          "exists": true,
+          "sha256": "635730e7242f2684d7020f5508f93e3048e24de3bbd36f9b04248bbf375c242a"
+        },
+        {
+          "path": "supabase/recovery/20261020002135_recover_active_shift_timekeeping_covering_index.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\recovery\\20261020002135_recover_active_shift_timekeeping_covering_index.sql",
+          "exists": true,
+          "sha256": "89cbb0cc87e436022d38547c400a2964e7718256fbfde50b260a3e57d98e9dea"
+        },
+        {
+          "path": "supabase/tests/authorization_gap_hosted_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\authorization_gap_hosted_regression.sql",
+          "exists": true,
+          "sha256": "149dd4dcf706d585d17c8359b93a2696f053fb486673a25be86ad01721b022a4"
+        },
+        {
+          "path": "supabase/tests/authorization_gap_local_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\authorization_gap_local_regression.sql",
+          "exists": true,
+          "sha256": "821119d0cac95f043f3423c35bcf2e1abba8680257273e3cb6dfe8ca13ac4906"
+        },
+        {
+          "path": "supabase/tests/effective_time_event_candidate_priority_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\effective_time_event_candidate_priority_regression.sql",
+          "exists": true,
+          "sha256": "e3a9031328ca10ab99f6828ccac34330675987d6a5a35042ef922ad56f460ebb"
+        },
+        {
+          "path": "supabase/tests/employee_urgent_maintenance_hosted_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\employee_urgent_maintenance_hosted_regression.sql",
+          "exists": true,
+          "sha256": "545ab54b2e6c27ee97667fccb9648a5667414325ca818f8d8fca38817f69c556"
+        },
+        {
+          "path": "supabase/tests/employee_urgent_maintenance_local_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\employee_urgent_maintenance_local_regression.sql",
+          "exists": true,
+          "sha256": "d904e78194d8af668e7496fcacb3d955abb1ac419c4bb77e112c4964fc973122"
+        },
+        {
+          "path": "supabase/tests/hr_automation_local_lint_functional_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\hr_automation_local_lint_functional_regression.sql",
+          "exists": true,
+          "sha256": "28267e76843ba9ceb991482d275575a809150873dcafea0edb2ad2ac78ea57d4"
+        },
+        {
+          "path": "supabase/tests/hr_identity_backfill_contextual_lint_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\hr_identity_backfill_contextual_lint_regression.sql",
+          "exists": true,
+          "sha256": "949be707fb3370ea465fd3df172d0e52371b69a8d25f29ca97be9849177f534a"
+        },
+        {
+          "path": "supabase/tests/hr_import_lint_functional_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\hr_import_lint_functional_regression.sql",
+          "exists": true,
+          "sha256": "1a757b1b936a70f7644926e209eeb54c5a66b40f893a55d89e39d5a6fb6db81c"
+        },
+        {
+          "path": "supabase/tests/shift_audit_timestamp_column_matrix_local_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\shift_audit_timestamp_column_matrix_local_regression.sql",
+          "exists": true,
+          "sha256": "9921cf629d8b9024d82bba909e404be8dc2aea5ba5a8a7f67fa1085fdaf17c98"
+        },
+        {
+          "path": "supabase/tests/shift_audit_timestamp_local_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\shift_audit_timestamp_local_regression.sql",
+          "exists": true,
+          "sha256": "95cb33dfade92d9335f75b7b8952a9d757182940465844e5e841f900d293902d"
+        },
+        {
+          "path": "supabase/tests/timekeeping_payroll_category_grouping_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\timekeeping_payroll_category_grouping_regression.sql",
+          "exists": true,
+          "sha256": "43e60eaa639b1ff503834a36d57117daa546eb529f8549d7113472fdfa23209b"
+        },
+        {
+          "path": "supabase/tests/timekeeping_review_row_collection_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\supabase\\tests\\timekeeping_review_row_collection_regression.sql",
+          "exists": true,
+          "sha256": "971ae62a97306b1da4bb1103d8d55b00f063ff75d8123dd1cd239a33ca36e0ba"
+        },
+        {
+          "path": "tests/e2e/urgent-maintenance-access.proof.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tests\\e2e\\urgent-maintenance-access.proof.ts",
+          "exists": true,
+          "sha256": "f96fb9808545a11f34076d9f93dd0b0fad8f63527f9ef247a80750b8f3d1da79"
+        },
+        {
+          "path": "tests/e2e/urgent-maintenance.playwright.config.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tests\\e2e\\urgent-maintenance.playwright.config.ts",
+          "exists": true,
+          "sha256": "78cbdbc19ac8f88f8de44b3c5cd2fab4b9c5f3bd4b3882c0de27cf666818ce04"
+        },
+        {
+          "path": "tests/fixtures/urgent-maintenance-data.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tests\\fixtures\\urgent-maintenance-data.ts",
+          "exists": true,
+          "sha256": "a3bb29f28d2d3fe5b761048dfe8f419fcfc6f18585484a99f1780ac97936e493"
+        },
+        {
+          "path": "tests/fixtures/urgent-maintenance-ui.html",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tests\\fixtures\\urgent-maintenance-ui.html",
+          "exists": true,
+          "sha256": "1ca03d0cd0d5d5a1819f1f64714019cee63a61368b2fe08653f703d00c1067db"
+        },
+        {
+          "path": "tests/fixtures/urgent-maintenance-ui.tsx",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tests\\fixtures\\urgent-maintenance-ui.tsx",
+          "exists": true,
+          "sha256": "e273fd0125bf657ade96e0b386857f319b6ec076e077f176040f9ffcdbf60de9"
+        },
+        {
+          "path": "tests/fixtures/urgent-maintenance-vite.config.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tests\\fixtures\\urgent-maintenance-vite.config.ts",
+          "exists": true,
+          "sha256": "f33033da80b0cc3c44a601e37a34845a01570c1fdd4edc8db42e1424525f7816"
+        },
+        {
+          "path": "tools/database-migration-ownership.mjs",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tools\\database-migration-ownership.mjs",
+          "exists": true,
+          "sha256": "5ce707a7efad5ef991393c94158ecfd6850a72cb34bdb802d0425b6f6a340d95"
+        },
+        {
+          "path": "tools/database-migration-ownership.test.mjs",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tools\\database-migration-ownership.test.mjs",
+          "exists": true,
+          "sha256": "4aafd3df29a83372bcba0621edb7598b213568c4c219f7770f67c377ad8d52bc"
+        },
+        {
+          "path": "tools/database-release-gate.mjs",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tools\\database-release-gate.mjs",
+          "exists": true,
+          "sha256": "6075fb5af2b20d6a6a7990ed89300789e317b26323393bb2689b12af83a58d07"
+        },
+        {
+          "path": "tools/database-release-gate.test.mjs",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tools\\database-release-gate.test.mjs",
+          "exists": true,
+          "sha256": "edf1e17104bfc23c99001d3218fb91176c77ecc23cb5343ed11ce797e524d2c4"
+        },
+        {
+          "path": "tools/prepare-hr-import-lint-repair.mjs",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tools\\prepare-hr-import-lint-repair.mjs",
+          "exists": true,
+          "sha256": "7588f05311f9b7187c2027a518f56f176717caab345f0edc8577e43b953fcf77"
+        },
+        {
+          "path": "tools/prepare-shift-audit-timestamp-repair.mjs",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tools\\prepare-shift-audit-timestamp-repair.mjs",
+          "exists": true,
+          "sha256": "cc49b6d13ac46a4927ce670a5d5f28bb33f11b1be46a59b77f5cd91f1b930705"
+        },
+        {
+          "path": "tools/prepare-timekeeping-review-diagnostics.mjs",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tools\\prepare-timekeeping-review-diagnostics.mjs",
+          "exists": true,
+          "sha256": "468079312dc67e888d0e0504b1abeee7ba3e01567a0e729201cfa3c9f4cd82a2"
+        },
+        {
+          "path": "tools/prepare-timekeeping-review-diagnostics.test.mjs",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tools\\prepare-timekeeping-review-diagnostics.test.mjs",
+          "exists": true,
+          "sha256": "5d9c7394c01ecd5526a43eab4dbf48f44d9f366969a3478d270bbcf85335a04b"
+        },
+        {
+          "path": "tools/release-production.mjs",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tools\\release-production.mjs",
+          "exists": true,
+          "sha256": "c14d223ef214b37fafdb55a3953ea7e9df377988402ea3686ab9e1538a9c4fc3"
+        },
+        {
+          "path": "tools/sql/database-maintenance-signatures.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-misty-timezone\\tools\\sql\\database-maintenance-signatures.sql",
+          "exists": true,
+          "sha256": "2ffa52e731dd9e5885ea6cab51ce6e7e879de9c508caf76bbdc8175859559f30"
+        }
+      ]
+    },
+    {
+      "root": "C:/Users/Jordan/Documents/Codex/2026-09-29/rev/work/sygilant-guard-report-hotfix",
+      "base": "9416aa9b34cab2ee03ee1d010f4076b2b7abbd3c",
+      "head": "2027bb23513e64e25c4324bbc5f807eb0e045173",
+      "branch": "fix/patrol-shift-log-camera-layout-history-20261019",
+      "files": [
+        {
+          "path": "CHANGELOG.md",
+          "absolute": "C:\\Users\\Jordan\\Documents\\Codex\\2026-09-29\\rev\\work\\sygilant-guard-report-hotfix\\CHANGELOG.md",
+          "exists": true,
+          "sha256": "a59b8b0e53224a18ee43abe76084987804be0f9fd2f70eb699f40901c3583a36"
+        },
+        {
+          "path": "DEVLOG.md",
+          "absolute": "C:\\Users\\Jordan\\Documents\\Codex\\2026-09-29\\rev\\work\\sygilant-guard-report-hotfix\\DEVLOG.md",
+          "exists": true,
+          "sha256": "8a930f398e02fd892b016931a11577da051b7ef68df80e233f44b8b42be984a8"
+        },
+        {
+          "path": "docs/DEVELOPMENT_LOG.md",
+          "absolute": "C:\\Users\\Jordan\\Documents\\Codex\\2026-09-29\\rev\\work\\sygilant-guard-report-hotfix\\docs\\DEVELOPMENT_LOG.md",
+          "exists": true,
+          "sha256": "95833a35f0e451879a50bab317eda7d072d7c919dc3017cd50ff986b084cb78b"
+        },
+        {
+          "path": "docs/changelogs/CHANGELOG_10-19-2026_CLIENT_EMAIL_TRIGGER_DISPATCH_REPAIR.md",
+          "absolute": "C:\\Users\\Jordan\\Documents\\Codex\\2026-09-29\\rev\\work\\sygilant-guard-report-hotfix\\docs\\changelogs\\CHANGELOG_10-19-2026_CLIENT_EMAIL_TRIGGER_DISPATCH_REPAIR.md",
+          "exists": true,
+          "sha256": "c694bb6ac3fcebf38fd6a65dde2b1a0589b0e3dcd24fb246e9e40e005eb68793"
+        },
+        {
+          "path": "docs/work-orders/CLIENT_EMAIL_MISSED_WORK_RECOVERY_2026-10-19.md",
+          "absolute": "C:\\Users\\Jordan\\Documents\\Codex\\2026-09-29\\rev\\work\\sygilant-guard-report-hotfix\\docs\\work-orders\\CLIENT_EMAIL_MISSED_WORK_RECOVERY_2026-10-19.md",
+          "exists": true,
+          "sha256": "bc85372d4120e341c251fccbe95bde32622185163c108eda37dfcee3a84c8b41"
+        },
+        {
+          "path": "docs/work-orders/CLIENT_EMAIL_TRIGGER_FALLBACK_2026-10-19.md",
+          "absolute": "C:\\Users\\Jordan\\Documents\\Codex\\2026-09-29\\rev\\work\\sygilant-guard-report-hotfix\\docs\\work-orders\\CLIENT_EMAIL_TRIGGER_FALLBACK_2026-10-19.md",
+          "exists": true,
+          "sha256": "c7ba87a2e7eec442d099717b2dedc9b9dd3b2ef0a375e8762cb16cf1684253d5"
+        },
+        {
+          "path": "docs/work-orders/staged/20261019230548_recover_client_portal_trigger_dispatch.sql",
+          "absolute": "C:\\Users\\Jordan\\Documents\\Codex\\2026-09-29\\rev\\work\\sygilant-guard-report-hotfix\\docs\\work-orders\\staged\\20261019230548_recover_client_portal_trigger_dispatch.sql",
+          "exists": true,
+          "sha256": "0c1794bd7f5f6112dc95e8108b1fea8a2a92ef8efcf64d1959863a5cf167775c"
+        },
+        {
+          "path": "supabase/migrations/20261019225937_client_portal_trigger_table_dispatch_repair.sql",
+          "absolute": "C:\\Users\\Jordan\\Documents\\Codex\\2026-09-29\\rev\\work\\sygilant-guard-report-hotfix\\supabase\\migrations\\20261019225937_client_portal_trigger_table_dispatch_repair.sql",
+          "exists": true,
+          "sha256": "c74076c75936741500be62a25bc91cb571d6777930808fe6c75ac30e9c30c17e"
+        },
+        {
+          "path": "supabase/tests/sygilant_client_email_claim_trigger_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Documents\\Codex\\2026-09-29\\rev\\work\\sygilant-guard-report-hotfix\\supabase\\tests\\sygilant_client_email_claim_trigger_regression.sql",
+          "exists": true,
+          "sha256": "89cb5d75e7b336cdf528df2b5a77027e381abf1cb090f9b38da6fac0c6e46d11"
+        },
+        {
+          "path": "supabase/tests/sygilant_client_tenant_trigger_dispatch_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Documents\\Codex\\2026-09-29\\rev\\work\\sygilant-guard-report-hotfix\\supabase\\tests\\sygilant_client_tenant_trigger_dispatch_regression.sql",
+          "exists": true,
+          "sha256": "34fb84a3eb4fcccdb9dbc0c0a2d905da0b9ef398bb1f9608205c29902bfcda4d"
+        },
+        {
+          "path": "tools/prepare-client-tenant-trigger-repair.mjs",
+          "absolute": "C:\\Users\\Jordan\\Documents\\Codex\\2026-09-29\\rev\\work\\sygilant-guard-report-hotfix\\tools\\prepare-client-tenant-trigger-repair.mjs",
+          "exists": true,
+          "sha256": "c0c49edb90b1b0a18a9e909c5fa46f2b6e4b5c587b3bba0975084040d69f8db2"
+        }
+      ]
+    },
+    {
+      "root": "C:/Users/Jordan/Projects/SygShift-notification-compat-20261019",
+      "base": "b2028d185dca923c9f34088d81355b13787b40cc",
+      "head": "42e69c3b92e90186cdaf87d7e23789c1047a7d59",
+      "branch": "maintenance/notification-client-compat-20261019",
+      "files": [
+        {
+          "path": "DEVLOG.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\DEVLOG.md",
+          "exists": true,
+          "sha256": "96ecabf04453fcc66ac8ad3eeb3f91e436f73f987561ff1a873984182b2fad43"
+        },
+        {
+          "path": "docs/changelogs/CHANGELOG_2026-10-19_EMAIL_PROVIDER_REFERENCE.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\docs\\changelogs\\CHANGELOG_2026-10-19_EMAIL_PROVIDER_REFERENCE.md",
+          "exists": true,
+          "sha256": "b729756825e0ea57137674faf894cb281c496cba51464b43e4e3e63da4cb0d6b"
+        },
+        {
+          "path": "docs/changelogs/CHANGELOG_2026-10-19_NOTIFICATION_CLIENT_COMPATIBILITY.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\docs\\changelogs\\CHANGELOG_2026-10-19_NOTIFICATION_CLIENT_COMPATIBILITY.md",
+          "exists": true,
+          "sha256": "0cf861be846d5109d4911865e3ae38c135d2822cb0038bce1f998967a58c7844"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/EMAIL_PROVIDER_REFERENCE.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\docs\\work-orders\\2026-10-19-overnight\\EMAIL_PROVIDER_REFERENCE.md",
+          "exists": true,
+          "sha256": "4a077a9e5b46319dbe07ebc00ae6effb611404a2e7a9ede4a1072cdc61972b4f"
+        },
+        {
+          "path": "docs/work-orders/2026-10-19-overnight/NOTIFICATION_CLIENT_COMPATIBILITY.md",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\docs\\work-orders\\2026-10-19-overnight\\NOTIFICATION_CLIENT_COMPATIBILITY.md",
+          "exists": true,
+          "sha256": "ccfe6149b91edf08a812268269ff487a5f35fd961ac44e7b7624549284b7e98c"
+        },
+        {
+          "path": "src/data/notificationReaderCompatibility.test.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\src\\data\\notificationReaderCompatibility.test.ts",
+          "exists": true,
+          "sha256": "e8dea22bfaf626c198b8c9aaaac2f322ab6bbbc295f771df763cfe4a625005c4"
+        },
+        {
+          "path": "src/data/operations.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\src\\data\\operations.ts",
+          "exists": true,
+          "sha256": "e994ab627a41b29cfd8959890f51c618f0dd1d69e90571870432c3c644049f46"
+        },
+        {
+          "path": "src/emailDeliveryFailure.test.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\src\\emailDeliveryFailure.test.ts",
+          "exists": true,
+          "sha256": "3cf9cc9ddb3a365c06a664c29dc13b67b86d40465c92721b084b16c738280d8c"
+        },
+        {
+          "path": "src/emailProviderReference.test.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\src\\emailProviderReference.test.ts",
+          "exists": true,
+          "sha256": "b992dbe2f64564a7260d19a37eee009fcb3f08fbcb843f9ce2f1bb3b40d49302"
+        },
+        {
+          "path": "src/pages/NotificationsPage.tsx",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\src\\pages\\NotificationsPage.tsx",
+          "exists": true,
+          "sha256": "c83ec1d0a6a327f13bbfcc5a6f1adf389b831ae849e0915c73f600536b845bda"
+        },
+        {
+          "path": "src/test/legacyNotificationCenterContract.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\src\\test\\legacyNotificationCenterContract.ts",
+          "exists": true,
+          "sha256": "ef4538d28fbee0fa795d9add7daccdbcba1e1ef532674db1b569eac4cd5f3104"
+        },
+        {
+          "path": "supabase/migrations/20261020001825_notification_terminal_state_compatibility.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\supabase\\migrations\\20261020001825_notification_terminal_state_compatibility.sql",
+          "exists": true,
+          "sha256": "097c8779463bc6f11872ba78d5ae999254240693232a31a765b892351940e03c"
+        },
+        {
+          "path": "supabase/recovery/20261020001855_notification_reader_compatibility_fallback.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\supabase\\recovery\\20261020001855_notification_reader_compatibility_fallback.sql",
+          "exists": true,
+          "sha256": "4ad0e31f267bd39c7d33aa989f75c2221cc299ff6c9f9880e6ed7a9f7f925d8c"
+        },
+        {
+          "path": "supabase/tests/notification_reader_baseline_parity_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\supabase\\tests\\notification_reader_baseline_parity_regression.sql",
+          "exists": true,
+          "sha256": "12287a952bd1977704de340fa09825167ca549c8a08fc7a93fbd8cccff90d115"
+        },
+        {
+          "path": "supabase/tests/notification_reader_compatibility_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\supabase\\tests\\notification_reader_compatibility_regression.sql",
+          "exists": true,
+          "sha256": "4ef039629a8ae64eba0ccd6f510e4c63321152168e15f914c88f77dd41f61182"
+        },
+        {
+          "path": "supabase/tests/notification_reader_fallback_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\supabase\\tests\\notification_reader_fallback_regression.sql",
+          "exists": true,
+          "sha256": "85e8dc6a79f1493a07100cd495f4bc48168bf80ef014da1b5bc80fa66e09e26b"
+        },
+        {
+          "path": "supabase/tests/notification_retry_generation_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\supabase\\tests\\notification_retry_generation_regression.sql",
+          "exists": true,
+          "sha256": "017b25f9d4784dee22276f2d60e7fbc913f8748f6d2c4529a4e012241d5a1b77"
+        },
+        {
+          "path": "supabase/tests/notification_terminal_state_regression.sql",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\supabase\\tests\\notification_terminal_state_regression.sql",
+          "exists": true,
+          "sha256": "874cb8e131f0c9c08c3395b9efb3d0fc1d562034a79adacff73da3b7e1b8989c"
+        },
+        {
+          "path": "tests/e2e/notification-delivery-operations.spec.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\tests\\e2e\\notification-delivery-operations.spec.ts",
+          "exists": true,
+          "sha256": "7b9afc2c69d6308083492c573638a9689b404ab37557d11a422806da13ea737e"
+        },
+        {
+          "path": "tests/fixtures/notification-data.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\tests\\fixtures\\notification-data.ts",
+          "exists": true,
+          "sha256": "8479f489c6064a3ce50b62671a27196256de0fa65b0b395fb4fe7f50d087536e"
+        },
+        {
+          "path": "tools/rehearse-notification-compat.mjs",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\tools\\rehearse-notification-compat.mjs",
+          "exists": true,
+          "sha256": "a0df5953aa8a0027e20c9f17975e51646233b3d013527db8bff6230fe09cb7e1"
+        },
+        {
+          "path": "worker/emailDeliveryFailure.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\worker\\emailDeliveryFailure.ts",
+          "exists": true,
+          "sha256": "7052742d7ff69bdf054e8536b5b799dc101afe0cf0020a000f4c2672c32e12cc"
+        },
+        {
+          "path": "worker/index.ts",
+          "absolute": "C:\\Users\\Jordan\\Projects\\SygShift-notification-compat-20261019\\worker\\index.ts",
+          "exists": true,
+          "sha256": "35942b5e4d815cf12b7a5d349108b9e025875c9f5275b3f473ad168d4e51475e"
+        }
+      ]
+    }
+  ]
+}

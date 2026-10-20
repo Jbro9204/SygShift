@@ -2,7 +2,7 @@
 
 Date: 10/19/2026
 
-Status: independently verified database-only repair prepared for exact activation; production state recorded in the work-order report.
+Status: database-only repair installed and verified from source `257eda82378b44e80f60bee5eb4c59c5b9b63f73`, pushed to origin/main before activation. Installed writer hash, owner/ACL/configuration and all 104 attachments match the reviewed result. Audit count 313,694 and shift count 64,629 were unchanged after activation.
 
 The existing shift timestamp trigger changes updated_at even when business values do not change. The generic writer consequently appends a complete audit row for these timestamp heartbeats. The narrow repair skips only future public.shifts UPDATE audit inserts where updated_at differs and the entire remaining OLD/NEW JSON is equal. All 23 current business columns, future business columns, other tables, identical final rows, INSERT and DELETE remain audited. No historical row is deleted, changed, moved or hidden.
 

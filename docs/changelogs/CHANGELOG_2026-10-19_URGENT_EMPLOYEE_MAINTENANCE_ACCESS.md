@@ -2,7 +2,7 @@
 
 Date: 10/19/2026
 
-Status: independently verified database-only repair prepared; exact activation and installed results are recorded in the overnight report.
+Status: installed and validated database-only repair. Applied at approximately 10/20/2026 00:05:09 UTC (10/19/2026 8:05:09 PM EDT) from pushed source `b2028d185dca923c9f34088d81355b13787b40cc`, after the required fresh-ledger gate accepted the committed reviewed 374-version v2 baseline. That activation brought the ledger to 375 applied versions, nine added by this run; the later covering index brought the final total to 376, ten added.
 
 The existing broad time-attendance maintenance guard also rejected employee sick/call-off submissions and their linked history. The deployed Worker separately marks Dispatch delivery after sending; that marker was blocked too, risking an error after provider acceptance and another send on retry.
 
@@ -12,4 +12,6 @@ Local active-window tests passed nine groups, including actual sick/call-off/dat
 
 Deployed My Time, Requests, data transport and AppShell sources remain unchanged. Three actual-component checks and four desktop/Pixel 7 browser cases passed with full read-only maintenance visible: urgent controls remain enabled, each valid form submits once through the real parsers, and the employee view exposes no manager coverage action. These browser calls use synthetic intercepted transport; hosted SQL supplies actual database authorization proof. Existing actual Time Clock suite passed 42/42, and the fresh post-browser production build passed. No application deployment is required by this repair.
 
-Final migration source SHA-256 `b8635550ce7afd568f197c8789cb023fb56eef5d96020254cbbb94c022c924b2`; exact release SHA-256 `8d6e61c970989e78da07ead46a61b028f999469cda4cd9c6a6548a389ddb8058`. This is a security capability table, not a compatibility contract for an obsolete caller. No payroll, punch, rate, identity, license, schedule or client record is edited by installation.
+All six installed hosted workflow groups subsequently passed. Fresh cleanup confirmed all 15 before-count keys exactly equal after-rollback counts, zero capabilities and rehearsal attendance/call-off rows, one applied repair ledger row and zero recovery rows. The test began and ended with 2,569 punches and 313,695 audit records; the additional pre-test activity is separately reconciled in `LIVE_ACTIVITY_INTEGRITY.md`. No provider call or maintenance-window change occurred. Forward recovery remains retained and unapplied.
+
+Final migration source SHA-256 `b8635550ce7afd568f197c8789cb023fb56eef5d96020254cbbb94c022c924b2`; exact release SHA-256 `8d6e61c970989e78da07ead46a61b028f999469cda4cd9c6a6548a389ddb8058`. This is a security capability table, not a compatibility contract for an obsolete caller. No payroll, punch, rate, identity, license, schedule or client record is edited by installation. Exact installed and cleanup receipts are protected under `backups/overnight-2026-10-19/urgent-maintenance-{deployment,installed-functional,installed-cleanup}.json`.
