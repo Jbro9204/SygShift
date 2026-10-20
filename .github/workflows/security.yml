@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Check out reviewed source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -53,7 +53,7 @@ jobs:
       security-events: write
     steps:
       - name: Check out reviewed source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
