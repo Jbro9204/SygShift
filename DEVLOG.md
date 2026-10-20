@@ -1,5 +1,17 @@
 # SygShift Development Log
 
+## 10/20/2026 - Main Release Governance and Candidate Safety
+
+- Added a versioned, executable Git pre-push gate for `main`. It requires one clean fast-forward candidate, verifies it from a detached worktree, installs locked dependencies, audits production dependencies, runs the complete SygShift release verification, and rechecks source/remote state before Git can push.
+- The gate now fails closed for dirty or mismatched source, branch deletion, non-fast-forward history, an earlier queued/running `main` **push** quality run, unavailable GitHub Actions status, concurrent local verification, and a remote change during validation. It uses bounded active-run pagination instead of treating a crowded history as a pass, streams command output while retaining bounded failure diagnostics, and gives candidate commands an explicit allowlisted environment and isolated runtime directories.
+- Pinned the GitHub workflow to reviewed action commits and `ubuntu-24.04`, preserved all-path coverage, queues rather than cancels same-ref work across push, scheduled, and manual triggers, verifies the exact checked-out SHA and hook mode, installs Chromium, and runs the full candidate gate. The local environment isolation reduces accidental credential exposure but is not a security sandbox for files readable by the invoking user.
+- Closed the Worker promotion race: after candidate validation and final production health checks, deployment now rechecks exact clean source before changing production traffic. The regression proves an uploaded candidate cannot be promoted if `origin/main` advanced.
+- Added a dedicated Time Clock release runner with one loopback-only, OS-assigned-port Vite fixture; bounded startup, warmup, browser execution, process-tree termination, signal handling, and cleanup; and an exact 21-desktop plus 21-mobile Chromium matrix. It no longer inherits unrelated Playwright servers or relies on shell-launched package-manager shims.
+- Added contract, lock, hook, race, environment-sanitization, runner-lifecycle, partial Windows worktree-cleanup recovery, and output-streaming tests. The gate verifies that Git fully unregistered a candidate before its guarded long-path filesystem fallback may remove the controlled temporary root; uncertain registration, process termination, or cleanup still quarantines the exact paths and locks.
+- The final local `pnpm release:verify` passed 378 Vitest files plus one intentional skip, 2,204 application tests plus one intentional skip, all 174 release-governance tests, all 42 mandatory Time Clock browser checks, both production builds, and both static-asset contract checks.
+- No application feature, database migration, employee record, schedule, timekeeping record, Cloudflare deployment, or production configuration was changed.
+- GitHub API evidence confirmed that `main` is currently unprotected (the branch-protection endpoint returned `404 Branch not protected`). This change intentionally does not impose a PR-only workflow without owner approval; required checks, force-push/deletion protection, and bypass policy remain an external GitHub-owner action. The local/repository controls are defense in depth and do not claim to replace that server-side boundary.
+
 ## 10/19/2026 - Overnight Database Stabilization
 
 - Captured and verified a protected native production application backup and complete definition/migration snapshots; successfully restored the archive into an isolated local PostgreSQL database.

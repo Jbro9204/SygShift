@@ -554,6 +554,29 @@ test('rechecks exact HEAD after local gates and blocks a changed source commit b
   assert.equal(harness.calls.some((arguments_) => arguments_.includes('upload')), false)
 })
 
+test('does not promote an uploaded candidate when origin/main advances during candidate verification', async () => {
+  const harness = commandHarness()
+  let fetches = 0
+  const run = async (arguments_, options) => {
+    const command = arguments_.join(' ')
+    if (command.includes('git fetch')) fetches += 1
+    if (command.includes('git rev-parse origin/main') && fetches >= 3) {
+      harness.calls.push(arguments_)
+      harness.options.push(options)
+      return { stderr: '', stdout: 'cccccccccccccccccccccccccccccccccccccccc\n' }
+    }
+    return harness.run(arguments_, options)
+  }
+  await assert.rejects(runProductionRelease(releaseOptions(), {
+    fetch: healthyFetch(),
+    run,
+    sleep: async () => undefined,
+  }), /must exactly match origin\/main/)
+  const commands = harness.calls.map((arguments_) => arguments_.join(' '))
+  assert.ok(commands.some((command) => command.includes('versions upload')))
+  assert.ok(!commands.some((command) => command.includes('versions deploy')))
+})
+
 test('requires the production root URL to return the SygShift HTML shell', async () => {
   const harness = commandHarness()
   const result = await runProductionRelease(releaseOptions(), {
@@ -595,7 +618,7 @@ test('uploads then explicitly promotes the identified candidate after a healthy 
   assert.ok(commands.some((command) => command.includes(`--tag source-${releaseCommit}`)))
   assert.ok(commands.some((command) => command.includes(`--var SYGSHIFT_SOURCE_COMMIT:${releaseCommit}`)))
   assert.ok(commands.some((command) => command.includes(`versions deploy ${candidateVersionId}@100%`)))
-  const playwrightIndex = commands.findIndex((command) => command.includes('playwright test'))
+  const playwrightIndex = commands.findIndex((command) => command === 'test:e2e:time-clock')
   const finalBuildIndex = commands.findLastIndex((command) => command === 'build')
   assert.ok(playwrightIndex >= 0 && finalBuildIndex > playwrightIndex)
   assert.ok(!commands.some((command) => command.includes('wrangler deploy ')))

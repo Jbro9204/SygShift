@@ -10,57 +10,72 @@ on:
 
 concurrency:
   group: security-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  queue: max
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
   release-gate:
-    name: Dependency and regression gate
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    name: Exact candidate quality gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
-      - name: Check out reviewed source
-        uses: actions/checkout@v4
+      - name: Check out the exact reviewed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify the checked-out candidate
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-files --stage .githooks/pre-push | awk '{print $1}')" = "100755"
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
-          version: 11.19.0
+          version: 11.25.0
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24.19.0
           cache: pnpm
 
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install the reviewed browser runtime
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Reject high-severity production advisories
         run: pnpm audit --prod --audit-level high
 
-      - name: Run the complete release gate
-        run: pnpm check
+      - name: Run the complete exact-candidate release gate
+        run: pnpm release:verify
 
   codeql:
     name: CodeQL JavaScript and TypeScript
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
       contents: read
       security-events: write
     steps:
       - name: Check out reviewed source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           languages: javascript-typescript
 
       - name: Analyze source
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           category: /language:javascript-typescript

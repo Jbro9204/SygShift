@@ -1,6 +1,6 @@
 # SygShift Build and Handoff Guide
 
-Last reviewed: 10/19/2026
+Last reviewed: 10/20/2026
 
 This is the operational source of truth for maintaining SygShift. It is written so a qualified maintainer can open the repository on a different workstation, recover the current state, make a production-safe change, and hand the system back without relying on prior conversation history.
 
@@ -96,8 +96,8 @@ docs/PAYROLL_EXPORT_VALIDATION.md
 Requirements:
 
 - Git
-- Node.js 22 or later
-- pnpm 10 or later
+- Node.js 24.19.0 exactly (pinned in `.node-version`)
+- pnpm 11.25.0 exactly (pinned in `packageManager`)
 - Access to the correct GitHub repository
 - Authorized Supabase and Cloudflare access when the task requires production operations
 
@@ -106,7 +106,13 @@ Setup:
 ```powershell
 git clone https://github.com/Jbro9204/SygShift.git
 Set-Location SygShift
+node --version # must be v24.19.0
+pnpm --version # must be 11.25.0
 pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
+pnpm setup:git-hooks
+git config --get core.hooksPath # must print .githooks
+git ls-files --stage .githooks/pre-push # must show mode 100755
 Copy-Item .env.example .env.local
 pnpm check
 ```
@@ -315,13 +321,23 @@ The full permission enforcement audit and Guard access hardening were completed 
 
 ## 12. Test strategy
 
-Minimum automated release gate:
+Minimum development-quality gate:
 
 ```powershell
 pnpm check
 ```
 
-This runs type checking, linting, unit/regression tests, and the production build.
+This runs exact-toolchain validation, type checking, linting, unit/regression tests, release-control tests, and the production build.
+
+Vitest runs through a repository-controlled per-run runtime wrapper so Windows temporary-directory behavior cannot make every suite fail before tests execute. The wrapper uses only `.work/test-runtime/<unique-run>` and refuses to remove anything outside that controlled per-run path.
+
+The mandatory `main` release-candidate gate adds the Time Clock browser workflow and a final fresh production build. The focused workflow owns one temporary loopback fixture, verifies its known fixture marker, and always runs the desktop and mobile Chromium projects; it does not inherit the broad Playwright `webServer` matrix:
+
+```powershell
+pnpm release:verify
+```
+
+Do not substitute a passing build, a partial browser run, or a rerun of an older commit for this gate.
 
 Use additional checks according to risk:
 
@@ -380,15 +396,32 @@ Do not begin if the other workstation has unpushed work in the same area. Push t
 ```powershell
 git diff --check
 git status --short
-pnpm check
 git diff --stat
 git diff
 git add <intentional-files-only>
 git commit -m "<clear production-oriented summary>"
+pnpm setup:git-hooks
 git push origin main
 ```
 
 Review the staged diff before committing. Do not commit `.env*`, workbooks, exports, screenshots, test videos, caches, database dumps, or unrelated project material.
+
+The versioned pre-push gate builds a clean detached worktree at the exact candidate SHA, installs locked dependencies, audits production dependencies, runs `pnpm release:verify`, then rechecks the local SHA, remote tip, cleanliness, and fast-forward relationship before it allows a `main` update. The focused browser step creates and tears down only its one loopback fixture; it fails closed if that process or its cleanup cannot be confirmed. The hook blocks while an earlier `main` **push** quality run for `security.yml` is active. Workflow concurrency separately serializes push, scheduled, and manual runs for the same ref. Do not use `--no-verify`. If it reports a retained candidate or lock after an interrupted verification, inspect the recorded path and confirm the process stopped before manual recovery; do not blindly delete it.
+
+### Interrupted release-gate recovery
+
+The release gate fails closed when it cannot confirm process termination or cleanup. Keep the complete terminal error: it identifies the retained lock, candidate worktree, and/or controlled temporary root. Do not retry the push or bypass the hook.
+
+1. Inspect the recorded lock metadata and its PID/token; confirm that no matching gate, package-manager, test, or browser process remains.
+2. Run `git worktree list` and confirm whether the recorded candidate worktree is still attached.
+3. Only after confirming the process is gone, manually remove the specific token-owned lock(s) and the exact recorded `sygshift-main-release-*` temporary root. Never delete a broad temp directory, `.git`, a shared lock directory, or an unlisted worktree.
+4. Run `pnpm setup:git-hooks`, verify the hook path and `100755` mode again, then rerun the candidate gate normally.
+
+Candidate command environment isolation reduces accidental credential exposure: the gate passes an explicit toolchain/OS allowlist and an isolated temporary home to candidate commands. It is not a security sandbox—candidate code can still read files that the invoking user can read, including shared Git metadata. Use server-enforced checks and isolated CI runners as the adversarial boundary.
+
+After the push, open the GitHub Actions run for the exact pushed SHA and wait for both required jobs—**Exact candidate quality gate** and **CodeQL JavaScript and TypeScript**—to finish green before any production deployment or completion report. Do not push another main update while that run is queued or running. If it fails, diagnose the failure from that SHA's logs and make one correction candidate; do not blindly rerun or treat a scheduled/manual/older run as proof.
+
+GitHub branch protection remains required for server-side enforcement: block force-push and deletion, prevent bypass/direct main updates, require the current quality checks, and require the branch to be current before merge. The local gate is intentional defense in depth, not a replacement for branch protection.
 
 Commit messages should state the product outcome, for example:
 
@@ -425,7 +458,7 @@ Without a configured canary, the operator must explicitly accept the weaker anon
 pnpm deploy -- --tag=<release-tag> --message="<release summary>" --rollback-safe --allow-boundary-probe
 ```
 
-The command verifies existing production and upstream availability, requires a clean `HEAD` that exactly matches `origin/main`, runs `pnpm check`, runs the mandatory Time Clock browser workflow, rebuilds production after Playwright, records the current Worker version, uploads one candidate, and promotes that exact candidate. It runs candidate Worker checks when Cloudflare exposes a Version URL and always performs repeated post-promotion production/upstream checks.
+The command verifies existing production and upstream availability, requires a clean `HEAD` that exactly matches `origin/main`, runs `pnpm check`, runs the mandatory Time Clock browser workflow, rebuilds production after Playwright, records the current Worker version, uploads one candidate, rechecks the exact source immediately before promotion, and promotes that exact candidate. It runs candidate Worker checks when Cloudflare exposes a Version URL and always performs repeated post-promotion production/upstream checks.
 
 If the promoted Worker remains unhealthy while upstream services are repeatedly healthy, the command rolls back and verifies the exact recorded prior version. If upstream services are unhealthy, it stops and reports a provider outage instead of pretending that a Worker rollback will repair the provider. A missing candidate Version URL must be reported as unavailable, not passed.
 

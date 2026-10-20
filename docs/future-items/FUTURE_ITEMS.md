@@ -83,7 +83,7 @@ Build a defense-in-depth security program that materially reduces the likelihood
 #### Stage 7 — Secure Development and Release Protection
 
 - [ ] Protect the main branch with reviewed changes and required security validation before production release.
-- [ ] Run secret scanning, static analysis, dependency and supply-chain scanning, lockfile-integrity checks, and software-bill-of-materials generation in the release pipeline. (Dependency audit, full regression, CodeQL, and Dependabot configuration added 09/11/2026; GitHub owner settings, secret scanning, action pinning, and SBOM remain.)
+- [ ] Run secret scanning, static analysis, dependency and supply-chain scanning, lockfile-integrity checks, and software-bill-of-materials generation in the release pipeline. (Dependency audit, full regression, CodeQL, Dependabot configuration, immutable action pinning, and exact-candidate main gating are present; GitHub owner settings, secret scanning, server-side branch rules, and SBOM remain.)
 - [ ] Require negative authorization, RLS, upload, export, session, recovery, and privileged-action tests for security-sensitive changes.
 - [ ] Preserve canary deployment, maintenance communication, version-aware refresh, rollback, and audited migration procedures; never perform an untracked production write.
 - [ ] Schedule quarterly access and architecture reviews and an independent penetration test before activating highly restricted HR, document, compensation, or payroll-vault capabilities.

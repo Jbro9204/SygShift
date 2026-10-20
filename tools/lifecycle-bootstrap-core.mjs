@@ -198,10 +198,7 @@ export async function runLifecycleBootstrapDeployment(inputOptions, injected = {
 
   dependencies.log('Running the complete quality gate and mandatory Time Clock workflow.')
   await dependencies.run(['check'], commandOptions)
-  await dependencies.run(
-    ['exec', 'playwright', 'test', 'tests/e2e/time-clock-workflow.spec.ts'],
-    commandOptions,
-  )
+  await dependencies.run(['test:e2e:time-clock'], commandOptions)
 
   dependencies.log('Building production artifacts after browser verification.')
   await dependencies.run(['build'], commandOptions)

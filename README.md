@@ -10,15 +10,17 @@ Before changing SygShift on any workstation, read [AGENTS.md](AGENTS.md) and the
 
 Requirements:
 
-- Node.js 22 or later
-- pnpm 10 or later
+- Node.js 24.19.0 (pinned in `.node-version`)
+- pnpm 11.25.0 (pinned in `packageManager`)
 - A Supabase project for authenticated data access
 - A Cloudflare account for preview and production deployment
 
 Install dependencies and create local browser configuration:
 
 ```powershell
-pnpm install
+pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
+pnpm setup:git-hooks
 Copy-Item .env.example .env.local
 pnpm dev
 ```
@@ -53,7 +55,19 @@ pnpm build
 pnpm test:e2e
 ```
 
-`pnpm check` runs type checking, linting, unit tests, and the production build together.
+`pnpm check` runs exact-toolchain validation, type checking, linting, unit/regression tests, release-control tests, and the production build together.
+It first rejects a Node.js or pnpm version that differs from the reviewed release toolchain. `pnpm release:verify` is the required complete gate for a `main` candidate: it runs `pnpm check`, the isolated mandatory Time Clock browser workflow, and a fresh build. The Time Clock workflow uses a standalone loopback fixture and always runs its desktop and mobile Chromium projects; it does not start unrelated Playwright fixture servers.
+
+For a `main` release candidate, the local setup above installs the reviewed browser runtime and the versioned Git hook. If either is missing in an existing clone, restore it before working on a release candidate:
+
+```powershell
+pnpm exec playwright install chromium
+pnpm setup:git-hooks
+git config --get core.hooksPath # must print .githooks
+git ls-files --stage .githooks/pre-push # must show mode 100755
+```
+
+The hook creates a clean detached candidate worktree, runs the locked install, production audit, mandatory Time Clock browser workflow, and fresh build, then confirms the remote tip has not moved. Do not bypass it. If it reports a retained candidate path or lock, keep the terminal output, confirm its recorded process is stopped, and remove only the listed owned paths—not a broad temp or Git directory. Candidate commands receive a deliberately narrow environment and isolated temporary home, but this is not a security sandbox for files the invoking user can read. After push, confirm the exact SHA is green in both the **Exact candidate quality gate** and **CodeQL JavaScript and TypeScript** jobs before treating the work as complete.
 
 ## Deployment
 

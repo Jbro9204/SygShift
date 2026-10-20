@@ -1128,13 +1128,9 @@ export async function runProductionRelease(inputOptions, injected = {}) {
 
   dependencies.log('Running the complete local release gate.')
   await dependencies.run(['check'], commandOptions)
-  await dependencies.run(
-    ['exec', 'playwright', 'test', 'tests/e2e/time-clock-workflow.spec.ts'],
-    commandOptions,
-  )
-  // Playwright's isolated fixture build intentionally clears browser data
-  // variables. Always regenerate the deployable bundle with the repository's
-  // production configuration after browser verification.
+  await dependencies.run(['test:e2e:time-clock'], commandOptions)
+  // Always regenerate the deployable bundle after the mandatory browser
+  // verification so only a fresh production build can be promoted.
   await dependencies.run(['build'], commandOptions)
 
   if (options.dryRun) {
@@ -1220,6 +1216,10 @@ export async function runProductionRelease(inputOptions, injected = {}) {
   const prePromotionWorker = await probeWorker(options.productionOrigin, dependencies, options.timeoutMs)
   if (!prePromotionWorker.ok) {
     throw new Error('Production became unhealthy before promotion; the candidate was not promoted.')
+  }
+  const confirmedPromotionSourceCommit = await requireReleaseCommit(dependencies, commandOptions)
+  if (confirmedPromotionSourceCommit !== sourceCommit) {
+    throw new Error('The source commit changed during candidate verification; the candidate was not promoted.')
   }
   const promotionWatermark = prePromotionWorker.readiness.lastFullSuccessAt
 

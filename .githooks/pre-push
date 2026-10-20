@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+import { runMainReleasePrePushGate } from '../tools/main-release-gate.mjs'
+
+async function readStandardInput() {
+  process.stdin.setEncoding('utf8')
+  let input = ''
+  for await (const chunk of process.stdin) input += chunk
+  return input
+}
+
+try {
+  const input = await readStandardInput()
+  const [remoteName, remoteUrl] = process.argv.slice(2)
+  await runMainReleasePrePushGate({ input, remoteName, remoteUrl })
+} catch (error) {
+  console.error(error instanceof Error ? error.message : 'The main release gate failed.')
+  process.exitCode = 1
+}

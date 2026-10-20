@@ -107,7 +107,7 @@ test('runs the full gate, rechecks source, and atomically deploys the exact comm
     'exec git rev-parse HEAD',
     'exec git rev-parse origin/main',
     'check',
-    'exec playwright test tests/e2e/time-clock-workflow.spec.ts',
+    'test:e2e:time-clock',
     'build',
     'exec wrangler deployments status --json --name sygshift',
     'exec git fetch --quiet origin main',
