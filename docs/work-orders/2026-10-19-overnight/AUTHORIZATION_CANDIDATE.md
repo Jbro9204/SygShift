@@ -1,6 +1,6 @@
-# Narrow authorization repair: staged and verified, not deployed
+# Narrow authorization repair: installed and verified
 
-Prepared October 19, 2026 under the approved authorization-review work item and repository database-enforcement policy. Production remains at its captured definitions. No production COMMIT was executed by this work. The independent notification DB/browser/Worker release remains held: its new reader statuses are incompatible with the deployed browser enum, readiness is 503 during scheduled maintenance, and authenticated release-canary credentials are unavailable. This authorization candidate does not change those gates.
+Installed October 19, 2026 at approximately 23:44:46 UTC as `20261019233625` from pushed source `7f867dc630105d42f7ea472f3febb11d9198b017`. The actual mandatory fresh-ledger gate accepted the committed reviewed 371-version v2 baseline immediately before activation; the exact batch SHA-256 was `fb6d53c6109a00d3c6214ea755579994f99e6dfd69d4dbce3590ecc37598d022`. Installed five-group hosted validation passed with all four repaired hashes, ACLs, owners and configurations exact and all seven protected row counts unchanged. Evidence is in protected `backups/overnight-2026-10-19/authorization-deployment.json` and `authorization-installed-functional.json`. The independent notification DB/browser/Worker release remains held: its new reader statuses are incompatible with the deployed browser enum, readiness is 503 during scheduled maintenance, and authenticated release-canary credentials are unavailable. This database-only repair does not change those gates.
 
 ## Exact scope and existing policy
 
@@ -28,7 +28,7 @@ The corresponding transaction bodies are in `candidates/authorization_boundary_r
 | `private.support_can_manage(support_tickets)` | `dedc73265327d5b487e99593e8a30097` | `0b7e58a617c0ddc18fefca26cc2b799d` |
 | `private.support_can_view(support_tickets)` | `3dfbde398adadddc35f2796b8c217cbf` | `761615014994b6851c3fe1d0229ee421` |
 
-Exact atomic release and forward-recovery batches were rendered with the existing reviewed migration-activation parser, an absent-version ledger guard, transactional ledger insert, and exact ordered statement arrays. Fingerprints are in `tmp/overnight-authorization/authorization-release-fingerprints.json`; executable batches and reviewed one-transaction rollback variants are in the same evidence directory. Neither committing batch has been executed.
+Exact atomic release and forward-recovery batches were rendered with the existing reviewed migration-activation parser, an absent-version ledger guard, transactional ledger insert, and exact ordered statement arrays. Fingerprints are in `tmp/overnight-authorization/authorization-release-fingerprints.json`; executable batches and reviewed one-transaction rollback variants are in the same evidence directory. The repair batch was applied; the recovery remains unapplied.
 
 ## Allow/deny matrix and evidence
 
@@ -56,4 +56,4 @@ Production evidence is `tmp/overnight-authorization/hosted-preflight-result.json
 
 ## Remaining gate
 
-The three original findings remain open in production pending the parent's independent exact-batch review, release authorization, normal preservation checks and post-install validation. No unresolved permission-cohort policy decision was needed for this narrow candidate: it reuses the established source, credential RLS and support MFA boundaries. Separate discovery of a maintenance guard blocking the urgent absence path is being handled independently; these authorization changes do not open the maintenance window or bypass its manager/payroll restrictions.
+The three original findings are repaired and installed validation passed. No unresolved permission-cohort policy decision was needed: the repair reuses the established source, credential RLS and support MFA boundaries. Installed workflow validation uses only temporary result-table writes inside a final-ROLLBACK transaction; initial use of transaction READ ONLY rejected its temporary CTAS with SQLSTATE 25006, then the corrected rollback-only harness passed without persistent application DML. Separate discovery of a maintenance guard blocking the urgent absence path is being handled independently; these authorization changes do not open the maintenance window or bypass its manager/payroll restrictions. Real browser/MFA-session acceptance remains separate from transaction-local synthetic claims.
