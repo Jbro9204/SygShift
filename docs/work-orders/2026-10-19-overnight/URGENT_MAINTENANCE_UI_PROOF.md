@@ -1,0 +1,13 @@
+# Urgent employee UI maintenance proof
+
+Application code was not changed or deployed. Git comparison against recorded deployed SygShift commit `54d021cd85e137739d5db33c9cf7418b613bf4d0` confirms MyTimePage, RequestsPage, data/requests, data/timekeeping and AppShell are unchanged.
+
+Source tracing shows read-only maintenance does not replace the AppShell outlet. Only unavailable-mode windows can do that; `/time` additionally checks the independent time_clock feature. My Time sick/call-off entry has no maintenance-disable condition; its choices disable only while saving, and submit requires a note and shift/date. Requests employee call-off controls require an assigned shift; confirmation disables only while saving. Both use the supported authenticated attendance-report endpoint. No manager authority is added.
+
+Three isolated component tests passed with an active full read-only maintenance fixture: real AppShell Time outlet stays accessible, real My Time sick/call-off choices and valid submit remain enabled, and real Requests assigned-shift review/confirmation remain enabled. The copied existing test harnesses and reproducible injection script remain in `tmp/overnight-2026-10-19`, with result `urgent-ui-component-proof.txt`. They made no live account or provider call.
+
+Four real-component Playwright cases then passed: desktop Chromium and Pixel 7 for MyTimePage and RequestsPage. The active full-maintenance banner stays visible. Each page completes its intended employee form and submits exactly one locally intercepted attendance POST through the real data/response parsers; sick and call-off payload types match. Employee Requests does not expose the manager coverage action. This tests browser controls and request contracts; actual database manager-write denial, canonical deduplication and the separate service delivery marker are covered by the independently run hosted/local urgent SQL suites.
+
+Run only this self-contained browser proof with `pnpm exec playwright test --config tests/e2e/urgent-maintenance.playwright.config.ts`. The `.proof.ts` filename keeps this custom-server fixture separate from the normal e2e configuration; no release test was disabled or bypassed. Source is `tests/e2e/urgent-maintenance-access.proof.ts` and the four `tests/fixtures/urgent-maintenance-*` files. The existing 42 clock cases were not repeated. Result: `tmp/overnight-2026-10-19/urgent-maintenance-browser-proof.txt`, four passed.
+
+This proof uses synthetic local transport and no real MFA/login or provider acceptance. Installed production owner/ACL and employee/manager guard checks remain separate mandatory release evidence. The approved production maintenance window and manager write restrictions are unchanged.
