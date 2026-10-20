@@ -1,0 +1,15 @@
+# Urgent employee access during maintenance
+
+Date: 10/19/2026
+
+Status: independently verified database-only repair prepared; exact activation and installed results are recorded in the overnight report.
+
+The existing broad time-attendance maintenance guard also rejected employee sick/call-off submissions and their linked history. The deployed Worker separately marks Dispatch delivery after sending; that marker was blocked too, risking an error after provider acceptance and another send on retry.
+
+Migration `20261019235642_preserve_employee_urgent_maintenance_access.sql` adds a sealed, forced-RLS private transaction capability issued only by the existing validated employee RPC or the service-only urgent Dispatch marker. It binds backend, full transaction ID, employee, authentication and exact scope. The guard permits only the required self-owned urgent records/actions and narrowly bounded delivery evidence. Forged GUCs, wrong actors/records/operations, ordinary manager/timekeeping writes and nonurgent marker updates remain denied during maintenance. Cleanup occurs on success/error; a deferred constraint rejects any capability surviving transaction end. No maintenance window, feature list, public grant or business validation is weakened. Existing function OIDs, signatures, defaults, owners and ACLs are preserved.
+
+Local active-window tests passed nine groups, including actual sick/call-off/date-only/canonical absence flows, idempotency, Dispatch failed/accepted/replay handling, cross-record denials and forced-error cleanup. Hosted final-ROLLBACK tests passed six groups, including a minimal real-table employee report and separate service marker, with no external provider call, production-window edit or committed record. Exact 20-statement release and separately reserved 11-statement forward recovery passed hosted rollback rehearsals. Recovery `20261019235644_recover_employee_urgent_maintenance_functions.sql` requires exact repaired fingerprints and preserves sealed empty new objects.
+
+Deployed My Time, Requests, data transport and AppShell sources remain unchanged. Three actual-component checks and four desktop/Pixel 7 browser cases passed with full read-only maintenance visible: urgent controls remain enabled, each valid form submits once through the real parsers, and the employee view exposes no manager coverage action. These browser calls use synthetic intercepted transport; hosted SQL supplies actual database authorization proof. Existing actual Time Clock suite passed 42/42, and the fresh post-browser production build passed. No application deployment is required by this repair.
+
+Final migration source SHA-256 `b8635550ce7afd568f197c8789cb023fb56eef5d96020254cbbb94c022c924b2`; exact release SHA-256 `8d6e61c970989e78da07ead46a61b028f999469cda4cd9c6a6548a389ddb8058`. This is a security capability table, not a compatibility contract for an obsolete caller. No payroll, punch, rate, identity, license, schedule or client record is edited by installation.

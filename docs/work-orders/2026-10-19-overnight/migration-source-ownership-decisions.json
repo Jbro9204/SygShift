@@ -1,0 +1,28 @@
+{
+  "20260903201217": {
+    "sourceOwner": "Sygilant",
+    "databaseBoundaryOwner": "SygShift",
+    "reason": "The source and applied migration are documented in the owning Sygilant release. The function consumes and writes the canonical SygShift workforce security-key and trusted-device boundary; future changes require that boundary's reviewed release authority.",
+    "evidence": [
+      "C:/Users/Jordan/Documents/Codex/2026-09-29/rev/work/sygilant-guard-report-hotfix/docs/changelogs/CHANGELOG_09-03-2026_EMPLOYEE_LOGIN_AND_SECURITY_KEY_DEVICE_TRUST.md",
+      "C:/Users/Jordan/Documents/Codex/2026-09-29/rev/work/sygilant-guard-report-hotfix/docs/DEPLOYMENT.md",
+      "C:/Users/Jordan/Projects/SygShift-misty-timezone/docs/SECURITY.md"
+    ]
+  },
+  "20260904104801": {
+    "sourceOwner": "Sygilant",
+    "databaseBoundaryOwner": "Sygilant client portal and identities",
+    "reason": "The Sygilant owning release explicitly records applying this portal foundation version to the shared database. Retained duplicate source in SygShift does not transfer portal ownership.",
+    "evidence": [
+      "C:/Users/Jordan/Documents/Codex/2026-09-29/rev/work/sygilant-guard-report-hotfix/docs/changelogs/CHANGELOG_09-04-2026_CLIENT_PORTAL_AND_ADMINISTRATION.md"
+    ]
+  },
+  "20260904130000": {
+    "sourceOwner": "Sygilant",
+    "databaseBoundaryOwner": "Sygilant client document workflow",
+    "reason": "The Sygilant owning release explicitly records applying this document acknowledgement version. Existing canonical client documents remain shared dependencies; portal workflow ownership stays with Sygilant.",
+    "evidence": [
+      "C:/Users/Jordan/Documents/Codex/2026-09-29/rev/work/sygilant-guard-report-hotfix/docs/changelogs/CHANGELOG_09-04-2026_CLIENT_PORTAL_AND_ADMINISTRATION.md"
+    ]
+  }
+}

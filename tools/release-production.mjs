@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { releaseOutcomes, runProductionRelease } from './production-release-core.mjs'
+import { requireDatabaseReleaseBaseline } from './database-release-gate.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -37,9 +38,21 @@ function repositoryConfiguration() {
   }
 }
 
+export async function executeProductionRelease(options, injected = {}) {
+  const migrationGate = injected.migrationGate ?? requireDatabaseReleaseBaseline
+  const release = injected.release ?? runProductionRelease
+  const log = injected.log ?? (() => undefined)
+  const databaseBaseline = await migrationGate(options)
+  if (databaseBaseline?.accepted !== true || databaseBaseline.freshProductionLedger !== true) {
+    throw new Error('The mandatory database release gate did not confirm a fresh reviewed baseline.')
+  }
+  log(`Verified the fresh production ledger and owning sources against the reviewed baseline (${databaseBaseline.appliedMigrations} applied versions).`)
+  return release(options, { log })
+}
+
 async function main() {
   const arguments_ = parseProductionReleaseArguments(process.argv.slice(2))
-  const result = await runProductionRelease({
+  const result = await executeProductionRelease({
     ...repositoryConfiguration(),
     ...arguments_,
     canaryEmail: process.env.SYGSHIFT_RELEASE_CANARY_EMAIL,

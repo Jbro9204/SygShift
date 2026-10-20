@@ -46,7 +46,8 @@
     "preview": "pnpm build && vite preview",
     "deploy": "node tools/release-production.mjs",
     "deploy:lifecycle-bootstrap": "node tools/deploy-lifecycle-bootstrap.mjs",
-    "release:test": "node --test tools/production-release-core.test.mjs tools/lifecycle-bootstrap-core.test.mjs",
+    "release:test": "node --test tools/production-release-core.test.mjs tools/lifecycle-bootstrap-core.test.mjs tools/database-migration-ownership.test.mjs tools/database-release-gate.test.mjs",
+    "database:release:gate": "node tools/database-release-gate.mjs",
     "bootstrap:admin": "node tools/bootstrap-admin.mjs"
   },
   "dependencies": {
