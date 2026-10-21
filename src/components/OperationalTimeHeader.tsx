@@ -1,7 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { CalendarDays } from 'lucide-react'
 import { formatOperationalDate, formatTimeZoneClock } from '../lib/time'
-import { continentalUsTimeZoneShortLabel } from '../lib/usTimeZones'
 import { browserSystemTimeZone } from '../lib/systemTimeZone'
 
 type ClockAnchor = {
@@ -35,7 +34,6 @@ export function OperationalTimeHeader({
   const [now, setNow] = useState(() => timeFromAnchor(anchorRef.current))
   const [displayTimeZone, setDisplayTimeZone] = useState(() => browserSystemTimeZone(fallbackTimeZone))
   const display = formatTimeZoneClock(now, displayTimeZone)
-  const timeZoneLabel = continentalUsTimeZoneShortLabel(displayTimeZone)
 
   useEffect(() => {
     anchorRef.current = clockAnchor(serverTimestamp)
@@ -70,12 +68,10 @@ export function OperationalTimeHeader({
         <span>{formatOperationalDate(now, displayTimeZone)}</span>
       </div>
       <section
-        aria-label={`System time for ${timeZoneLabel}: ${display.digitalTime}, ${display.abbreviation}, ${display.accessibleDate}`}
+        aria-label={`Current device time: ${display.civilianTime} ${display.abbreviation}, ${display.accessibleDate}`}
         className="user-system-time"
       >
-        <strong className="user-system-time__time">{display.digitalTime}</strong>
-        <span className="user-system-time__zone">{timeZoneLabel} · {display.abbreviation}</span>
-        <em>System time</em>
+        <strong className="user-system-time__time">{display.civilianTime} {display.abbreviation}</strong>
       </section>
       {accountControls}
     </header>

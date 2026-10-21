@@ -14,10 +14,8 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
         <div class="workspace">
           <header class="topbar">
             <div class="topbar-date"><span>Monday, 09/01/2026</span></div>
-            <section aria-label="System time for Central: 11:59 PM (23:59), CDT" class="user-system-time">
-              <strong class="user-system-time__time">11:59 PM (23:59)</strong>
-              <span class="user-system-time__zone">Central · CDT</span>
-              <em>System time</em>
+            <section aria-label="Current device time: 11:59 PM CDT" class="user-system-time">
+              <strong class="user-system-time__time">11:59 PM CDT</strong>
             </section>
             <div class="user-menu">
               <div aria-label="Appearance" class="theme-switcher" role="group">
@@ -54,9 +52,9 @@ for (const width of widths) {
     await expect(systemTime).toHaveCount(1)
     await expect(systemTime).toBeVisible()
     await expect(page.locator('.operational-clock')).toHaveCount(0)
-    await expect(page.locator('.user-system-time__time')).toHaveText('11:59 PM (23:59)')
-    await expect(page.locator('.user-system-time__zone')).toHaveText('Central · CDT')
-    if (width > 360) await expect(page.getByText('System time', { exact: true })).toBeVisible()
+    await expect(page.locator('.user-system-time__time')).toHaveText('11:59 PM CDT')
+    await expect(page.locator('.user-system-time__zone')).toHaveCount(0)
+    await expect(page.getByText('System time', { exact: true })).toHaveCount(0)
 
     const headerBottom = await page.locator('.topbar').evaluate((element) => element.getBoundingClientRect().bottom)
     const alertTop = await page.locator('.workspace-alert-strip').evaluate((element) => element.getBoundingClientRect().top)
@@ -66,13 +64,9 @@ for (const width of widths) {
     expect(contentTop).toBeGreaterThanOrEqual(alertBottom)
 
     const clippedTime = await page.locator('.user-system-time__time').evaluate((element) => element.scrollWidth > element.clientWidth + 1)
-    const clippedZone = await page.locator('.user-system-time__zone').evaluate((element) => element.scrollWidth > element.clientWidth + 1)
     expect(clippedTime).toBe(false)
-    expect(clippedZone).toBe(false)
     const timeTextSize = await page.locator('.user-system-time__time').evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
-    const zoneTextSize = await page.locator('.user-system-time__zone').evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
     expect(timeTextSize).toBeGreaterThanOrEqual(width <= 680 ? 13 : 16)
-    expect(zoneTextSize).toBeGreaterThanOrEqual(width <= 680 ? 12 : 13)
 
     const containment = await page.evaluate(() => {
       const header = document.querySelector<HTMLElement>('.topbar')!.getBoundingClientRect()

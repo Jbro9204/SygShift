@@ -32,11 +32,12 @@ describe('OperationalTimeHeader', () => {
       />,
     )
 
-    const region = screen.getByRole('region', { name: /System time for Eastern: 2:45 PM \(14:45\), EDT/ })
+    const region = screen.getByRole('region', { name: /Current device time: 2:45 PM EDT/ })
     expect(region).not.toHaveAttribute('aria-live')
-    expect(screen.getByText('Eastern · EDT')).toBeInTheDocument()
+    expect(screen.getByText('2:45 PM EDT')).toBeInTheDocument()
     expect(screen.getByText('Friday, 07/03/2026')).toBeInTheDocument()
-    expect(screen.getByText('System time')).toBeInTheDocument()
+    expect(screen.queryByText('System time', { exact: true })).not.toBeInTheDocument()
+    expect(screen.queryByText('Eastern · EDT')).not.toBeInTheDocument()
     expect(view.container.querySelectorAll('.user-system-time')).toHaveLength(1)
     expect(view.container.querySelector('.operational-clock__face')).not.toBeInTheDocument()
     expect(screen.queryByText(/Pacific ·/)).not.toBeInTheDocument()
@@ -54,11 +55,11 @@ describe('OperationalTimeHeader', () => {
         serverTimestamp="2026-07-03T18:45:00.000Z"
       />,
     )
-    expect(screen.getByText('12:45 PM')).toBeInTheDocument()
+    expect(screen.getByText('12:45 PM MDT')).toBeInTheDocument()
 
     act(() => vi.advanceTimersByTime(60_000))
 
-    expect(screen.getByText('12:46 PM')).toBeInTheDocument()
+    expect(screen.getByText('12:46 PM MDT')).toBeInTheDocument()
     view.unmount()
     expect(clearInterval).toHaveBeenCalledTimes(1)
     expect(vi.getTimerCount()).toBe(0)
@@ -74,19 +75,18 @@ describe('OperationalTimeHeader', () => {
       />,
     )
 
-    expect(screen.getByText('1:45 PM (13:45)')).toBeInTheDocument()
-    expect(screen.getByText('Eastern · EST')).toBeInTheDocument()
+    expect(screen.getByText('1:45 PM EST')).toBeInTheDocument()
   })
 
   it('refreshes the device zone when the browser tab becomes visible again', () => {
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
     render(<OperationalTimeHeader accountControls={null} serverTimestamp="2026-07-03T18:45:00.000Z" />)
 
-    expect(screen.getByText('Eastern · EDT')).toBeInTheDocument()
+    expect(screen.getByText('2:45 PM EDT')).toBeInTheDocument()
     mockSystemTimeZone('America/Denver')
     act(() => document.dispatchEvent(new Event('visibilitychange')))
 
-    expect(screen.getByText('Mountain · MDT')).toBeInTheDocument()
-    expect(screen.getByText('12:45 PM')).toBeInTheDocument()
+    expect(screen.getByText('12:45 PM MDT')).toBeInTheDocument()
+    expect(screen.queryByText('Eastern · EDT')).not.toBeInTheDocument()
   })
 })

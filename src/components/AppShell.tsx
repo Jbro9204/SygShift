@@ -1357,12 +1357,7 @@ export function AppShell() {
                 <span><LogOut aria-hidden="true" size={17} /></span>
               </button>
             </div>
-          ) : (
-            <div className="topbar-label">
-              <span aria-hidden="true" />
-              System time
-            </div>
-          )}
+          ) : null}
           fallbackTimeZone={sessionContext?.timeZone}
           serverTimestamp={maintenanceStatusQuery.data?.serverTime}
         />

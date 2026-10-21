@@ -216,15 +216,8 @@ html[data-theme='dark'] .user-system-time {
   border-color: #30343a;
 }
 
-html[data-theme='dark'] .user-system-time__time,
-html[data-theme='dark'] .user-system-time__zone {
+html[data-theme='dark'] .user-system-time__time {
   color: #f5f1e8;
-}
-
-html[data-theme='dark'] .user-system-time em {
-  color: #f9ddb0;
-  background: #342817;
-  border-color: #73551f;
 }
 
 html[data-theme='dark'] .workspace :where(

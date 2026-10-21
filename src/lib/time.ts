@@ -3,6 +3,7 @@ export const OPERATIONAL_TIME_ZONE = 'America/Denver'
 export type TimeZoneClockDisplay = {
   abbreviation: string
   accessibleDate: string
+  civilianTime: string
   date: string
   digitalTime: string
   hour24: number
@@ -76,6 +77,7 @@ export function formatTimeZoneClock(value: Date | string, timeZone: string): Tim
   return {
     abbreviation,
     accessibleDate: formatters.accessibleDate.format(dateValue),
+    civilianTime: civilian,
     date: formatters.date.format(dateValue),
     digitalTime: showMilitary ? `${civilian} (${military})` : civilian,
     hour24,

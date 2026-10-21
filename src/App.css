@@ -13226,7 +13226,6 @@ a.home-metric-card:focus-visible {
   min-height: 46px;
   align-items: center;
   justify-self: start;
-  gap: 9px;
   padding: 0 clamp(8px, 1vw, 14px);
   color: light-dark(#282620, #f5f1e8);
   border-right: 1px solid var(--line);
@@ -13241,49 +13240,6 @@ a.home-metric-card:focus-visible {
   font-weight: 900;
   letter-spacing: -0.02em;
   line-height: 1.2;
-}
-
-.user-system-time__zone {
-  color: light-dark(#5b5245, #b9b2a7);
-  font-size: 13px;
-  font-weight: 850;
-  line-height: 1.25;
-}
-
-.user-system-time em {
-  padding: 3px 7px;
-  color: light-dark(#735018, #e0b65a);
-  background: light-dark(#fff4d9, #342817);
-  border: 1px solid light-dark(#e9c981, #73551f);
-  border-radius: 999px;
-  font-size: 9px;
-  font-style: normal;
-  font-weight: 900;
-  letter-spacing: 0.05em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.topbar-label {
-  display: flex;
-  min-height: 38px;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 12px;
-  color: light-dark(#4d4a43, #f5f1e8);
-  background: light-dark(#f7f4ed, #342817);
-  border: 1px solid light-dark(#e4dfd4, #33383d);
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.topbar-label span {
-  width: 8px;
-  height: 8px;
-  background: var(--success);
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px rgb(40 113 83 / 12%);
 }
 
 .user-menu {
@@ -21712,10 +21668,6 @@ a.home-metric-card:focus-visible {
     border-right: 0;
   }
 
-  .topbar-label {
-    display: none;
-  }
-
   .user-menu {
     width: auto;
     grid-column: 2;
@@ -21736,15 +21688,6 @@ a.home-metric-card:focus-visible {
 
   .user-system-time__time {
     font-size: 13px;
-  }
-
-  .user-system-time__zone {
-    font-size: 12px;
-  }
-
-  .user-system-time em {
-    padding: 2px 6px;
-    font-size: 8.5px;
   }
 
   .payroll-export-reminder {
@@ -40878,12 +40821,7 @@ button.document-workbench__template-control.is-signature img {
 
 @media (max-width: 360px) {
   .user-system-time {
-    gap: 6px;
     padding-right: 4px;
-  }
-
-  .user-system-time em {
-    display: none;
   }
 }
 
