@@ -24,3 +24,24 @@ Its SHA-256 is
 
 This evidence does not authorize migration replay, bulk migration push, or any
 production database mutation. The prior baseline remains preserved unchanged.
+
+## Final coordinated baseline
+
+While this release was waiting for its independent quality gate, the separately
+authorized Sygilant report-correction release installed two additional migrations.
+The SygShift release gate stopped before deployment when each ledger change became
+visible. After Sygilant stabilized and pushed exact commit
+`a6deebba38c365510399711a18e136601ea7413c`, a final read-only baseline was
+captured at `2026-10-21T14:47:35.413Z`.
+
+Compared with the earlier 377-entry baseline, the final baseline adds only:
+
+- `20261021135052_safe_report_void_replacement_lifecycle` with its exact
+  committed Sygilant source and 80-statement array.
+- `20261021144500_tracktik_active_source_reference_repair` with its exact
+  committed Sygilant source and 14-statement array.
+
+No prior ledger entry or owning-source checksum changed. The final manifest has
+379 applied migrations, 396 SygShift sources, 118 Sygilant sources, no missing
+sources, and no unresolved ownership decisions. Its SHA-256 is
+`5cd13ad4e619fd017cb3636d200eb2e5d6b1c73c9dd64a61eb090ea6799da2ff`.
