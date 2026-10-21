@@ -12,6 +12,7 @@ import { SygSphereCommunicationsWorkspace } from '../components/communications/S
 import '../styles/sygsphere.css'
 import { platformPresenceLabels, type PlatformPresenceStatus } from '../data/platformPresence'
 import { workforceRoleLabel } from '../lib/workforceRoleAssignment'
+import { formatSygSphereTimestamp } from '../lib/sygsphereTime'
 
 const reactions = ['👍', '❤️', '🎉', '👀', '🙏']
 function ErrorNotice({ error }: { error: unknown }) { return error ? <p className="sphere-error" role="alert">{error instanceof Error ? error.message : 'This request could not be completed. Please try again.'}</p> : null }
@@ -70,13 +71,6 @@ function Avatar({ name, photoPath, presence }: { name: string; photoPath?: strin
     return () => URL.revokeObjectURL(next)
   }, [photo.data])
   return <span className="sphere-avatar" aria-hidden="true">{url ? <img src={url} alt="" /> : name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}{presence ? <i className={`sphere-avatar__presence sphere-avatar__presence--${presence}`} title={platformPresenceLabels[presence]} /> : null}</span>
-}
-function messageTime(value: string) {
-  const date = new Date(value)
-  const day = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Denver', month: '2-digit', day: '2-digit', year: 'numeric' }).format(date)
-  const time = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Denver', hour: 'numeric', minute: '2-digit' }).format(date)
-  const military = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Denver', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date)
-  return `${day} · ${time}${Number(military.slice(0, 2)) >= 13 ? ` (${military})` : ''} MT`
 }
 function MessageBody({ text, mentions, employeeId }: { text: string; mentions: SphereMention[]; employeeId: string }) {
   return <div className="sphere-message__body">{sphereMessageParts(text, mentions).map((part, index) => part.kind === 'link'
@@ -273,7 +267,7 @@ export function MessageCard({ employeeId, conversationKind, message, author, onT
   useEffect(() => setAcknowledgment(message.acknowledgment), [message.acknowledgment])
   const mayAcknowledge = conversationKind !== 'direct' && message.authorId !== employeeId
   return <article className={`sphere-message ${message.authorId === employeeId ? 'sphere-message--mine' : ''} ${focused ? 'sphere-focused' : ''}`} id={`sphere-message-${message.id}`}>
-    <Avatar name={message.authorName} photoPath={author?.photoPath} presence={author?.presence} /><div className="sphere-message__content"><header><strong>{message.authorName}</strong><time dateTime={message.createdAt}>{messageTime(message.createdAt)}</time>{message.editedAt && !message.deleted ? <small>Edited</small> : null}{message.pinned && !message.deleted ? <small>📌 Pinned</small> : null}</header>
+    <Avatar name={message.authorName} photoPath={author?.photoPath} presence={author?.presence} /><div className="sphere-message__content"><header><strong>{message.authorName}</strong><time dateTime={message.createdAt}>{formatSygSphereTimestamp(message.createdAt)}</time>{message.editedAt && !message.deleted ? <small>Edited</small> : null}{message.pinned && !message.deleted ? <small>📌 Pinned</small> : null}</header>
       {message.deleted ? <p className="sphere-hint">This message was deleted.</p> : <><MessageBody text={message.body} mentions={message.mentions} employeeId={employeeId} />
         {message.body.startsWith('Shared file: ') ? <MessageFiles employeeId={employeeId} message={message} /> : null}
         <div className="sphere-reactions">{message.reactions.map((reaction) => <button type="button" key={reaction.emoji} aria-pressed={reaction.mine} aria-label={`${reaction.emoji} reaction, ${reaction.count}`} disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'react', emoji: reaction.emoji, enabled: !reaction.mine })}>{reaction.emoji} {reaction.count}</button>)}</div>
@@ -283,7 +277,7 @@ export function MessageCard({ employeeId, conversationKind, message, author, onT
           <MessageActionPopover label="Add reaction" trigger={<Smile size={16} />} panelClassName="sphere-reaction-picker">{reactions.map((emoji) => <button type="button" key={emoji} aria-label={`React ${emoji}`} disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'react', emoji, enabled: true })}>{emoji}</button>)}</MessageActionPopover>
           <button type="button" aria-label={message.saved ? 'Unsave message' : 'Save message'} aria-pressed={message.saved} disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'save', enabled: !message.saved })}><Bookmark size={15} /></button>
           <MessageActionPopover label="More message actions" trigger="•••" panelClassName="sphere-message-menu"><button type="button" onClick={() => mutation.mutate({ action: 'pin', enabled: !message.pinned })}>{message.pinned ? 'Unpin message' : 'Pin message'}</button><button type="button" onClick={() => { void navigator.clipboard.writeText(`${window.location.origin}${spherePath(message.conversationId, message.id, message.parentId)}`).then(() => setNotice('Message link copied.')).catch(() => setNotice('Could not copy. Open the message and copy its page address.')) }}>Copy message link</button>{message.authorId === employeeId ? <><button type="button" onClick={() => { setBody(message.body); setEdit(true) }}>Edit message</button><button type="button" onClick={() => setDeleting(true)}>Delete message</button></> : null}</MessageActionPopover>
-          {message.authorId === employeeId ? message.readBy.length ? <MessageActionPopover label={`Read by ${message.readBy.length}. Show readers.`} trigger={<><Check size={13} />Read by {message.readBy.length}</>} panelClassName="sphere-read-panel" openOnHover><ul>{message.readBy.map((person) => <li key={person.id}><Avatar name={person.name} photoPath={person.photoPath} /><span><strong>{person.name}</strong><time dateTime={person.readAt}>{messageTime(person.readAt)}</time></span></li>)}</ul></MessageActionPopover> : <span className="sphere-delivery" title="Saved securely to SygSphere"><Check size={13} />Sent</span> : null}
+          {message.authorId === employeeId ? message.readBy.length ? <MessageActionPopover label={`Read by ${message.readBy.length}. Show readers.`} trigger={<><Check size={13} />Read by {message.readBy.length}</>} panelClassName="sphere-read-panel" openOnHover><ul>{message.readBy.map((person) => <li key={person.id}><Avatar name={person.name} photoPath={person.photoPath} /><span><strong>{person.name}</strong><time dateTime={person.readAt}>{formatSygSphereTimestamp(person.readAt)}</time></span></li>)}</ul></MessageActionPopover> : <span className="sphere-delivery" title="Saved securely to SygSphere"><Check size={13} />Sent</span> : null}
         </div></>}
       <ErrorNotice error={acknowledge.error || mutation.error} />{notice ? <small role="status">{notice}</small> : null}
     </div>
@@ -387,7 +381,7 @@ function SphereComposer({ employeeId, conversationId, parentId, members }: { emp
 function SphereResults({ employeeId, query, saved, onOpen }: { employeeId: string; query: string; saved: boolean; onOpen: (message: SphereMessage) => void }) {
   const results = useInfiniteQuery({ queryKey: ['sygsphere', employeeId, saved ? 'saved' : 'search', query], queryFn: ({ pageParam }) => sphereSearch(query, saved, pageParam), initialPageParam: undefined as number | undefined, getNextPageParam: (last) => last.length === 50 ? last.at(-1)?.sequence : undefined, enabled: saved || query.length >= 2 })
   const items = results.data?.pages.flat() ?? []
-  return <div className="sphere-results"><ErrorNotice error={results.error} />{results.isFetching ? <p role="status">Loading…</p> : null}{items.map((message) => <button type="button" className="sphere-result" key={message.id} onClick={() => onOpen(message)}><strong>{message.authorName}</strong><small>{messageTime(message.createdAt)}{message.parentId ? ' · Thread reply' : ''}</small><span>{message.body}</span><b>Open message →</b></button>)}{!results.isFetching && !items.length ? <p>{saved ? 'Save a message using its bookmark button to find it here.' : query ? 'No messages match your search.' : 'Search the conversations you belong to.'}</p> : null}{results.hasNextPage ? <button type="button" onClick={() => void results.fetchNextPage()} disabled={results.isFetchingNextPage}>Load more results</button> : null}</div>
+  return <div className="sphere-results"><ErrorNotice error={results.error} />{results.isFetching ? <p role="status">Loading…</p> : null}{items.map((message) => <button type="button" className="sphere-result" key={message.id} onClick={() => onOpen(message)}><strong>{message.authorName}</strong><small>{formatSygSphereTimestamp(message.createdAt)}{message.parentId ? ' · Thread reply' : ''}</small><span>{message.body}</span><b>Open message →</b></button>)}{!results.isFetching && !items.length ? <p>{saved ? 'Save a message using its bookmark button to find it here.' : query ? 'No messages match your search.' : 'Search the conversations you belong to.'}</p> : null}{results.hasNextPage ? <button type="button" onClick={() => void results.fetchNextPage()} disabled={results.isFetchingNextPage}>Load more results</button> : null}</div>
 }
 
 function SphereDetails({ employeeId, conversation, onClose }: { employeeId: string; conversation: SphereConversation; onClose: () => void }) {

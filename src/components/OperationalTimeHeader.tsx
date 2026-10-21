@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { CalendarDays } from 'lucide-react'
 import { formatOperationalDate, formatTimeZoneClock } from '../lib/time'
 import { continentalUsTimeZoneShortLabel } from '../lib/usTimeZones'
+import { browserSystemTimeZone } from '../lib/systemTimeZone'
 
 type ClockAnchor = {
   clientTime: number
@@ -23,16 +24,16 @@ function timeFromAnchor(anchor: ClockAnchor): Date {
 
 export function OperationalTimeHeader({
   accountControls,
+  fallbackTimeZone,
   serverTimestamp,
-  timeZone,
 }: {
   accountControls: ReactNode
+  fallbackTimeZone?: string | null
   serverTimestamp?: string | null
-  timeZone?: string | null
 }) {
   const anchorRef = useRef(clockAnchor(serverTimestamp))
   const [now, setNow] = useState(() => timeFromAnchor(anchorRef.current))
-  const displayTimeZone = timeZone ?? 'America/Denver'
+  const [displayTimeZone, setDisplayTimeZone] = useState(() => browserSystemTimeZone(fallbackTimeZone))
   const display = formatTimeZoneClock(now, displayTimeZone)
   const timeZoneLabel = continentalUsTimeZoneShortLabel(displayTimeZone)
 
@@ -42,10 +43,17 @@ export function OperationalTimeHeader({
   }, [serverTimestamp])
 
   useEffect(() => {
+    setDisplayTimeZone(browserSystemTimeZone(fallbackTimeZone))
+  }, [fallbackTimeZone])
+
+  useEffect(() => {
     const updateClock = () => setNow(timeFromAnchor(anchorRef.current))
     const interval = window.setInterval(updateClock, 1_000)
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') updateClock()
+      if (document.visibilityState === 'visible') {
+        setDisplayTimeZone(browserSystemTimeZone(fallbackTimeZone))
+        updateClock()
+      }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
@@ -53,7 +61,7 @@ export function OperationalTimeHeader({
       window.clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [])
+  }, [fallbackTimeZone])
 
   return (
     <header className="topbar">

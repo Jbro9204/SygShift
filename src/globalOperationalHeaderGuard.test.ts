@@ -17,7 +17,8 @@ describe('global operational time header guardrails', () => {
   it('extends the single authenticated shell and preserves its account and alert systems', () => {
     expect(shell).toContain('<OperationalTimeHeader')
     expect(shell).toContain('serverTimestamp={maintenanceStatusQuery.data?.serverTime}')
-    expect(shell).toContain("timeZone={personalDisplayTimeZone(sessionContext?.timeZone ?? 'America/Denver')}")
+    expect(shell).toContain('fallbackTimeZone={sessionContext?.timeZone}')
+    expect(shell).not.toContain('timeZone={personalDisplayTimeZone')
     expect(shell).toContain('WorkspaceAlertStrip entries={workspaceAlerts}')
     expect(shell).toContain('WORKSPACE_ALERT_ROTATE_MS')
     expect(shell).toContain('Open My Account for')
@@ -30,8 +31,9 @@ describe('global operational time header guardrails', () => {
   it('uses one cleaned-up timer and the viewer system time zone', () => {
     expect(header.match(/window\.setInterval/g)).toHaveLength(1)
     expect(header).toContain('window.clearInterval(interval)')
-    expect(shell).toContain('personalDisplayTimeZone')
-    expect(header).toContain('timeZone?: string | null')
+    expect(header).toContain('browserSystemTimeZone')
+    expect(header).toContain('fallbackTimeZone?: string | null')
+    expect(header).not.toContain("timeZone ?? 'America/Denver'")
     expect(header).toContain('System time for')
     expect(header).toContain('<CalendarDays')
     expect(header).not.toContain('aria-live')

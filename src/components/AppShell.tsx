@@ -35,7 +35,6 @@ import {
   isTransientSharedIdentitySupabaseSessionError,
 } from '../lib/supabase'
 import { lastCompletedPayrollWeek } from '../lib/time'
-import { personalDisplayTimeZone } from '../lib/usTimeZones'
 import { bindViewDateSelectionOwner, clearViewDateSelections } from '../lib/sessionViewDateSelection'
 import { MaintenanceNotice, MaintenanceUnavailablePanel } from './MaintenanceNotice'
 import { getMaintenanceStatus, maintenanceFeatureForPath } from '../data/maintenance'
@@ -1361,11 +1360,11 @@ export function AppShell() {
           ) : (
             <div className="topbar-label">
               <span aria-hidden="true" />
-              Mountain Time
+              System time
             </div>
           )}
+          fallbackTimeZone={sessionContext?.timeZone}
           serverTimestamp={maintenanceStatusQuery.data?.serverTime}
-          timeZone={personalDisplayTimeZone(sessionContext?.timeZone ?? 'America/Denver')}
         />
 
         {authMessage ? (

@@ -66,8 +66,8 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 ## Global operational time header
 
 - The authenticated application uses one shared `AppShell` header across every permission-controlled workspace. The shell owns one compact date, signed-in-user system-time, and account bar plus maintenance notices and the existing rotating alert lane.
-- The single clock is derived from one synchronized server instant and the signed-in employee's supported profile zone. Its timer is anchored to the existing maintenance-status server timestamp and refreshed through that query; it does not make a network request every second.
-- The header clock is informational. Server timestamps and protected database functions remain authoritative for punches, payroll, patrol hits, audit events, and all other secured records.
+- The single clock is derived from one synchronized server instant and displayed in the current browser/device system time zone. Its timer is anchored to the existing maintenance-status server timestamp and refreshed through that query; it does not make a network request every second. The signed-in employee profile zone remains authoritative for employee-specific Schedule and Time & Attendance presentation.
+- The header clock and SygSphere message timestamps are informational viewer-local presentation. Server timestamps and protected database functions remain authoritative for punches, payroll, patrol hits, messages, audit events, and all other secured records.
 - The existing workspace alert component remains the only global alert lane. It retains its permission filtering, rotation, count, severity, and workflow links while flowing beneath the clocks with responsive wrapping.
 - At 1280 effective pixels and below, and on common 1366-by-768 laptop viewports, the fixed navigation rail becomes the existing full off-canvas drawer so every module receives the full content width; the employee's saved desktop collapse preference is retained and restored when the viewport widens. The single clock remains readable without horizontal scrolling on constrained desktop, mobile, and the SygSphere shell.
 

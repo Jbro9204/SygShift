@@ -12,6 +12,7 @@ import {
 } from '../data/clientCommunications'
 import { spherePath } from '../data/sygsphere'
 import { formatOperationalDateTime } from '../lib/time'
+import { browserSystemTimeZone } from '../lib/systemTimeZone'
 import { ModalDialog } from './ModalDialog'
 
 function conversationKindLabel(kind: ClientCommunication['kind']) {
@@ -38,6 +39,7 @@ function Pagination({ busy = false, page, pageSize, totalCount, totalPages, onPa
 
 export function ClientCommunications({ clientId, employeeId, onBack }: { clientId?: string; employeeId: string; onBack?: () => void }) {
   const queryClient = useQueryClient()
+  const systemTimeZone = browserSystemTimeZone()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<10 | 20 | 50>(20)
@@ -161,7 +163,7 @@ export function ClientCommunications({ clientId, employeeId, onBack }: { clientI
         {!clientId ? <Link className="client-communication-client" to={`/clients/${row.clientId}`}>{row.clientName} · {row.clientNumber}</Link> : null}
         <span>{conversationKindLabel(row.kind)} · {row.purpose || 'General operations'}</span>
         {row.latestBody ? <p><strong>Latest:</strong> {row.latestBody}</p> : <p>No messages have been sent in this conversation yet.</p>}
-        <small>{row.latestCreatedAt ? `Last message ${formatOperationalDateTime(row.latestCreatedAt, { includeTimeZoneName: true })}` : `Linked ${formatOperationalDateTime(row.linkedAt, { includeTimeZoneName: true })}`}</small>
+        <small>{row.latestCreatedAt ? `Last message ${formatOperationalDateTime(row.latestCreatedAt, { includeTimeZoneName: true, timeZone: systemTimeZone })}` : `Linked ${formatOperationalDateTime(row.linkedAt, { includeTimeZoneName: true, timeZone: systemTimeZone })}`}</small>
       </div>
       <div className="client-communication-row__actions"><Link className="primary-action" to={spherePath(row.conversationId)}><ExternalLink aria-hidden="true" size={16} />Open in SygSphere</Link>{data.actor.canManage ? <button className="secondary-button secondary-button--small" onClick={() => openUnlinkDialog(row)} type="button"><Unlink aria-hidden="true" size={15} />Unlink</button> : null}</div>
     </div>)}</div> : <CommunicationsEmpty clientScoped={Boolean(clientId)} filtered={Boolean(search.trim())} />}
