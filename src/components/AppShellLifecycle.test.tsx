@@ -44,6 +44,8 @@ const shared = vi.hoisted(() => ({
   hydrateTransient: true,
   hydrateResult: null as null | { accessToken: string; expiresAt: number; refreshToken: string; scope: 'platform' | 'sygsphere' },
   operationalWorkspace: { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' } as OperationalWorkspaceFixture,
+  requiredActionBlocking: false,
+  requiredActionError: null as Error | null,
   scope: null as null | 'platform' | 'sygsphere',
   sessionContextError: null as Error | null,
 }))
@@ -123,7 +125,7 @@ vi.mock('../data/auth', () => ({
       mfaRequired: true,
       mustChangePassword: false,
       passwordChangedAt: null,
-      permissions: ['apps.sygilant.access', 'operations.view', 'time.view'],
+      permissions: ['actions.self.view', 'apps.sygilant.access', 'operations.view', 'time.view'],
       role: 'guard',
       timeZone: 'America/Denver',
       username: 'shareduser',
@@ -139,7 +141,7 @@ vi.mock('../data/auth', () => ({
       mfaRequired: true,
       mustChangePassword: false,
       passwordChangedAt: null,
-      permissions: ['apps.sygilant.access', 'operations.view', 'time.view'],
+      permissions: ['actions.self.view', 'apps.sygilant.access', 'operations.view', 'time.view'],
       role: 'guard',
       timeZone: 'America/Denver',
       username: 'shareduser',
@@ -156,15 +158,18 @@ vi.mock('../data/timeOperations', async (loadOriginal) => ({
   getTimekeepingOperationsWorkspace: vi.fn(async () => shared.operationalWorkspace),
 }))
 vi.mock('../data/actionCenter', () => ({
-  getRequiredActionCheckpoint: vi.fn(async () => ({
-    blocking: false,
-    items: [],
-    rollout: { enabled: true, enrolled: false, mode: 'canary' },
-    serverTimestamp: '2026-09-11T12:00:00Z',
-    summary: { announcements: 0, critical: 0, documents: 0, hrTasks: 0, overdue: 0, schedules: 0, signatures: 0, training: 0 },
-    total: 0,
-    urgentAccess: [],
-  })),
+  getRequiredActionCheckpoint: vi.fn(async () => {
+    if (shared.requiredActionError) throw shared.requiredActionError
+    return {
+      blocking: shared.requiredActionBlocking,
+      items: [],
+      rollout: { enabled: true, enrolled: shared.requiredActionBlocking, mode: 'canary' },
+      serverTimestamp: '2026-09-11T12:00:00Z',
+      summary: { announcements: 0, critical: 0, documents: 0, hrTasks: 0, overdue: 0, schedules: 0, signatures: 0, training: 0 },
+      total: 0,
+      urgentAccess: [],
+    }
+  }),
 }))
 vi.mock('../data/maintenance', () => ({
   getMaintenanceStatus: vi.fn(async () => ({ active: [], recentlyCompleted: [], upcoming: [] })),
@@ -211,6 +216,8 @@ beforeEach(() => {
   shared.hydrateTransient = true
   shared.hydrateResult = null
   shared.operationalWorkspace = { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' }
+  shared.requiredActionBlocking = false
+  shared.requiredActionError = null
   shared.scope = null
   shared.sessionContextError = null
   localStorage.clear()
@@ -262,6 +269,81 @@ describe('AppShell shared-session lifecycle', () => {
 
     expect(await screen.findByText('Platform home')).toBeInTheDocument()
     expect(screen.queryByText('Account security')).not.toBeInTheDocument()
+  })
+
+  it('keeps the verified workspace open when required-action details are temporarily unavailable', async () => {
+    const user = userEvent.setup()
+    shared.requiredActionError = new Error('connection pool timeout')
+    prepareSharedSession('platform')
+    renderShell('/')
+
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Required actions could not be verified' })).not.toBeInTheDocument()
+    expect(screen.getByText(/Required actions could not be refreshed/)).toBeInTheDocument()
+
+    shared.requiredActionError = null
+    await user.click(screen.getByRole('button', { name: 'Retry check' }))
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Required actions could not be refreshed/)).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+  })
+
+  it('redirects an authenticated employee when the authoritative checkpoint is blocking', async () => {
+    shared.requiredActionBlocking = true
+    prepareSharedSession('platform')
+    renderShell('/time')
+
+    expect(await screen.findByText('Action Center workspace')).toBeInTheDocument()
+    expect(screen.queryByText('Time route')).not.toBeInTheDocument()
+    expect(document.querySelector('.app-shell--required-actions')).not.toBeNull()
+  })
+
+  it('keeps cached blocking checkpoint data authoritative when its background refresh fails', async () => {
+    const user = userEvent.setup()
+    shared.requiredActionBlocking = true
+    prepareSharedSession('platform')
+    const { queryClient } = renderShell('/actions')
+    expect(await screen.findByText('Action Center workspace')).toBeInTheDocument()
+
+    shared.requiredActionError = new Error('temporary checkpoint refresh failure')
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['required-action-checkpoint', employeeId] })
+    })
+
+    expect(document.querySelector('.app-shell--required-actions')).not.toBeNull()
+
+    await user.click(screen.getByRole('link', { name: 'Attempt time route' }))
+    expect(await screen.findByText('Action Center workspace')).toBeInTheDocument()
+    expect(screen.queryByText('Time route')).not.toBeInTheDocument()
+  })
+
+  it('bounds a stalled required-action request and opens the verified workspace in degraded mode', async () => {
+    vi.useFakeTimers()
+    const checkpointData = await import('../data/actionCenter')
+    const getCheckpoint = vi.mocked(checkpointData.getRequiredActionCheckpoint)
+    let requestSignal: AbortSignal | undefined
+    getCheckpoint.mockImplementationOnce((signal?: AbortSignal) => new Promise<never>((_resolve, reject) => {
+      requestSignal = signal
+      signal?.addEventListener('abort', () => reject(new Error('required-action request timed out')), { once: true })
+    }))
+    prepareSharedSession('platform')
+    const view = renderShell('/')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100)
+    })
+    expect(screen.getByText('Checking required actions…')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_100)
+    })
+
+    expect(requestSignal).toHaveProperty('aborted', true)
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+    expect(screen.getByText(/Required actions could not be refreshed/)).toBeInTheDocument()
+    view.unmount()
   })
 
   it('replaces a bounded cold-start check with a fail-closed recovery card and keeps retries single-flight', async () => {
@@ -777,13 +859,16 @@ describe('AppShell shared-session lifecycle', () => {
     await waitFor(() => expect(shared.authListener).not.toBeNull())
 
     const communicationsKey = ['client-communications', employeeId, 'workspace', 'all', '', 1, 20]
+    const requiredActionKey = ['required-action-checkpoint', employeeId]
     queryClient.setQueryData(communicationsKey, { privatePreview: 'Employee A message' })
+    queryClient.setQueryData(requiredActionKey, { blocking: true, items: [{ title: 'Private employee action' }] })
     queryClient.setQueryData(['session-context'], { employeeId })
     queryClient.setQueryData(['unrelated-cache'], { retained: true })
 
     act(() => shared.authListener?.('SIGNED_OUT', null))
 
     expect(queryClient.getQueryData(communicationsKey)).toBeUndefined()
+    expect(queryClient.getQueryData(requiredActionKey)).toBeUndefined()
     expect(queryClient.getQueryData(['session-context'])).toBeUndefined()
     expect(queryClient.getQueryData(['unrelated-cache'])).toEqual({ retained: true })
   })
@@ -829,6 +914,8 @@ function renderShell(initialEntry: string) {
         <Routes>
           <Route element={<AppShell />}>
             <Route path="/" element={<div>Platform home</div>} />
+            <Route path="/actions" element={<div>Action Center workspace <Link to="/time">Attempt time route</Link></div>} />
+            <Route path="/my-documents" element={<div>My Documents workspace</div>} />
             <Route path="/sygsphere" element={<div>SygSphere workspace <Link to="/time">Attempt time route</Link></div>} />
             <Route path="/time" element={<div>Time route</div>} />
           </Route>

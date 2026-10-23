@@ -277,8 +277,9 @@ export async function getEmployeeActionCenter(): Promise<EmployeeActionCenter> {
   return actionCenterSchema.parse(data)
 }
 
-export async function getRequiredActionCheckpoint(): Promise<RequiredActionCheckpoint> {
-  const { data, error } = await getSupabaseClient().rpc('get_required_action_checkpoint')
+export async function getRequiredActionCheckpoint(signal?: AbortSignal): Promise<RequiredActionCheckpoint> {
+  const request = getSupabaseClient().rpc('get_required_action_checkpoint')
+  const { data, error } = signal ? await request.abortSignal(signal) : await request
   if (error) throw new Error(error.message || 'Your required actions could not be checked.')
   return requiredActionCheckpointSchema.parse(data)
 }

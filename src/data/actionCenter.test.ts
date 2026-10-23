@@ -139,6 +139,28 @@ describe('employee action-center data contracts', () => {
     expect(rpc).toHaveBeenCalledWith('get_required_action_checkpoint')
   })
 
+  it('passes an abort signal to the required-action checkpoint RPC', async () => {
+    const controller = new AbortController()
+    const abortSignal = vi.fn().mockResolvedValueOnce({
+      data: {
+        blocking: false,
+        items: [],
+        rollout: { enabled: true, enrolled: false, mode: 'canary' },
+        serverTimestamp: '2026-09-11T12:01:00Z',
+        summary: { announcements: 0, critical: 0, documents: 0, hrTasks: 0, overdue: 0, schedules: 0, signatures: 0, training: 0 },
+        total: 0,
+        urgentAccess: [],
+      },
+      error: null,
+    })
+    rpc.mockReturnValueOnce({ abortSignal })
+
+    await expect(getRequiredActionCheckpoint(controller.signal)).resolves.toMatchObject({ blocking: false, total: 0 })
+
+    expect(rpc).toHaveBeenCalledWith('get_required_action_checkpoint')
+    expect(abortSignal).toHaveBeenCalledWith(controller.signal)
+  })
+
   it('loads compact manager reporting without requesting unrelated employee records', async () => {
     rpc.mockResolvedValue({
       data: {

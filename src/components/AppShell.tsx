@@ -77,6 +77,7 @@ const INACTIVITY_LOGOUT_MS = 60 * 60 * 1000
 const SESSION_ACTIVITY_STORAGE_PREFIX = 'sygshift.session.activity.v1'
 const SESSION_ACTIVITY_THROTTLE_MS = 5_000
 const SECURE_ACCESS_REQUEST_TIMEOUT_MS = 12_000
+const REQUIRED_ACTION_CHECKPOINT_TIMEOUT_MS = 8_000
 const WORKSPACE_ALERT_ROTATE_MS = 9_000
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sygshift.sidebar.collapsed'
 const SIDEBAR_GROUP_STORAGE_KEY = 'sygshift.sidebar.open-group'
@@ -94,12 +95,20 @@ class SecureAccessRequestCancelledError extends Error {
     this.name = 'SecureAccessRequestCancelledError'
   }
 }
+
+class RequiredActionCheckpointTimeoutError extends Error {
+  constructor() {
+    super('The required-action check timed out.')
+    this.name = 'RequiredActionCheckpointTimeoutError'
+  }
+}
 const COMPACT_NAVIGATION_QUERY = '(max-width: 1280px), (max-width: 1366px) and (max-height: 800px)'
 const SESSION_SCOPED_QUERY_ROOTS = [
   'support',
   'my-notifications',
   'notification-device-session',
   'notification-device-push',
+  'required-action-checkpoint',
   'sygsphere',
   'client-communications',
   'session-context',
@@ -148,6 +157,34 @@ function routePathFromHref(href: string): string {
 function checkpointAllowsLocation(pathname: string, search: string): boolean {
   if (pathname === '/' || pathname === '/actions' || pathname === '/my-documents' || pathname === '/account-security') return true
   return pathname === '/time/my-time' && new URLSearchParams(search).get('report') === 'call-off'
+}
+
+async function getRequiredActionCheckpointWithinDeadline(signal: AbortSignal) {
+  const controller = new AbortController()
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    controller.signal.addEventListener('abort', () => {
+      reject(controller.signal.reason instanceof Error
+        ? controller.signal.reason
+        : new RequiredActionCheckpointTimeoutError())
+    }, { once: true })
+  })
+  const forwardCancellation = () => controller.abort(signal.reason)
+  if (signal.aborted) forwardCancellation()
+  else signal.addEventListener('abort', forwardCancellation, { once: true })
+
+  const timeout = window.setTimeout(() => {
+    controller.abort(new RequiredActionCheckpointTimeoutError())
+  }, REQUIRED_ACTION_CHECKPOINT_TIMEOUT_MS)
+
+  try {
+    return await Promise.race([
+      getRequiredActionCheckpoint(controller.signal),
+      interrupted,
+    ])
+  } finally {
+    window.clearTimeout(timeout)
+    signal.removeEventListener('abort', forwardCancellation)
+  }
 }
 
 function WorkspaceAlertStrip({ entries }: { entries: WorkspaceAlertEntry[] }) {
@@ -257,13 +294,14 @@ export function AppShell() {
   })
   const requiredActionQuery = useQuery({
     enabled: isSupabaseConfigured && Boolean(sessionContext),
-    queryFn: getRequiredActionCheckpoint,
+    queryFn: ({ signal }) => getRequiredActionCheckpointWithinDeadline(signal),
     queryKey: ['required-action-checkpoint', sessionContext?.employeeId],
     refetchInterval: 10_000,
     refetchOnWindowFocus: true,
+    retry: false,
   })
   const requiredActionCheckpoint = requiredActionQuery.data ?? null
-  const requiredActionCheckpointActive = Boolean(requiredActionCheckpoint?.blocking || requiredActionQuery.isError)
+  const requiredActionCheckpointActive = Boolean(requiredActionCheckpoint?.blocking)
   const workspaceAlerts = useMemo<WorkspaceAlertEntry[]>(() => {
     const announcementAlerts = (activeBannerQuery.data ?? [])
       .filter((banner) => banner.tone === 'urgent')
@@ -1153,23 +1191,6 @@ export function AppShell() {
     )
   }
 
-  if (isSupabaseConfigured && sessionContext && !needsSecurityCheckpoint && requiredActionQuery.isError && !checkpointAllowsLocation(location.pathname, location.search)) {
-    return withCommunicationsRuntime(
-      <main className="security-page">
-        <section className="security-card" role="alert">
-          <ShieldAlert aria-hidden="true" size={36} />
-          <h1>Required actions could not be verified</h1>
-          <p>The ordinary workspace is paused until SygShift can safely check your queue. Urgent time and call-off access remains available.</p>
-          <div className="security-card__actions">
-            <Link className="secondary-button" to="/">Clock in or out</Link>
-            <Link className="secondary-button" to="/time/my-time?report=call-off">Report sick / call-off</Link>
-            <button className="primary-action" onClick={() => void requiredActionQuery.refetch()} type="button">Try again</button>
-          </div>
-        </section>
-      </main>
-    )
-  }
-
   if (isSupabaseConfigured && requiredActionCheckpointActive && !checkpointAllowsLocation(location.pathname, location.search)) {
     return withCommunicationsRuntime(<Navigate to="/actions?checkpoint=required" replace state={{ from: location }} />)
   }
@@ -1370,7 +1391,7 @@ export function AppShell() {
 
         {requiredActionQuery.isError ? (
           <div className="shell-alert shell-alert--warning" role="alert">
-            Required actions could not be verified. Only the Action Center, My Documents, time clock, and call-off workflow remain available until the check succeeds.
+            Required actions could not be refreshed. Your verified workspace remains available, protected access is unchanged, and SygShift will retry automatically.
             <button className="secondary-button secondary-button--small" onClick={() => void requiredActionQuery.refetch()} type="button">Retry check</button>
           </div>
         ) : null}

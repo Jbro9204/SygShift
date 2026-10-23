@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 10/23/2026 - Required-Action Checkpoint Resilience
+
+- Corrected the older AppShell policy flaw that converted any required-action detail-query failure into a positive blocking checkpoint and replaced the employee's verified workspace.
+- Kept authentication, session, MFA, effective-permission, route, Worker, and database enforcement fail-closed while allowing a secondary metadata outage to degrade to a warning and Retry action.
+- Added an eight-second cancellation-aware checkpoint deadline, preserved cached verified blocks across failed refreshes, and cleared employee-scoped checkpoint cache data on sign-out/account change.
+- Added regressions for transport failure, recovery, true blocking, cached blocking, timeout/abort, signal forwarding, and cache teardown. No database, employee, schedule, timekeeping, payroll, permission, message, notification, or audit record changed.
+- Complete verification and production status are recorded in `docs/changelogs/CHANGELOG_2026-10-23_REQUIRED_ACTION_CHECKPOINT_RESILIENCE.md`.
+
 ## 10/20/2026 - Main Release Governance and Candidate Safety
 
 - Added a versioned, executable Git pre-push gate for `main`. It requires one clean fast-forward candidate, verifies it from a detached worktree, installs locked dependencies, audits production dependencies, runs the complete SygShift release verification, and rechecks source/remote state before Git can push.
