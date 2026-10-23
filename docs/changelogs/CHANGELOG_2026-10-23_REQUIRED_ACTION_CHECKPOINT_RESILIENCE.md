@@ -49,6 +49,9 @@ Scheduler readiness did not directly lock the browser. The scheduler and browser
 - Full `pnpm check`: passed with 381 test files and 2,221 tests, plus one intentional skipped file/test; all 174 release-governance tests and the production builds/static-asset contract passed.
 - Mandatory desktop/mobile Time Clock release workflow: passed, 42 of 42 tests.
 - Full `pnpm release:verify`: passed, including a fresh production build and static-asset validation.
+- The production release gate correctly refused a stale 379-entry migration baseline. Seven subsequent Sygilant
+  migrations were reconciled read-only against clean Sygilant source `f9dc221e3281ee5c503579c13cc92e09124cc4a3`;
+  the replacement 386-entry baseline records only those expected additions and authorizes no migration replay.
 - Production deployment and live authenticated verification: pending.
 
 ## Remaining limitation
