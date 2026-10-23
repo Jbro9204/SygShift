@@ -1,7 +1,7 @@
 # Required-Action Checkpoint Resilience
 
 Date: 10/23/2026  
-Status: Release verification passed; production promotion pending  
+Status: Released and independently verified in production
 Database migration: None  
 Cloudflare lifecycle/configuration change: None
 
@@ -52,7 +52,23 @@ Scheduler readiness did not directly lock the browser. The scheduler and browser
 - The production release gate correctly refused a stale 379-entry migration baseline. Seven subsequent Sygilant
   migrations were reconciled read-only against clean Sygilant source `f9dc221e3281ee5c503579c13cc92e09124cc4a3`;
   the replacement 386-entry baseline records only those expected additions and authorizes no migration replay.
-- Production deployment and live authenticated verification: pending.
+- Exact pushed source `6070d5e49daac7854fd8c97c331c87fd97c8f03d` passed GitHub workflow
+  `39986304707`: the Exact candidate quality gate and CodeQL JavaScript and TypeScript both succeeded.
+- The rollback-safe production release revalidated the fresh 386-entry migration ledger, reran the complete
+  local release gate and mandatory Time Clock workflow, and promoted exact Cloudflare Worker version
+  `75910843-52c3-433f-b70b-676e790714dd` at 100 percent. The prior version was retained for rollback and no
+  rollback was required.
+- Cloudflare did not provide a candidate Version URL, so candidate-only HTTP smoke was reported as unavailable
+  rather than passed. No dedicated authenticated release-canary credentials were present in the approved
+  operator environment; the documented anonymous boundary probe was used for the automated release boundary,
+  followed by an independent signed-in browser verification.
+- Three independent production samples returned `/api/v1/health` healthy and `/api/v1/ready` ready with the
+  scheduler closed, zero consecutive failures, fresh runtime evidence, and source commit
+  `6070d5e49daac7854fd8c97c331c87fd97c8f03d`. A natural full scheduled-runtime cycle completed on the new
+  source at `2026-10-23T16:35:11.556Z`.
+- The production HTML referenced the new entry bundle `assets/index-dldzzek7.js`. A signed-in owner-session
+  refresh visibly progressed through **Checking required actions...** and reopened the normal Operations
+  workspace without showing the false verification lockout.
 
 ## Remaining limitation
 
