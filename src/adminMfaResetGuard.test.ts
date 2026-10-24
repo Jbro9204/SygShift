@@ -5,10 +5,6 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const root = process.cwd()
-const migration = readFileSync(
-  join(root, 'supabase', 'migrations', '20260810154500_admin_mfa_reset_control.sql'),
-  'utf8',
-)
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
 const userAdminPage = readFileSync(join(root, 'src', 'pages', 'UserAdminPage.tsx'), 'utf8')
 
@@ -23,24 +19,22 @@ describe('administrator MFA reset guardrails', () => {
     expect(worker).toContain('target_actor_employee_id: admin.context.employee_id')
   })
 
-  it('removes authentication factors and records the exact reset operation', () => {
-    expect(worker).toContain('/auth/v1/admin/users/${userId}/factors')
-    expect(worker).toContain('/auth/v1/admin/users/${userId}/factors/${factorId}')
-    expect(worker).toContain("'service_record_employee_mfa_reset'")
-    expect(migration).toContain('create table if not exists private.employee_mfa_reset_events')
-    expect(migration).toContain('employee_mfa_reset_events_append_only')
-    expect(migration).toContain('private.prevent_append_only_change()')
-    expect(migration).toContain('employee_mfa_reset_events_audit')
-    expect(migration).toContain('private.write_audit_event()')
-    expect(migration).toContain("if (select auth.role()) <> 'service_role'")
-    expect(migration).toContain('revoke all on function public.service_record_employee_mfa_reset')
-    expect(migration).toContain('grant execute on function public.service_record_employee_mfa_reset')
+  it('fails closed before target lookup or Auth mutation until reset can invalidate every session', () => {
+    const route = worker.slice(
+      worker.indexOf('const mfaResetMatch ='),
+      worker.indexOf('const match = /^\\/api\\/v1\\/admin\\/users', worker.indexOf('const mfaResetMatch =')),
+    )
+    expect(route).toContain("'mfa_reset_combined_recovery_required'")
+    expect(route).toContain('safe reset must also replace the login credential and invalidate active sessions')
+    expect(route).not.toContain('service_get_employee_auth_target')
+    expect(route).not.toContain('/auth/v1/admin/users/')
+    expect(route).not.toContain('service_begin_admin_mfa_reset')
   })
 
-  it('requires deliberate confirmation and explains exactly what remains unchanged', () => {
-    expect(userAdminPage).toContain('Reset MFA setup')
-    expect(userAdminPage).toContain('Confirm MFA reset')
-    expect(userAdminPage).toContain('Their password, employee record, and history will not change.')
-    expect(userAdminPage).toContain('mfa-reset-confirmation__actions')
+  it('does not advertise a factor-only reset as safe or complete', () => {
+    expect(userAdminPage).toContain('MFA reset unavailable')
+    expect(userAdminPage).toContain('paused until it can also invalidate every active session and establish a replacement login credential')
+    expect(userAdminPage).not.toContain('Reset MFA setup')
+    expect(userAdminPage).not.toContain('Confirm MFA reset')
   })
 })

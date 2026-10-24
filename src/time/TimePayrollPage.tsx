@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient, type UseMutationResult } from '@tanstack/react-query'
 import {
@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
-import { getSessionContext } from '../data/auth'
+import { authSessionIdFromAccessToken, getSessionContext } from '../data/auth'
 import {
   createPayrollExportBatch,
   correctPayrollBatchAssignment,
@@ -40,7 +40,7 @@ import {
   type TimekeepingReview,
   type TimekeepingReviewRow,
 } from '../data/timekeeping'
-import { isSupabaseConfigured } from '../lib/supabase'
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../pages/TimePage'
 import { canExportPayroll, canManageTime, canOverridePayrollAssignment, canViewTeamTime } from './timePermissions'
@@ -69,9 +69,421 @@ interface PayrollDownloadRequest {
   batchId: string
 }
 
+export interface PayrollFileOperationOwner {
+  authSessionId: string
+  authUserId: string
+  employeeId: string
+  lifecycleGeneration: number
+}
+
+interface PayrollAuthenticatedIdentity {
+  authSessionId: string
+  authUserId: string
+  employeeId: string
+}
+
+type PayrollIdentityReader = () => Promise<PayrollAuthenticatedIdentity>
+type PayrollOwnerVerifier = (owner: PayrollFileOperationOwner) => Promise<boolean>
+
 interface PayrollWorkbookDownload {
   accountabilityEvents: PayrollAccountabilityEvent[]
   detail: PayrollExportDetail
+}
+
+interface PayrollWorkbookDownloaded {
+  accountabilityEvents: PayrollAccountabilityEvent[] | null
+  detail: PayrollExportDetail | null
+  download: PayrollWorkbookDownloadResult | null
+  owner: PayrollFileOperationOwner
+  periodGeneration: number
+  staleOwner: boolean
+}
+
+interface PayrollPreviewDownloaded {
+  download: PayrollWorkbookDownloadResult | null
+  owner: PayrollFileOperationOwner
+  staleOwner: boolean
+}
+
+interface PayrollLockResult {
+  batch: PayrollExportBatch
+  preparationError: Error | null
+  workbook: PayrollWorkbookDownload | null
+}
+
+interface PayrollPeriodScopedLockResult extends PayrollLockResult {
+  periodGeneration: number
+}
+
+interface PayrollScopedLockResult extends PayrollPeriodScopedLockResult {
+  owner: PayrollFileOperationOwner
+  staleOwner: boolean
+}
+
+interface PayrollLockDependencies {
+  createBatch: typeof createPayrollExportBatch
+  getAccountabilityEvents: typeof getPayrollAccountabilityEvents
+  getBatchDetail: typeof getPayrollExportBatchDetail
+}
+
+function normalizeError(error: unknown, fallback: string): Error {
+  return error instanceof Error ? error : new Error(fallback)
+}
+
+async function readCurrentPayrollAuthenticatedIdentity(): Promise<PayrollAuthenticatedIdentity> {
+  const firstClient = getSupabaseClient()
+  const first = await firstClient.auth.getSession()
+  const firstSession = first.data.session
+  const firstSessionId = firstSession?.access_token
+    ? authSessionIdFromAccessToken(firstSession.access_token)
+    : null
+  if (first.error || !firstSession?.user.id || !firstSessionId) {
+    throw new Error('Your secure payroll session is not available.')
+  }
+
+  const context = await getSessionContext()
+  const currentClient = getSupabaseClient()
+  const current = await currentClient.auth.getSession()
+  const currentSession = current.data.session
+  const currentSessionId = currentSession?.access_token
+    ? authSessionIdFromAccessToken(currentSession.access_token)
+    : null
+  if (current.error
+    || !currentSession?.user.id
+    || !currentSessionId
+    || currentSession.user.id !== firstSession.user.id
+    || currentSessionId !== firstSessionId) {
+    throw new Error('The signed-in account changed while payroll access was being verified.')
+  }
+
+  return {
+    authSessionId: currentSessionId,
+    authUserId: currentSession.user.id,
+    employeeId: context.employeeId,
+  }
+}
+
+// oxlint-disable-next-line react/only-export-components -- Operation-owner capture is exported for deferred account-switch regression coverage.
+export async function capturePayrollFileOperationOwner(
+  expectedEmployeeId: string | null | undefined,
+  lifecycleGeneration: number,
+  readIdentity: PayrollIdentityReader = readCurrentPayrollAuthenticatedIdentity,
+): Promise<PayrollFileOperationOwner> {
+  if (!expectedEmployeeId) throw new Error('Your secure payroll identity is not available.')
+  const identity = await readIdentity()
+  if (identity.employeeId !== expectedEmployeeId) {
+    throw new Error('The signed-in account changed before the payroll operation started.')
+  }
+  return { ...identity, lifecycleGeneration }
+}
+
+// oxlint-disable-next-line react/only-export-components -- Identity fence is exported for deferred account-switch regression coverage.
+export async function payrollFileOperationOwnerIsCurrent(
+  owner: PayrollFileOperationOwner,
+  currentLifecycleGeneration: () => number,
+  isMounted: () => boolean,
+  readIdentity: PayrollIdentityReader = readCurrentPayrollAuthenticatedIdentity,
+): Promise<boolean> {
+  if (!isMounted() || owner.lifecycleGeneration !== currentLifecycleGeneration()) return false
+  try {
+    const current = await readIdentity()
+    return isMounted()
+      && owner.lifecycleGeneration === currentLifecycleGeneration()
+      && owner.authSessionId === current.authSessionId
+      && owner.authUserId === current.authUserId
+      && owner.employeeId === current.employeeId
+  } catch {
+    return false
+  }
+}
+
+// oxlint-disable-next-line react/only-export-components -- Receipt visibility must be synchronously account-scoped during React rendering.
+export function payrollFileOperationReceiptIsCurrent(
+  result: { owner: PayrollFileOperationOwner; staleOwner: boolean },
+  currentEmployeeId: string | null | undefined,
+  currentLifecycleGeneration: number,
+): boolean {
+  return !result.staleOwner
+    && Boolean(currentEmployeeId)
+    && result.owner.employeeId === currentEmployeeId
+    && result.owner.lifecycleGeneration === currentLifecycleGeneration
+}
+
+// oxlint-disable-next-line react/only-export-components -- Late mutation callbacks use this fence before cache or UI writes.
+export async function commitPayrollFileSideEffectIfCurrent(
+  owner: PayrollFileOperationOwner,
+  isOwnerCurrent: PayrollOwnerVerifier,
+  commit: () => void,
+): Promise<boolean> {
+  if (!await isOwnerCurrent(owner)) return false
+  commit()
+  return true
+}
+
+// oxlint-disable-next-line react/only-export-components -- Pure fail-closed selector is exported for focused regression coverage.
+export function verifiedPayrollQueryData<T>(query: { data?: T; isError: boolean; isRefetchError: boolean }): T | undefined {
+  return query.isError || query.isRefetchError ? undefined : query.data
+}
+
+// oxlint-disable-next-line react/only-export-components -- Pure period-scope helper is exported for focused regression coverage.
+export function resetPayrollPeriodReceiptsIfChanged(
+  current: Pick<TimePeriod, 'fromDate' | 'throughDate'>,
+  next: Pick<TimePeriod, 'fromDate' | 'throughDate'>,
+  resetters: {
+    clearRecoveredDownload: () => void
+    resetDownload: () => void
+    resetExport: () => void
+    resetPreview: () => void
+  },
+): boolean {
+  if (current.fromDate === next.fromDate && current.throughDate === next.throughDate) return false
+  resetters.resetPreview()
+  resetters.resetExport()
+  resetters.resetDownload()
+  resetters.clearRecoveredDownload()
+  return true
+}
+
+// oxlint-disable-next-line react/only-export-components -- Pure stale-operation guard is exported for focused regression coverage.
+export function payrollPeriodOperationIsCurrent(startedGeneration: number, currentGeneration: number): boolean {
+  return startedGeneration === currentGeneration
+}
+
+// oxlint-disable-next-line react/only-export-components -- Synchronous ref guard is exported for same-frame event regression coverage.
+export function tryBeginPayrollFileOperation(inFlight: { current: boolean }): boolean {
+  if (inFlight.current) return false
+  inFlight.current = true
+  return true
+}
+
+// oxlint-disable-next-line react/only-export-components -- Pure stale-receipt guard is exported for focused regression coverage.
+export function stalePayrollLockResult(result: PayrollLockResult, periodGeneration: number): PayrollPeriodScopedLockResult {
+  return {
+    ...result,
+    preparationError: result.preparationError ?? new Error('The payroll batch was locked, but the selected period changed before its workbook could be downloaded. Download the existing locked batch from payroll history.'),
+    workbook: null,
+    periodGeneration,
+  }
+}
+
+// oxlint-disable-next-line react/only-export-components -- Transaction-state helper is exported for focused regression coverage.
+export async function lockPayrollExportAndPrepareWorkbook(
+  input: { fromDate: string; note: string; throughDate: string },
+  dependencies: PayrollLockDependencies = {
+    createBatch: createPayrollExportBatch,
+    getAccountabilityEvents: getPayrollAccountabilityEvents,
+    getBatchDetail: getPayrollExportBatchDetail,
+  },
+): Promise<PayrollLockResult> {
+  const batch = await dependencies.createBatch(input)
+
+  try {
+    const [detail, accountabilityEvents] = await Promise.all([
+      dependencies.getBatchDetail(batch.id),
+      dependencies.getAccountabilityEvents({ fromDate: batch.fromDate, throughDate: batch.throughDate }),
+    ])
+    return {
+      batch,
+      preparationError: null,
+      workbook: { accountabilityEvents, detail },
+    }
+  } catch (error) {
+    // The server-side lock is already authoritative. A follow-up read or local
+    // workbook failure must never be presented as a failed lock or retried as a
+    // new lock. The existing batch id is the recovery handle.
+    return {
+      batch,
+      preparationError: normalizeError(error, 'The payroll batch was locked, but its workbook could not be prepared.'),
+      workbook: null,
+    }
+  }
+}
+
+function downloadOfficialPayrollWorkbook({ accountabilityEvents, detail }: PayrollWorkbookDownload): void {
+  downloadPayrollWorkbook({
+    accountabilityEvents,
+    batch: detail.batch,
+    exportNote: detail.batch.note,
+    exportType: 'Official Locked',
+    review: {
+      ...detail,
+      fromDate: detail.batch.fromDate,
+      exceptionResolutionHistory: detail.exceptionResolutionHistory,
+      operationalTimeZone: 'America/Denver',
+      pendingCorrections: [],
+      serverTimestamp: detail.batch.createdAt,
+      summary: {
+        exceptionCount: 0,
+        grossMinutes: detail.batch.grossMinutes,
+        ...payrollCategoryTotals(detail.rows),
+        overtimeMinutes: detail.rows.reduce((total, row) => total + row.overtimeMinutes, 0),
+        paidMinutes: detail.batch.paidMinutes,
+        pendingCorrectionCount: 0,
+        readyCount: detail.rows.length,
+        regularMinutes: detail.rows.reduce((total, row) => total + row.regularMinutes, 0),
+        rowCount: detail.rows.length,
+        salaryDefaultMinutes: 0,
+        timeOffMinutes: 0,
+      },
+      throughDate: detail.batch.throughDate,
+    },
+  }, payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official'))
+}
+
+// oxlint-disable-next-line react/only-export-components -- Download-recovery helper is exported for focused regression coverage.
+export function finalizeLockedPayrollWorkbookDownload(
+  result: PayrollLockResult,
+  download: (workbook: PayrollWorkbookDownload) => void = downloadOfficialPayrollWorkbook,
+): PayrollLockResult {
+  if (!result.workbook) return result
+  try {
+    download(result.workbook)
+    return result
+  } catch (error) {
+    return {
+      ...result,
+      preparationError: normalizeError(error, 'The payroll batch was locked, but the workbook download could not be created.'),
+      workbook: null,
+    }
+  }
+}
+
+// oxlint-disable-next-line react/only-export-components -- Account-scoped preview helper is exported for deferred-response regression coverage.
+export async function downloadPayrollPreviewForOwner(
+  workbookInput: Parameters<typeof downloadPayrollWorkbook>[0],
+  fileName: string,
+  owner: PayrollFileOperationOwner,
+  isOwnerCurrent: PayrollOwnerVerifier,
+  download: typeof downloadPayrollWorkbook = downloadPayrollWorkbook,
+): Promise<PayrollPreviewDownloaded> {
+  if (!await isOwnerCurrent(owner)) {
+    return { download: null, owner, staleOwner: true }
+  }
+  return {
+    download: download(workbookInput, fileName),
+    owner,
+    staleOwner: false,
+  }
+}
+
+interface PayrollHistoryDownloadDependencies {
+  getAccountabilityEvents: typeof getPayrollAccountabilityEvents
+  getBatchDetail: typeof getPayrollExportBatchDetail
+}
+
+// oxlint-disable-next-line react/only-export-components -- Account-scoped history helper is exported for deferred-response regression coverage.
+export async function downloadPayrollHistoryForOwner(
+  request: PayrollDownloadRequest,
+  owner: PayrollFileOperationOwner,
+  periodGeneration: number,
+  currentPeriodGeneration: () => number,
+  isOwnerCurrent: PayrollOwnerVerifier,
+  dependencies: PayrollHistoryDownloadDependencies = {
+    getAccountabilityEvents: getPayrollAccountabilityEvents,
+    getBatchDetail: getPayrollExportBatchDetail,
+  },
+  download: typeof downloadPayrollWorkbook = downloadPayrollWorkbook,
+): Promise<PayrollWorkbookDownloaded> {
+  if (!await isOwnerCurrent(owner)) {
+    throw new Error('The signed-in account changed before the payroll history download started.')
+  }
+  const detail = await dependencies.getBatchDetail(request.batchId)
+  const events = await dependencies.getAccountabilityEvents({
+    fromDate: detail.batch.fromDate,
+    throughDate: detail.batch.throughDate,
+  })
+  if (!payrollPeriodOperationIsCurrent(periodGeneration, currentPeriodGeneration())
+    || !await isOwnerCurrent(owner)) {
+    return {
+      accountabilityEvents: null,
+      detail: null,
+      download: null,
+      owner,
+      periodGeneration,
+      staleOwner: true,
+    }
+  }
+  const workbook = { accountabilityEvents: events, detail }
+  return {
+    ...workbook,
+    download: downloadPayrollWorkbookForOfficialDetail(workbook, download),
+    owner,
+    periodGeneration,
+    staleOwner: false,
+  }
+}
+
+function downloadPayrollWorkbookForOfficialDetail(
+  { accountabilityEvents, detail }: PayrollWorkbookDownload,
+  download: typeof downloadPayrollWorkbook,
+): PayrollWorkbookDownloadResult {
+  return download({
+    accountabilityEvents,
+    batch: detail.batch,
+    exportNote: detail.batch.note,
+    exportType: 'Official Locked',
+    review: {
+      ...detail,
+      fromDate: detail.batch.fromDate,
+      exceptionResolutionHistory: detail.exceptionResolutionHistory,
+      operationalTimeZone: 'America/Denver',
+      pendingCorrections: [],
+      serverTimestamp: detail.batch.createdAt,
+      summary: {
+        exceptionCount: 0,
+        grossMinutes: detail.batch.grossMinutes,
+        ...payrollCategoryTotals(detail.rows),
+        overtimeMinutes: detail.rows.reduce((total, row) => total + row.overtimeMinutes, 0),
+        paidMinutes: detail.batch.paidMinutes,
+        pendingCorrectionCount: 0,
+        readyCount: detail.rows.length,
+        regularMinutes: detail.rows.reduce((total, row) => total + row.regularMinutes, 0),
+        rowCount: detail.rows.length,
+        salaryDefaultMinutes: 0,
+        timeOffMinutes: 0,
+      },
+      throughDate: detail.batch.throughDate,
+    },
+  }, payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official'))
+}
+
+// oxlint-disable-next-line react/only-export-components -- Account-scoped lock helper preserves authoritative receipts while fencing local effects.
+export async function lockPayrollExportForOwner(
+  input: { fromDate: string; note: string; throughDate: string },
+  owner: PayrollFileOperationOwner,
+  periodGeneration: number,
+  currentPeriodGeneration: () => number,
+  isOwnerCurrent: PayrollOwnerVerifier,
+  dependencies?: PayrollLockDependencies,
+  download: (workbook: PayrollWorkbookDownload) => void = downloadOfficialPayrollWorkbook,
+): Promise<PayrollScopedLockResult> {
+  if (!await isOwnerCurrent(owner)) {
+    throw new Error('The signed-in account changed before payroll could be locked.')
+  }
+  const result = await lockPayrollExportAndPrepareWorkbook(input, dependencies)
+  if (!payrollPeriodOperationIsCurrent(periodGeneration, currentPeriodGeneration())) {
+    return {
+      ...stalePayrollLockResult(result, periodGeneration),
+      owner,
+      staleOwner: false,
+    }
+  }
+  if (!await isOwnerCurrent(owner)) {
+    return {
+      ...result,
+      owner,
+      periodGeneration,
+      preparationError: new Error('The payroll batch was locked, but this browser changed signed-in accounts before the workbook could be downloaded.'),
+      staleOwner: true,
+      workbook: null,
+    }
+  }
+  return {
+    ...finalizeLockedPayrollWorkbookDownload(result, download),
+    owner,
+    periodGeneration,
+    staleOwner: false,
+  }
 }
 
 interface PayrollSummarySelection {
@@ -253,12 +665,15 @@ function PayrollRulesSummary({ rules, period }: { period: Pick<TimePeriod, 'from
   )
 }
 
-function PeriodControls({
+// oxlint-disable-next-line react/only-export-components -- Exported for the in-flight payroll-lock regression test.
+export function PeriodControls({
+  disabled = false,
   fromDate,
   onChange,
   rules,
   throughDate,
 }: {
+  disabled?: boolean
   fromDate: string
   onChange: (period: Pick<TimePeriod, 'fromDate' | 'throughDate'>, touched?: boolean) => void
   rules?: PayrollRules
@@ -289,6 +704,7 @@ function PeriodControls({
         <label>
           <span>From</span>
           <input
+            disabled={disabled}
             max={throughDate}
             onChange={(event) => onChange({ fromDate: event.target.value, throughDate }, true)}
             type="date"
@@ -298,6 +714,7 @@ function PeriodControls({
         <label>
           <span>Through</span>
           <input
+            disabled={disabled}
             min={fromDate}
             onChange={(event) => onChange({ fromDate, throughDate: event.target.value }, true)}
             type="date"
@@ -306,37 +723,112 @@ function PeriodControls({
         </label>
       </div>
       <div className="payroll-period-controls__actions">
-        <TimeButton aria-pressed={completedSelected} onClick={() => onChange(lastCompleted)} variant={completedSelected ? 'primary' : 'secondary'}>Last completed pay period</TimeButton>
-        <TimeButton aria-pressed={currentSelected} onClick={() => onChange(activePeriod)} variant={currentSelected ? 'primary' : 'secondary'}>Current open period</TimeButton>
-        <TimeButton onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, -1, periodRules))} variant="secondary">Previous period</TimeButton>
-        <TimeButton onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, 1, periodRules))} variant="secondary">Next period</TimeButton>
+        <TimeButton aria-pressed={completedSelected} disabled={disabled} onClick={() => onChange(lastCompleted)} variant={completedSelected ? 'primary' : 'secondary'}>Last completed pay period</TimeButton>
+        <TimeButton aria-pressed={currentSelected} disabled={disabled} onClick={() => onChange(activePeriod)} variant={currentSelected ? 'primary' : 'secondary'}>Current open period</TimeButton>
+        <TimeButton disabled={disabled} onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, -1, periodRules))} variant="secondary">Previous period</TimeButton>
+        <TimeButton disabled={disabled} onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, 1, periodRules))} variant="secondary">Next period</TimeButton>
       </div>
+      {disabled ? <p className="form-feedback" role="status">This pay period stays fixed until the current payroll file operation finishes.</p> : null}
     </section>
+  )
+}
+
+export function PayrollLockRecoveryNotice({
+  batchDigest,
+  batchId,
+  preparationError,
+  recoveredFileName,
+  retryDownloadError,
+  retryDownloadPending,
+  onRetryDownload,
+}: {
+  batchDigest: string
+  batchId: string
+  preparationError: Error | null
+  recoveredFileName: string | null
+  retryDownloadError: Error | null
+  retryDownloadPending: boolean
+  onRetryDownload: (batchId: string) => void
+}) {
+  if (recoveredFileName) {
+    return (
+      <p className="form-feedback form-feedback--success" role="status">
+        Official payroll remained locked and the existing workbook downloaded successfully: {recoveredFileName}.
+      </p>
+    )
+  }
+
+  return (
+    <>
+      <div className="inline-alert" role="status">
+        <p>
+          Official payroll was locked successfully as batch {batchDigest.slice(0, 10)},
+          but the workbook could not be prepared: {preparationError?.message}
+        </p>
+        <TimeButton
+          disabled={retryDownloadPending}
+          icon={Download}
+          loading={retryDownloadPending}
+          onClick={() => onRetryDownload(batchId)}
+          variant="secondary"
+        >
+          Retry Workbook Download
+        </TimeButton>
+      </div>
+      {retryDownloadError ? (
+        <p className="form-feedback form-feedback--error" role="alert">Workbook retry failed: {retryDownloadError.message}</p>
+      ) : null}
+    </>
   )
 }
 
 function PayrollExportPanel({
   accountabilityEvents,
   canLock,
+  canPreview,
+  currentEmployeeId,
+  currentOwnerGeneration,
   exportMutation,
   lockBlockedReason,
   note,
   onNoteChange,
+  onStartOperation,
+  onRetryDownload,
   previewMutation,
+  recoveredDownload,
+  retryDownloadError,
+  retryDownloadPending,
   review,
   rules,
 }: {
   accountabilityEvents: PayrollAccountabilityEvent[]
   canLock: boolean
-  exportMutation: UseMutationResult<PayrollWorkbookDownload, Error, string>
+  canPreview: boolean
+  currentEmployeeId: string | null | undefined
+  currentOwnerGeneration: number
+  exportMutation: UseMutationResult<PayrollScopedLockResult, Error, string>
   lockBlockedReason: string
   note: string
   onNoteChange: (value: string) => void
-  previewMutation: UseMutationResult<PayrollWorkbookDownloadResult, Error, void>
+  onStartOperation: () => boolean
+  onRetryDownload: (batchId: string) => void
+  previewMutation: UseMutationResult<PayrollPreviewDownloaded, Error, void>
+  recoveredDownload: { batchId: string; fileName: string } | null
+  retryDownloadError: Error | null
+  retryDownloadPending: boolean
   review: TimekeepingReview
   rules?: PayrollRules
 }) {
   const noteMissing = note.trim().length === 0
+  const visiblePreviewResult = previewMutation.isSuccess
+    && payrollFileOperationReceiptIsCurrent(previewMutation.data, currentEmployeeId, currentOwnerGeneration)
+    ? previewMutation.data
+    : null
+  const visibleExportResult = exportMutation.isSuccess
+    && payrollFileOperationReceiptIsCurrent(exportMutation.data, currentEmployeeId, currentOwnerGeneration)
+    ? exportMutation.data
+    : null
+  const recoveryMatchesLockedBatch = recoveredDownload?.batchId === visibleExportResult?.batch.id
 
   return (
     <section className="time-card payroll-export-panel" aria-labelledby="payroll-export-title">
@@ -361,10 +853,12 @@ function PayrollExportPanel({
         </label>
         <div className="payroll-export-panel__actions">
           <TimeButton
-            disabled={(review.rows.length === 0 && accountabilityEvents.length === 0) || previewMutation.isPending}
+            disabled={!canPreview || (review.rows.length === 0 && accountabilityEvents.length === 0) || previewMutation.isPending}
             icon={Download}
             loading={previewMutation.isPending}
-            onClick={() => previewMutation.mutate()}
+            onClick={() => {
+              if (onStartOperation()) previewMutation.mutate()
+            }}
             variant="secondary"
           >
             Download Preview Workbook
@@ -373,7 +867,9 @@ function PayrollExportPanel({
             disabled={!canLock}
             icon={LockKeyhole}
             loading={exportMutation.isPending}
-            onClick={() => exportMutation.mutate(note.trim())}
+            onClick={() => {
+              if (onStartOperation()) exportMutation.mutate(note.trim())
+            }}
             variant="primary"
           >
             Lock official export
@@ -387,17 +883,28 @@ function PayrollExportPanel({
         ) : null}
         {rules ? <small>Workbook dates use MM/DD/YYYY and times show civilian plus military time.</small> : null}
         {previewMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">Preview download failed: {previewMutation.error.message}</p> : null}
-        {previewMutation.isSuccess ? (
+        {visiblePreviewResult?.download ? (
           <p className="form-feedback form-feedback--success" role="status">
-            Preview workbook downloaded: {previewMutation.data.fileName}.
+            Preview workbook downloaded: {visiblePreviewResult.download.fileName}.
           </p>
         ) : null}
         {exportMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{exportMutation.error.message}</p> : null}
-        {exportMutation.isSuccess ? (
+        {visibleExportResult?.workbook ? (
           <p className="form-feedback form-feedback--success" role="status">
-            {exportMutation.data.detail.batch.duplicate ? 'This exact payroll batch was already locked.' : 'Official payroll export locked and downloaded.'}
-            {' '}Batch {exportMutation.data.detail.batch.digest.slice(0, 10)}.
+            {visibleExportResult.batch.duplicate ? 'This exact payroll batch was already locked.' : 'Official payroll export locked and downloaded.'}
+            {' '}Batch {visibleExportResult.batch.digest.slice(0, 10)}.
           </p>
+        ) : null}
+        {visibleExportResult && !visibleExportResult.workbook ? (
+          <PayrollLockRecoveryNotice
+            batchDigest={visibleExportResult.batch.digest}
+            batchId={visibleExportResult.batch.id}
+            onRetryDownload={onRetryDownload}
+            preparationError={visibleExportResult.preparationError}
+            recoveredFileName={recoveryMatchesLockedBatch && recoveredDownload ? recoveredDownload.fileName : null}
+            retryDownloadError={retryDownloadError}
+            retryDownloadPending={retryDownloadPending}
+          />
         ) : null}
       </div>
     </section>
@@ -926,9 +1433,11 @@ export function PayrollRowsTable({
 function PayrollHistory({
   batches,
   downloadMutation,
+  onStartOperation,
 }: {
   batches: PayrollExportBatch[]
-  downloadMutation: UseMutationResult<PayrollWorkbookDownload, Error, PayrollDownloadRequest>
+  downloadMutation: UseMutationResult<PayrollWorkbookDownloaded, Error, PayrollDownloadRequest>
+  onStartOperation: () => boolean
 }) {
   if (batches.length === 0) {
     return (
@@ -953,7 +1462,9 @@ function PayrollHistory({
               disabled={downloadMutation.isPending}
               icon={Download}
               loading={downloadMutation.isPending && downloadMutation.variables?.batchId === batch.id}
-              onClick={() => downloadMutation.mutate({ batchId: batch.id })}
+              onClick={() => {
+                if (onStartOperation()) downloadMutation.mutate({ batchId: batch.id })
+              }}
               variant="secondary"
             >
               Download Workbook
@@ -985,6 +1496,43 @@ export function TimePayrollPage() {
   const [payrollAssignmentWeek, setPayrollAssignmentWeek] = useState('')
   const [payrollAssignmentReason, setPayrollAssignmentReason] = useState('')
   const [selectedPayrollEmployeeId, setSelectedPayrollEmployeeId] = useState<string | null>(null)
+  const [recoveredDownload, setRecoveredDownload] = useState<{ batchId: string; fileName: string } | null>(null)
+  const payrollPeriodGeneration = useRef(0)
+  const payrollFileOperationInFlight = useRef(false)
+  const payrollFileOperationToken = useRef(0)
+  const payrollFileOwnerLifecycle = useRef(0)
+  const payrollFileMounted = useRef(false)
+  const payrollFileEmployeeIdentity = useRef<string | null | undefined>(undefined)
+  const resetPayrollFileMutationUi = useRef<() => void>(() => undefined)
+  const [payrollFileOwnerRevision, setPayrollFileOwnerRevision] = useState(0)
+
+  const invalidatePayrollFileOwner = useCallback(() => {
+    payrollFileOwnerLifecycle.current += 1
+    payrollPeriodGeneration.current += 1
+    payrollFileOperationToken.current += 1
+    payrollFileOperationInFlight.current = false
+    setPayrollFileOwnerRevision(payrollFileOwnerLifecycle.current)
+    setRecoveredDownload(null)
+  }, [])
+
+  const isPayrollFileOwnerCurrent = useCallback((owner: PayrollFileOperationOwner) => (
+    payrollFileOperationOwnerIsCurrent(
+      owner,
+      () => payrollFileOwnerLifecycle.current,
+      () => payrollFileMounted.current,
+    )
+  ), [])
+
+  useEffect(() => {
+    payrollFileMounted.current = true
+    return () => {
+      payrollFileMounted.current = false
+      payrollFileOwnerLifecycle.current += 1
+      payrollPeriodGeneration.current += 1
+      payrollFileOperationToken.current += 1
+      payrollFileOperationInFlight.current = false
+    }
+  }, [])
 
   const sessionQuery = useQuery({
     queryKey: ['session-context'],
@@ -1004,30 +1552,40 @@ export function TimePayrollPage() {
     queryKey: ['time-payroll-rules'],
     queryFn: getPayrollRules,
   })
+  const verifiedRules = verifiedPayrollQueryData(rulesQuery)
   useEffect(() => {
-    if (rangeTouched || !rulesQuery.data) return
-    const activePeriod = currentPayrollPeriod(undefined, rulesForPeriod(rulesQuery.data))
+    if (rangeTouched || !verifiedRules) return
+    const activePeriod = currentPayrollPeriod(undefined, rulesForPeriod(verifiedRules))
     setFromDate(activePeriod.fromDate)
     setThroughDate(activePeriod.throughDate)
     setRangeTouched(true)
     setSearchParams({ from: activePeriod.fromDate, through: activePeriod.throughDate }, { replace: true })
-  }, [rangeTouched, rulesQuery.data, setSearchParams])
+  }, [rangeTouched, setSearchParams, verifiedRules])
 
   const reviewQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed && reviewNeeded,
-    queryKey: ['time-payroll-review', fromDate, throughDate],
+    queryKey: ['time-payroll-review', sessionQuery.data?.employeeId ?? 'anonymous', fromDate, throughDate],
     queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
   })
   const accountabilityQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed && activeSection === 'export',
-    queryKey: ['time-payroll-accountability', fromDate, throughDate],
+    queryKey: ['time-payroll-accountability', sessionQuery.data?.employeeId ?? 'anonymous', fromDate, throughDate],
     queryFn: () => getPayrollAccountabilityEvents({ fromDate, throughDate }),
   })
   const historyQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && exportAllowed && activeSection === 'export',
-    queryKey: ['payroll-export-history'],
+    queryKey: ['payroll-export-history', sessionQuery.data?.employeeId ?? 'anonymous'],
     queryFn: () => getPayrollExportHistory(20),
   })
+  const reviewVerificationFailed = reviewQuery.isError || reviewQuery.isRefetchError
+  const verifiedReviewData = verifiedPayrollQueryData(reviewQuery)
+  const verifiedAccountabilityEvents = verifiedPayrollQueryData(accountabilityQuery)
+  useEffect(() => {
+    if (!reviewVerificationFailed) return
+    setSelectedBlockerRow(null)
+    setSelectedCorrection(null)
+    setSelectedPayrollEmployeeId(null)
+  }, [reviewVerificationFailed])
   const correctionDecisionMutation = useMutation({
     mutationFn: (input: { approved: boolean; correctionId: string; note: string | null }) => reviewTimeEventCorrection(input),
     onSuccess: async () => {
@@ -1076,7 +1634,7 @@ export function TimePayrollPage() {
       ])
     },
   })
-  const review = useMemo(() => workedTimePayrollReview(reviewQuery.data), [reviewQuery.data])
+  const review = useMemo(() => workedTimePayrollReview(verifiedReviewData), [verifiedReviewData])
   const lockBlockedReason = payrollLockBlocker(review)
   const readinessPercent = payrollReadinessPercent(review)
   const employeeSummaries = useMemo(() => summarizePayrollRowsByEmployee(review?.rows ?? []), [review])
@@ -1084,13 +1642,14 @@ export function TimePayrollPage() {
     () => employeeSummaries.reduce((total, summary) => total + summary.trainingMinutes, 0),
     [employeeSummaries],
   )
-  const accountabilityEvents = useMemo(() => accountabilityQuery.data ?? [], [accountabilityQuery.data])
-  const payrollWorkbookInput = useMemo(() => review ? ({
+  const accountabilityEvents = useMemo(() => verifiedAccountabilityEvents ?? [], [verifiedAccountabilityEvents])
+  const exportInputsVerified = Boolean(review && verifiedRules && verifiedAccountabilityEvents)
+  const payrollWorkbookInput = useMemo(() => exportInputsVerified && review && verifiedRules ? ({
     accountabilityEvents,
     exportType: 'Preview' as const,
     review,
-    rules: rulesQuery.data ?? review.payrollRules,
-  }) : null, [accountabilityEvents, review, rulesQuery.data])
+    rules: verifiedRules,
+  }) : null, [accountabilityEvents, exportInputsVerified, review, verifiedRules])
   const weeklySummaryGroups = useMemo(
     () => payrollWorkbookInput ? summarizePayrollWorkbookByWeek(payrollWorkbookInput) : [],
     [payrollWorkbookInput],
@@ -1105,102 +1664,144 @@ export function TimePayrollPage() {
     : [], [review, selectedPayrollEmployeeId])
   const selectedEmployeeName = selectedEmployeeWeeks[0]?.summary.employeeName ?? selectedEmployeeRows[0]?.employeeName ?? ''
   const downloadMutation = useMutation({
-    mutationFn: async (request: PayrollDownloadRequest): Promise<PayrollWorkbookDownload> => {
-      const detail = await getPayrollExportBatchDetail(request.batchId)
-      const events = await getPayrollAccountabilityEvents({
-        fromDate: detail.batch.fromDate,
-        throughDate: detail.batch.throughDate,
-      })
-      return { accountabilityEvents: events, detail }
+    mutationFn: async (request: PayrollDownloadRequest): Promise<PayrollWorkbookDownloaded> => {
+      const periodGeneration = payrollPeriodGeneration.current
+      const owner = await capturePayrollFileOperationOwner(
+        sessionQuery.data?.employeeId,
+        payrollFileOwnerLifecycle.current,
+      )
+      return downloadPayrollHistoryForOwner(
+        request,
+        owner,
+        periodGeneration,
+        () => payrollPeriodGeneration.current,
+        isPayrollFileOwnerCurrent,
+      )
     },
-    onSuccess: ({ accountabilityEvents: events, detail }) => {
-      downloadPayrollWorkbook({
-        accountabilityEvents: events,
-        batch: detail.batch,
-        exportNote: detail.batch.note,
-        exportType: 'Official Locked',
-        review: {
-          ...detail,
-          fromDate: detail.batch.fromDate,
-          exceptionResolutionHistory: detail.exceptionResolutionHistory,
-          operationalTimeZone: 'America/Denver',
-          pendingCorrections: [],
-          serverTimestamp: detail.batch.createdAt,
-          summary: {
-            exceptionCount: 0,
-            grossMinutes: detail.batch.grossMinutes,
-            ...payrollCategoryTotals(detail.rows),
-            overtimeMinutes: detail.rows.reduce((total, row) => total + row.overtimeMinutes, 0),
-            paidMinutes: detail.batch.paidMinutes,
-            pendingCorrectionCount: 0,
-            readyCount: detail.rows.length,
-            regularMinutes: detail.rows.reduce((total, row) => total + row.regularMinutes, 0),
-            rowCount: detail.rows.length,
-            salaryDefaultMinutes: 0,
-            timeOffMinutes: 0,
-          },
-          throughDate: detail.batch.throughDate,
-        },
-      }, payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official'))
+    onMutate: () => {
+      payrollFileOperationInFlight.current = true
+      payrollFileOperationToken.current += 1
+      return { operationToken: payrollFileOperationToken.current }
+    },
+    onSuccess: async ({ detail, download, owner, periodGeneration, staleOwner }) => {
+      if (staleOwner || !download || !detail || !payrollPeriodOperationIsCurrent(periodGeneration, payrollPeriodGeneration.current)) return
+      await commitPayrollFileSideEffectIfCurrent(owner, isPayrollFileOwnerCurrent, () => {
+        setRecoveredDownload({ batchId: detail.batch.id, fileName: download.fileName })
+      })
+    },
+    onSettled: (_data, _error, _variables, mutationContext) => {
+      if (mutationContext?.operationToken === payrollFileOperationToken.current) {
+        payrollFileOperationInFlight.current = false
+      }
     },
   })
   const exportMutation = useMutation({
-    mutationFn: async (note: string): Promise<PayrollWorkbookDownload> => {
-      const batch = await createPayrollExportBatch({ fromDate, note, throughDate })
-      const [detail, events] = await Promise.all([
-        getPayrollExportBatchDetail(batch.id),
-        getPayrollAccountabilityEvents({ fromDate: batch.fromDate, throughDate: batch.throughDate }),
-      ])
-      return { accountabilityEvents: events, detail }
+    mutationFn: async (note: string): Promise<PayrollScopedLockResult> => {
+      const periodGeneration = payrollPeriodGeneration.current
+      const owner = await capturePayrollFileOperationOwner(
+        sessionQuery.data?.employeeId,
+        payrollFileOwnerLifecycle.current,
+      )
+      return lockPayrollExportForOwner(
+        { fromDate, note, throughDate },
+        owner,
+        periodGeneration,
+        () => payrollPeriodGeneration.current,
+        isPayrollFileOwnerCurrent,
+      )
     },
-    onSuccess: async ({ accountabilityEvents: events, detail }) => {
-      downloadPayrollWorkbook({
-        accountabilityEvents: events,
-        batch: detail.batch,
-        exportNote: detail.batch.note,
-        exportType: 'Official Locked',
-        review: {
-          ...detail,
-          fromDate: detail.batch.fromDate,
-          exceptionResolutionHistory: detail.exceptionResolutionHistory,
-          operationalTimeZone: 'America/Denver',
-          pendingCorrections: [],
-          serverTimestamp: detail.batch.createdAt,
-          summary: {
-            exceptionCount: 0,
-            grossMinutes: detail.batch.grossMinutes,
-            ...payrollCategoryTotals(detail.rows),
-            overtimeMinutes: detail.rows.reduce((total, row) => total + row.overtimeMinutes, 0),
-            paidMinutes: detail.batch.paidMinutes,
-            pendingCorrectionCount: 0,
-            readyCount: detail.rows.length,
-            regularMinutes: detail.rows.reduce((total, row) => total + row.regularMinutes, 0),
-            rowCount: detail.rows.length,
-            salaryDefaultMinutes: 0,
-            timeOffMinutes: 0,
-          },
-          throughDate: detail.batch.throughDate,
-        },
-      }, payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official'))
-      setExportNote('')
-      await queryClient.invalidateQueries({ queryKey: ['payroll-export-history'] })
+    onMutate: () => {
+      payrollFileOperationInFlight.current = true
+      payrollFileOperationToken.current += 1
+      return { operationToken: payrollFileOperationToken.current }
+    },
+    onSuccess: async ({ batch, owner, periodGeneration, staleOwner }) => {
+      if (staleOwner || !payrollPeriodOperationIsCurrent(periodGeneration, payrollPeriodGeneration.current)) return
+      await commitPayrollFileSideEffectIfCurrent(owner, isPayrollFileOwnerCurrent, () => {
+        setExportNote('')
+        setRecoveredDownload(null)
+        const historyKey = ['payroll-export-history', owner.employeeId]
+        queryClient.setQueryData<PayrollExportBatch[]>(historyKey, (current) => {
+          if (!current) return [batch]
+          return current.some((item) => item.id === batch.id) ? current : [batch, ...current]
+        })
+        void queryClient.invalidateQueries({ queryKey: historyKey }).catch(() => undefined)
+      })
+    },
+    onSettled: (_data, _error, _variables, mutationContext) => {
+      if (mutationContext?.operationToken === payrollFileOperationToken.current) {
+        payrollFileOperationInFlight.current = false
+      }
     },
   })
   const previewDownloadMutation = useMutation({
-    mutationFn: async (): Promise<PayrollWorkbookDownloadResult> => {
+    mutationFn: async (): Promise<PayrollPreviewDownloaded> => {
       if (!payrollWorkbookInput) throw new Error('The payroll preview is not ready yet. Please wait for the review to finish loading.')
-      return downloadPayrollWorkbook(
+      const owner = await capturePayrollFileOperationOwner(
+        sessionQuery.data?.employeeId,
+        payrollFileOwnerLifecycle.current,
+      )
+      return downloadPayrollPreviewForOwner(
         {
           ...payrollWorkbookInput,
           exportNote: 'Preview workbook. Official export requires locking the reviewed payroll batch.',
         },
         payrollExportFileName(payrollWorkbookInput.review.fromDate, payrollWorkbookInput.review.throughDate, 'preview'),
+        owner,
+        isPayrollFileOwnerCurrent,
       )
     },
+    onMutate: () => {
+      payrollFileOperationInFlight.current = true
+      payrollFileOperationToken.current += 1
+      return { operationToken: payrollFileOperationToken.current }
+    },
+    onSettled: (_data, _error, _variables, mutationContext) => {
+      if (mutationContext?.operationToken === payrollFileOperationToken.current) {
+        payrollFileOperationInFlight.current = false
+      }
+    },
   })
+  resetPayrollFileMutationUi.current = () => {
+    downloadMutation.reset()
+    exportMutation.reset()
+    previewDownloadMutation.reset()
+  }
+
+  useEffect(() => {
+    const nextEmployeeId = sessionQuery.data?.employeeId ?? null
+    const previousEmployeeId = payrollFileEmployeeIdentity.current
+    payrollFileEmployeeIdentity.current = nextEmployeeId
+    if (previousEmployeeId === undefined || previousEmployeeId === nextEmployeeId) return
+    invalidatePayrollFileOwner()
+    resetPayrollFileMutationUi.current()
+  }, [invalidatePayrollFileOwner, sessionQuery.data?.employeeId])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+    let active = true
+    let authIdentityKey: string | null | undefined
+    const supabase = getSupabaseClient()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return
+      const sessionId = session?.access_token ? authSessionIdFromAccessToken(session.access_token) : null
+      const nextIdentityKey = session?.user.id && sessionId ? `${session.user.id}:${sessionId}` : null
+      if (authIdentityKey !== undefined && authIdentityKey !== nextIdentityKey) {
+        invalidatePayrollFileOwner()
+        resetPayrollFileMutationUi.current()
+      }
+      authIdentityKey = nextIdentityKey
+    })
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [invalidatePayrollFileOwner])
+  const periodChangeBlocked = exportMutation.isPending || downloadMutation.isPending || previewDownloadMutation.isPending
 
   const totals = useMemo(() => review?.summary, [review])
-  const canLock = Boolean(exportAllowed && review && lockBlockedReason === '' && exportNote.trim().length > 0 && !exportMutation.isPending)
+  const payrollExportBlockedReason = exportInputsVerified ? lockBlockedReason : 'Payroll review, rules, and accountability inputs must all be verified before previewing or locking an export.'
+  const canLock = Boolean(exportAllowed && exportInputsVerified && review && payrollExportBlockedReason === '' && exportNote.trim().length > 0 && !exportMutation.isPending)
   const workspaceSearch = `?from=${encodeURIComponent(fromDate)}&through=${encodeURIComponent(throughDate)}`
   const workspaceHeading: Record<PayrollWorkspaceSection, { eyebrow: string; summary: string; title: string }> = {
     employees: {
@@ -1231,10 +1832,29 @@ export function TimePayrollPage() {
   }
 
   function setPeriod(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>, touched = true) {
+    // The selected period is part of the official lock/download operation's
+    // identity. Do not let a second control path invalidate its receipt while
+    // the server operation is still in flight.
+    if (payrollFileOperationInFlight.current || periodChangeBlocked) return
+    const periodChanged = resetPayrollPeriodReceiptsIfChanged(
+      { fromDate, throughDate },
+      period,
+      {
+        clearRecoveredDownload: () => setRecoveredDownload(null),
+        resetDownload: downloadMutation.reset,
+        resetExport: exportMutation.reset,
+        resetPreview: previewDownloadMutation.reset,
+      },
+    )
+    if (periodChanged) payrollPeriodGeneration.current += 1
     setFromDate(period.fromDate)
     setThroughDate(period.throughDate)
     setRangeTouched(touched)
     setSearchParams({ from: period.fromDate, through: period.throughDate }, { replace: true })
+  }
+
+  function beginPayrollFileOperation(): boolean {
+    return tryBeginPayrollFileOperation(payrollFileOperationInFlight)
   }
 
   function openRowBlocker(row: TimekeepingReviewRow) {
@@ -1330,9 +1950,10 @@ export function TimePayrollPage() {
 
       <section className={activeSection === 'overview' ? 'payroll-command-grid' : 'payroll-command-grid payroll-command-grid--period-only'}>
         <PeriodControls
+          disabled={periodChangeBlocked}
           fromDate={fromDate}
           onChange={setPeriod}
-          rules={rulesQuery.data}
+          rules={verifiedRules}
           throughDate={throughDate}
         />
         {activeSection === 'overview' ? <section className="time-card payroll-readiness-card">
@@ -1441,13 +2062,23 @@ export function TimePayrollPage() {
           <PayrollExportPanel
             accountabilityEvents={accountabilityEvents}
             canLock={canLock}
+            canPreview={exportInputsVerified}
+            currentEmployeeId={sessionQuery.data?.employeeId}
+            currentOwnerGeneration={payrollFileOwnerRevision}
             exportMutation={exportMutation}
-            lockBlockedReason={lockBlockedReason}
+            lockBlockedReason={payrollExportBlockedReason}
             note={exportNote}
             onNoteChange={setExportNote}
+            onRetryDownload={(batchId) => {
+              if (beginPayrollFileOperation()) downloadMutation.mutate({ batchId })
+            }}
+            onStartOperation={beginPayrollFileOperation}
             previewMutation={previewDownloadMutation}
+            recoveredDownload={recoveredDownload}
+            retryDownloadError={downloadMutation.isError && downloadMutation.variables?.batchId === exportMutation.data?.batch.id ? downloadMutation.error : null}
+            retryDownloadPending={downloadMutation.isPending}
             review={review}
-            rules={rulesQuery.data ?? review.payrollRules}
+            rules={verifiedRules}
           />
         <section className="time-card payroll-history-panel payroll-history-panel--page" aria-labelledby="payroll-history-title">
           <TimeSectionHeader
@@ -1464,7 +2095,7 @@ export function TimePayrollPage() {
               <p>{historyQuery.error.message}</p>
             </DataStatePanel>
           ) : (
-            <PayrollHistory batches={historyQuery.data} downloadMutation={downloadMutation} />
+            <PayrollHistory batches={historyQuery.data} downloadMutation={downloadMutation} onStartOperation={beginPayrollFileOperation} />
           )}
         </section>
         </>
@@ -1475,7 +2106,7 @@ export function TimePayrollPage() {
       ) : null}
 
       {activeSection === 'rules' ? rulesAllowed ? (
-        <PayrollRulesSummary period={{ fromDate, throughDate }} rules={rulesQuery.data} />
+        <PayrollRulesSummary period={{ fromDate, throughDate }} rules={verifiedRules} />
       ) : (
         <DataStatePanel icon={ShieldAlert} title="Payroll rules are restricted" tone="error">
           <p>Only administrators can view company-wide payroll configuration.</p>

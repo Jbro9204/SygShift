@@ -304,8 +304,9 @@ describe('button layout guardrails', () => {
     expect(blockFor('.modal-dialog--user-account')).toContain('1180px')
     expect(blockFor('.user-account-snapshot')).toContain('grid-template-columns')
     expect(blockFor('.user-account-savebar')).toContain('position: sticky')
-    expect(userAdminPage).toContain('Reset MFA setup')
-    expect(userAdminPage).toContain('mfa-reset-confirmation__actions')
+    expect(userAdminPage).toContain('MFA reset unavailable')
+    expect(userAdminPage).toContain('disabled title="A session-safe combined account recovery flow is required."')
+    expect(userAdminPage).not.toContain('Confirm MFA reset')
   })
 
   it('keeps Employee Access in one responsive, locally scrolling workspace', () => {

@@ -39,7 +39,7 @@ function DeliveryOperations() {
   const input = useMemo(() => ({ dateFrom: dateFrom || null, dateThrough: dateThrough || null, page, pageSize, search, status }), [dateFrom, dateThrough, page, pageSize, search, status])
   const query = useQuery({ queryKey: ['notification-center', input], queryFn: () => getNotificationCenter(input), enabled: isSupabaseConfigured })
   const refresh = async () => queryClient.invalidateQueries({ queryKey: ['notification-center'] })
-  const process = useMutation({ mutationFn: processNotificationBatch, onSuccess: refresh })
+  const process = useMutation({ mutationFn: () => processNotificationBatch(), onSuccess: refresh })
   const retry = useMutation({ mutationFn: retryNotificationJob, onSuccess: async () => { setSelected(null); await refresh() } })
   const retryAll = useMutation({ mutationFn: retryAllFailedNotifications, onSuccess: refresh })
   const updateFilter = (callback: () => void) => { callback(); setPage(1) }

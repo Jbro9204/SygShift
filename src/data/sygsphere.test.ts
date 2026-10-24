@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getSupabaseClient } from '../lib/supabase'
-import { readSphereDraft, sphereCanPreview, sphereCompleteUpload, sphereDraftKey, sphereMentionIds, sphereMessageParts, spherePath, spherePersonMentionLabel, spherePreview, sphereRequest, sphereResolveTypedMentions, sphereUnread, sphereUpload, SphereUploadError, writeSphereDraft } from './sygsphere'
+import { readSphereDraft, sphereCanPreview, sphereCompleteUpload, sphereDraftKey, sphereInbox, sphereMentionIds, sphereMessageParts, spherePath, spherePersonMentionLabel, spherePreview, sphereRequest, sphereResolveTypedMentions, sphereUnread, sphereUpload, SphereUploadError, writeSphereDraft } from './sygsphere'
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: vi.fn() }))
 describe('SygSphere navigation and drafts', () => {
   beforeEach(() => {
@@ -20,6 +20,51 @@ describe('SygSphere navigation and drafts', () => {
   it('handles unavailable and malformed stored drafts safely', () => { localStorage.setItem('broken', '{'); expect(readSphereDraft('broken').body).toBe('') })
   it('keeps pre-mention drafts backward compatible', () => { localStorage.setItem('legacy', JSON.stringify({ body: 'Existing draft', clientId: crypto.randomUUID() })); expect(readSphereDraft('legacy').mentions).toEqual([]) })
   it('does not add any system notification count', () => { expect(sphereUnread()).toBe(0) })
+  it('reports a degraded mention-alert lookup instead of presenting a verified empty list', async () => {
+    const rpc = vi.fn(async (name: string, parameters: { action?: string }) => {
+      if (name === 'sygsphere_request' && parameters.action === 'list') {
+        return {
+          data: {
+            employeeId: '11111111-1111-4111-8111-111111111111',
+            soundEnabled: true,
+            conversations: [],
+          },
+          error: null,
+        }
+      }
+      if (name === 'sygsphere_request' && parameters.action === 'mentions') {
+        return { data: null, error: { message: 'mention lookup unavailable' } }
+      }
+      return { data: [], error: null }
+    })
+    vi.mocked(getSupabaseClient).mockReturnValue({ rpc } as never)
+
+    await expect(sphereInbox()).resolves.toMatchObject({
+      mentions: [],
+      mentionStatus: 'unavailable',
+    })
+  })
+  it('marks the mention-alert lookup ready only after the protected lookup succeeds', async () => {
+    const rpc = vi.fn(async (name: string, parameters: { action?: string }) => {
+      if (name === 'sygsphere_request' && parameters.action === 'list') {
+        return {
+          data: {
+            employeeId: '11111111-1111-4111-8111-111111111111',
+            soundEnabled: true,
+            conversations: [],
+          },
+          error: null,
+        }
+      }
+      return { data: [], error: null }
+    })
+    vi.mocked(getSupabaseClient).mockReturnValue({ rpc } as never)
+
+    await expect(sphereInbox()).resolves.toMatchObject({
+      mentions: [],
+      mentionStatus: 'ready',
+    })
+  })
   it('does not expose raw database diagnostics when a message send fails', async () => {
     vi.mocked(getSupabaseClient).mockReturnValue({ rpc: vi.fn().mockResolvedValue({ data: null, error: { message: 'invalid regular expression: quantifier operand invalid CONTEXT: SQL function' } }) } as never)
     await expect(sphereRequest('send', {})).rejects.toThrow('SygSphere could not send this message. Your draft is safe. Please retry.')

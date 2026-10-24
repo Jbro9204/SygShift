@@ -84,6 +84,34 @@ describe('schedule builder data contract', () => {
     )
   })
 
+  it.each([
+    'get_shift_work_type_map',
+    'get_shift_assignment_type_map',
+    'get_shift_coverage_status_map',
+  ])('fails closed when the supplemental schedule RPC %s cannot be loaded', async (failedRpc) => {
+    rpc.mockImplementation(async (name: string) => {
+      if (name === 'get_weekly_schedule_payload') {
+        return {
+          data: {
+            id: '30000000-0000-4000-8000-000000000001',
+            week_starts_on: '2026-09-20',
+            revision: 4,
+            status: 'draft',
+            published_at: null,
+            shifts: [],
+          },
+          error: null,
+        }
+      }
+      if (name === failedRpc) return { data: null, error: { message: 'supplemental schedule lookup unavailable' } }
+      return { data: [], error: null }
+    })
+
+    await expect(getWeeklySchedule('2026-09-20')).rejects.toThrow(
+      'Weekly schedule details could not be verified. The schedule was not displayed to prevent incorrect assignment, work-type, or coverage information.',
+    )
+  })
+
   it('loads supervisor builder options from the guarded RPC', async () => {
     rpc.mockResolvedValueOnce({
       data: {

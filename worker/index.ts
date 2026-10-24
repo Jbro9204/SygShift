@@ -11,7 +11,7 @@ import {
 } from '@simplewebauthn/server'
 import { strFromU8, unzipSync } from 'fflate'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
-import { deliverPushBatch, validPushHook } from './webPush'
+import { deliverPushBatch, reconcilePushProviderOutcomes, validPushHook } from './webPush'
 import { handleSphereFiles } from './sygsphereFiles'
 import { handleSharedIdentityRequest } from './sharedIdentity'
 import { handleSygilantSharedIdentityRequest } from './sygilantSharedIdentity'
@@ -154,6 +154,41 @@ interface LoginEmailTarget extends AuthTarget {
   accountSetupStatus?: 'not_sent' | 'sent' | 'failed'
 }
 
+interface OnboardingDeliveryAttempt {
+  caseId: string
+  attemptId: string
+  attemptNumber: number
+  state: 'active' | 'failed' | 'completed'
+  welcomeStatus: 'not_sent' | 'sent' | 'failed'
+  accountSetupStatus: 'not_sent' | 'sent' | 'failed'
+}
+
+type AdminLoginInstructionMode = 'single' | 'bulk'
+type AdminLoginInstructionPurpose = 'admin_login_instructions' | 'onboarding_account_setup'
+type AdminLoginInstructionItemState = 'prepared' | 'provisioned' | 'completed' | 'failed' | 'unresolved'
+
+interface AdminLoginInstructionOperationItem extends LoginEmailTarget {
+  contactEmail: string
+  ordinal: number
+  candidateAuthUserId: string | null
+  credentialFingerprint: string
+  state: AdminLoginInstructionItemState
+  authUserId: string | null
+  action: string | null
+  errorCode: string | null
+  errorStatus: number | null
+  errorDetail: string | null
+}
+
+interface AdminLoginInstructionOperation {
+  operationId: string
+  actorEmployeeId: string
+  mode: AdminLoginInstructionMode
+  purpose: AdminLoginInstructionPurpose
+  state: 'prepared' | 'completed' | 'completed_with_failures'
+  items: AdminLoginInstructionOperationItem[]
+}
+
 interface SelfServicePasswordResetClaim extends Partial<LoginEmailTarget> {
   eligible: boolean
 }
@@ -169,6 +204,8 @@ interface SelfServiceUsernameClaim {
 interface AuthUser {
   id: string
   email?: string
+  app_metadata?: Record<string, unknown>
+  user_metadata?: Record<string, unknown>
 }
 
 interface AuthMfaFactor {
@@ -177,9 +214,37 @@ interface AuthMfaFactor {
   status?: string
 }
 
-interface MfaRecoveryCodeRecord {
-  hash: string
-  hint: string
+interface AdminMfaResetOperation {
+  operationId: string
+  employeeId: string
+  authUserId: string
+  actorEmployeeId: string
+  factorIds: string[]
+  factorCount: number
+  state: 'prepared' | 'deleting' | 'completed'
+  recoveryCodesRevoked: number | null
+  trustedDevicesRevoked: number | null
+  securityKeysRevoked: number | null
+  securityKeySessionsRevoked: number | null
+  preparedAt: string
+  authMutationStartedAt: string | null
+  completedAt: string | null
+  recoveryAttempts: number
+  recoveryNextAttemptAt: string
+  recoveryLastError: string | null
+  recoveryQuarantinedAt: string | null
+}
+
+interface EmployeePasswordResetOperation {
+  recorded: boolean
+  operationId: string
+  employeeId: string
+  authUserId: string
+  actorEmployeeId: string
+  deliveryEmailMasked: string
+  state: 'prepared' | 'completed'
+  preparedAt: string
+  completedAt: string | null
 }
 
 interface SecurityKeyCredentialRecord {
@@ -295,6 +360,31 @@ interface LicensingDocumentUploadOperation {
   state: 'pending' | 'stored' | 'failed'
 }
 
+interface LicensingDocumentUploadFailureDecision extends LicensingDocumentUploadOperation {
+  byteSize: number
+  checksum: string
+  cleanupAllowed: boolean
+  storedAt?: string | null
+}
+
+interface LicensingDocumentRecoveryCandidate {
+  actorId: string
+  bucket: 'credential-documents'
+  checksum: string
+  documentId: string
+  objectKey: string
+  sizeBytes: number
+}
+
+interface LicensingDocumentCleanupIdentity {
+  actorId: string
+  bucket: 'credential-documents'
+  checksum: string
+  documentId: string
+  objectKey: string
+  sizeBytes: number
+}
+
 interface LicensingDocumentAccessObject {
   action: 'preview' | 'download'
   bucket: string
@@ -322,6 +412,22 @@ interface ClientDocumentUploadOperation {
   documentId: string
   objectKey: string
   state: 'pending' | 'stored' | 'failed'
+}
+
+interface ClientDocumentUploadFailureDecision extends ClientDocumentUploadOperation {
+  byteSize: number
+  checksum: string
+  cleanupAllowed: boolean
+  storedAt?: string | null
+}
+
+interface ClientDocumentCleanupIdentity {
+  actorId: string
+  bucket: string
+  checksum: string
+  documentId: string
+  objectKey: string
+  sizeBytes: number
 }
 
 interface ClientDocumentAccessObject {
@@ -373,6 +479,40 @@ interface SignatureActionResult {
   status: string
 }
 
+interface SignatureActionState extends SignatureActionResult {
+  appearanceBucket?: string | null
+  appearanceChecksum?: string | null
+  appearanceObjectKey?: string | null
+  completed: boolean
+  recipientStatus: string
+}
+
+interface SignatureAppearanceOperation {
+  bucket: 'signature-appearances'
+  byteSize: number
+  checksum: string
+  cleanupJobId?: string | null
+  idempotent?: boolean
+  mimeType: 'image/jpeg' | 'image/png'
+  objectKey: string
+  operationId: string
+  state: 'prepared' | 'completed' | 'authoritative' | 'cleanup_pending'
+}
+
+interface SignatureFinalizationState {
+  auditBucket?: string | null
+  auditChecksum?: string | null
+  auditObjectKey?: string | null
+  envelopeId: string
+  envelopeStatus: string
+  finalBucket?: string | null
+  finalChecksum?: string | null
+  finalObjectKey?: string | null
+  finalVersionId?: string | null
+  jobId: string
+  jobStatus: string
+}
+
 interface SignatureFinalizationPayload {
   state: 'processing' | 'completed'
   jobId?: string
@@ -393,6 +533,17 @@ interface SignatureFinalizationPayload {
   finalVersionId?: string
 }
 
+interface ProtectedStorageCleanupCandidate {
+  attemptCount: number
+  bucket: string
+  checksum?: string | null
+  id: string
+  kind: 'profile_photo' | 'signature_appearance' | 'signature_final_pdf' | 'signature_certificate'
+  leaseOwner: string
+  objectKey: string
+  sizeBytes?: number | null
+}
+
 interface SignatureCertificateAccess {
   bucket: string
   objectKey: string
@@ -403,9 +554,11 @@ interface SignatureCertificateAccess {
 
 interface NotificationJob {
   id: string
+  claimToken: string
   messageType?: string
   aggregateType?: string
   aggregateId?: string
+  recipientManifestFrozen?: boolean
   recipients: string[]
   message: {
     subject: string
@@ -427,6 +580,54 @@ interface EmailDeliveryResult {
 }
 
 type EmailAuditMode = 'deferred' | 'inline'
+
+type EmailDispatchSourceKind =
+  | 'attendance_accountability_event'
+  | 'notification_outbox'
+  | 'support_ticket_notification'
+  | 'employee_notification_delivery'
+  | 'inline_email'
+
+interface EmailRecipientDispatchDecision {
+  dispatchId: string
+  dispatchToken: string
+  state: 'dispatching' | 'accepted' | 'suppressed' | 'uncertain' | 'retry_approved' | 'failed'
+  sendAllowed: boolean
+  providerReference?: string | null
+  requiresReview?: boolean
+}
+
+interface EmailRecipientDispatchManifestDecision extends EmailRecipientDispatchDecision {
+  intendedRecipient: string
+}
+
+interface ExistingEmailRecipientManifest {
+  intendedRecipients: string[]
+  notificationType: string
+  relatedRecordId?: string | null
+  relatedRecordType?: string | null
+  sourceId: string
+  sourceKind: EmailDispatchSourceKind
+}
+
+interface DurableEmailDeliveryResult {
+  accepted: string[]
+  suppressed: string[]
+  uncertain: Array<{ recipient: string, error: string }>
+  completionPending: string[]
+}
+
+interface NotificationJobOutcome {
+  id: string
+  status: 'delivered' | 'failed' | 'pending' | 'suppressed'
+  recipients: {
+    accepted: number
+    completionPending: number
+    suppressed: number
+    total: number
+    uncertain: number
+  }
+}
 
 interface AttendanceReportPayload {
   id: string
@@ -486,7 +687,7 @@ class ApiError extends Error {
   }
 }
 
-class SupabaseRequestError extends Error {
+export class SupabaseRequestError extends Error {
   readonly status: number
   readonly code: string | null
   readonly operation: string
@@ -498,6 +699,14 @@ class SupabaseRequestError extends Error {
     this.code = code
     this.operation = operation
   }
+}
+
+export function completionFailureMayBeAmbiguous(error: unknown): boolean {
+  if (error instanceof SupabaseRequestError) {
+    return [408, 425, 429].includes(error.status) || error.status >= 500
+  }
+  if (error instanceof TypeError) return true
+  return error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name)
 }
 
 const contentSecurityPolicy = [
@@ -985,13 +1194,6 @@ function requireApprovedEmployeeEmail(environment: Environment, target: LoginEma
   return recipient
 }
 
-function maskEmailAddress(email: string): string {
-  const [localPart, domain] = email.split('@')
-  if (!localPart || !domain) return 'the employee’s approved personal email'
-  const visible = localPart.slice(0, Math.min(2, localPart.length))
-  return `${visible}${'*'.repeat(Math.max(3, localPart.length - visible.length))}@${domain}`
-}
-
 async function logEmailDelivery(
   environment: Environment,
   recipient: string,
@@ -1018,7 +1220,31 @@ async function logEmailDelivery(
   )
 }
 
-async function sendAuditedEmail(
+async function recordInlineEmailAudit(
+  environment: Environment,
+  recipient: string,
+  status: 'sent' | 'failed' | 'suppressed_blocked_domain',
+  context: EmailAuditContext,
+  failureDetail: string | null,
+  rpc: RpcInvoker,
+): Promise<void> {
+  try {
+    await logEmailDelivery(environment, recipient, status, context, failureDetail, rpc)
+  } catch (error) {
+    // Provider delivery and audit persistence are separate outcomes. Once the
+    // provider has accepted a message, an audit outage must not relabel or
+    // retry that accepted delivery. Keep the failure observable without
+    // exposing the recipient address in Worker logs.
+    console.error(JSON.stringify({
+      event: 'email_delivery_audit_deferred',
+      notificationType: context.notificationType,
+      status,
+      failureType: error instanceof SupabaseRequestError ? error.operation : 'audit_unavailable',
+    }))
+  }
+}
+
+export async function sendAuditedEmail(
   environment: Environment,
   recipients: string | string[],
   message: NotificationJob['message'],
@@ -1026,7 +1252,34 @@ async function sendAuditedEmail(
   replyTo?: string,
   rpc: RpcInvoker = callRpc,
   auditMode: EmailAuditMode = 'inline',
+  durableSourceId?: string,
+  preparedDecisions?: ReadonlyMap<string, EmailRecipientDispatchDecision>,
 ): Promise<EmailDeliveryResult> {
+  if (durableSourceId) {
+    if (!validUuid(durableSourceId)) throw new Error('A valid durable email source id is required.')
+    const delivery = await deliverDurableEmailRecipients(
+      environment,
+      'inline_email',
+      durableSourceId,
+      Array.isArray(recipients) ? recipients : [recipients],
+      message,
+      context,
+      rpc,
+      replyTo,
+      preparedDecisions,
+    )
+    const acceptedWithoutAudit = delivery.completionPending.filter(
+      (recipient) => !isBlockedEmailRecipient(environment, recipient),
+    )
+    const suppressedWithoutAudit = delivery.completionPending.filter(
+      (recipient) => isBlockedEmailRecipient(environment, recipient),
+    )
+    return {
+      failed: delivery.uncertain,
+      sent: [...delivery.accepted, ...acceptedWithoutAudit],
+      suppressed: [...delivery.suppressed, ...suppressedWithoutAudit],
+    }
+  }
   if (!environment.EMAIL) throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
   const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
   if (!fromEmail) throw new ApiError('email_sender_not_configured', 503, 'The email sender address is not configured.')
@@ -1040,7 +1293,14 @@ async function sendAuditedEmail(
     if (isBlockedEmailRecipient(environment, recipient)) {
       result.suppressed.push(recipient)
       if (auditMode === 'inline') {
-        await logEmailDelivery(environment, recipient, 'suppressed_blocked_domain', context, 'Suppressed — Blocked Domain', rpc)
+        await recordInlineEmailAudit(
+          environment,
+          recipient,
+          'suppressed_blocked_domain',
+          context,
+          'Suppressed — Blocked Domain',
+          rpc,
+        )
       }
       continue
     }
@@ -1054,95 +1314,121 @@ async function sendAuditedEmail(
         to: recipient,
       })
       result.sent.push(recipient)
-      if (auditMode === 'inline') await logEmailDelivery(environment, recipient, 'sent', context, null, rpc)
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Email delivery failed.'
       result.failed.push({ error: detail, recipient })
-      if (auditMode === 'inline') await logEmailDelivery(environment, recipient, 'failed', context, detail, rpc)
+    }
+    if (auditMode === 'inline') {
+      if (result.sent.includes(recipient)) {
+        await recordInlineEmailAudit(environment, recipient, 'sent', context, null, rpc)
+      } else {
+        const failure = result.failed.find((item) => item.recipient === recipient)
+        if (failure) {
+          await recordInlineEmailAudit(environment, recipient, 'failed', context, failure.error, rpc)
+        }
+      }
     }
   }
 
   return result
 }
 
-async function logDeferredEmailDelivery(
+async function sendDurableInlineEmail(
   environment: Environment,
-  result: EmailDeliveryResult,
+  sourceId: string,
+  recipients: string | string[],
+  message: NotificationJob['message'],
   context: EmailAuditContext,
-  rpc: RpcInvoker,
-): Promise<void> {
-  for (const recipient of result.sent) {
-    await logEmailDelivery(environment, recipient, 'sent', context, null, rpc)
-  }
-  for (const recipient of result.suppressed) {
-    await logEmailDelivery(environment, recipient, 'suppressed_blocked_domain', context, 'Suppressed — Blocked Domain', rpc)
-  }
-  for (const failure of result.failed) {
-    await logEmailDelivery(environment, failure.recipient, 'failed', context, failure.error, rpc)
-  }
+  replyTo?: string,
+  rpc: RpcInvoker = callRpc,
+  preparedDecisions?: ReadonlyMap<string, EmailRecipientDispatchDecision>,
+): Promise<EmailDeliveryResult> {
+  return sendAuditedEmail(
+    environment,
+    recipients,
+    message,
+    context,
+    replyTo,
+    rpc,
+    'deferred',
+    sourceId,
+    preparedDecisions,
+  )
 }
 
-function buildSecurityKeyChangeEmail(
-  target: LoginEmailTarget,
-  action: 'added' | 'removed',
-  label: string,
-  appUrl: string,
-): NotificationJob['message'] {
-  const verb = action === 'added' ? 'added to' : 'removed from'
-  const subject = action === 'added' ? 'Security key added to your SygShift account' : 'Security key removed from your SygShift account'
-  const safeLabel = label.trim() || 'Security key'
-  return {
-    subject,
-    text: [
-      `Hello ${target.displayName},`,
-      '',
-      `The security key “${safeLabel}” was ${verb} your SygShift account.`,
-      '',
-      'If you made this change, no action is needed.',
-      'If you did not make this change, contact an administrator immediately and reset your password.',
-      '',
-      `Review your account security: ${appUrl}/my-account?tab=security`,
-    ].join('\n'),
-  }
+async function domainOperationUuid(namespace: string, ...parts: string[]): Promise<string> {
+  const digest = await sha256Hex([namespace, ...parts].join('\u001f'))
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`
 }
 
-async function sendSecurityKeyChangeNotice(
-  environment: Environment,
+async function adminEmailOperationUuid(
+  body: Record<string, unknown>,
+  operation: string,
+  actorId: string,
   employeeId: string,
-  action: 'added' | 'removed',
-  label: string,
-  keyId: string,
-): Promise<void> {
-  const config = configuredSupabase(environment)
-  if (!config) return
-  try {
-    const target = await callRpc<LoginEmailTarget>(
-      { serviceRoleKey: config.serviceRoleKey, url: config.url },
-      'service_get_employee_login_email_target',
-      { target_employee_id: employeeId },
-      config.serviceRoleKey,
+): Promise<string> {
+  const explicit = typeof body.idempotencyKey === 'string' ? body.idempotencyKey.trim() : ''
+  if (!validUuid(explicit)) {
+    throw new ApiError(
+      'idempotency_key_required',
+      422,
+      'A valid idempotency key is required for this account operation.',
     )
-    if (!target) return
-    const recipient = requireApprovedEmployeeEmail(environment, target)
-    const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
-    const delivery = await sendAuditedEmail(
-      environment,
-      recipient,
-      buildSecurityKeyChangeEmail(target, action, label, appUrl),
-      {
-        notificationType: action === 'added' ? 'security_key_added' : 'security_key_removed',
-        relatedRecordId: keyId,
-        relatedRecordType: 'security_key',
-      },
-      defaultSupportEmail,
-    )
-    if (delivery.failed.length > 0) {
-      console.warn(JSON.stringify({ event: 'security_key_notice_failed', employeeId, keyId }))
-    }
-  } catch {
-    // Account-security changes must not be rolled back because an optional notice could not be delivered.
-    console.warn(JSON.stringify({ event: 'security_key_notice_unavailable', employeeId, keyId }))
   }
+  return domainOperationUuid('admin-email-idempotency', operation, actorId, employeeId, explicit)
+}
+
+async function prepareInlineEmailDispatch(
+  config: RpcConfig & { serviceRoleKey: string },
+  sourceId: string,
+  recipient: string,
+  context: EmailAuditContext,
+  rpc: RpcInvoker = callRpc,
+): Promise<EmailRecipientDispatchDecision> {
+  if (!validUuid(sourceId)) throw new Error('A valid durable email source id is required.')
+  const decision = await rpc<EmailRecipientDispatchDecision>(
+    config,
+    'service_prepare_email_recipient_dispatch',
+    {
+      target_intended_recipient: recipient,
+      target_notification_type: context.notificationType,
+      target_related_record_id: context.relatedRecordId ?? null,
+      target_related_record_type: context.relatedRecordType ?? null,
+      target_source_id: sourceId,
+      target_source_kind: 'inline_email',
+    },
+    config.serviceRoleKey,
+  )
+  if (!decision || !validUuid(decision.dispatchToken) || !validUuid(decision.dispatchId)) {
+    throw new Error('The email recipient dispatch fence response is invalid.')
+  }
+  return decision
+}
+
+function parseEmailRecipientDispatchManifest(
+  payload: unknown,
+  recipients: string[],
+): Map<string, EmailRecipientDispatchDecision> {
+  if (!Array.isArray(payload)) throw new Error('The email recipient dispatch manifest response is invalid.')
+  const expected = [...new Set(recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
+  const decisions = new Map<string, EmailRecipientDispatchDecision>()
+  for (const item of payload) {
+    if (!item || typeof item !== 'object') throw new Error('The email recipient dispatch manifest response is invalid.')
+    const decision = item as Partial<EmailRecipientDispatchManifestDecision>
+    const recipient = typeof decision.intendedRecipient === 'string'
+      ? decision.intendedRecipient.trim().toLowerCase()
+      : ''
+    if (!expected.includes(recipient)
+      || !validUuid(decision.dispatchToken ?? '')
+      || !validUuid(decision.dispatchId ?? '')
+      || typeof decision.sendAllowed !== 'boolean'
+      || typeof decision.state !== 'string') {
+      throw new Error('The email recipient dispatch manifest response is invalid.')
+    }
+    decisions.set(recipient, decision as EmailRecipientDispatchDecision)
+  }
+  if (decisions.size !== expected.length) throw new Error('The email recipient dispatch manifest is incomplete.')
+  return decisions
 }
 
 async function requireAdminMfa(
@@ -2104,39 +2390,6 @@ async function requireVerifiedOperationsSession(
   return { config, context, token }
 }
 
-function randomFrom(values: string): string {
-  const bytes = new Uint32Array(1)
-  crypto.getRandomValues(bytes)
-  return values[bytes[0] % values.length]
-}
-
-function generateTemporaryPassword(): string {
-  const lower = 'abcdefghijkmnopqrstuvwxyz'
-  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
-  const digits = '23456789'
-  const symbols = '!@#$%*-_+='
-  const all = `${lower}${upper}${digits}${symbols}`
-  const characters = [
-    randomFrom(lower),
-    randomFrom(upper),
-    randomFrom(digits),
-    randomFrom(symbols),
-  ]
-
-  while (characters.length < 18) characters.push(randomFrom(all))
-
-  for (let index = characters.length - 1; index > 0; index -= 1) {
-    const bytes = new Uint32Array(1)
-    crypto.getRandomValues(bytes)
-    const swapIndex = bytes[0] % (index + 1)
-    const current = characters[index]
-    characters[index] = characters[swapIndex]
-    characters[swapIndex] = current
-  }
-
-  return characters.join('')
-}
-
 function accessTokenClaims(token: string): AccessTokenClaims | null {
   try {
     const payload = token.split('.')[1]
@@ -2196,19 +2449,6 @@ function webAuthnRpId(request: Request): string {
   throw new ApiError('security_key_origin_not_allowed', 403, 'Security keys are not available from this site address.')
 }
 
-function generateRecoveryCode(): string {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  let value = ''
-  for (let index = 0; index < 8; index += 1) value += randomFrom(alphabet)
-  return `SYG-${value.slice(0, 4)}-${value.slice(4)}`
-}
-
-function normalizeRecoveryCode(value: string): string {
-  const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
-  if (!/^SYG[A-Z0-9]{8}$/.test(normalized)) return ''
-  return `SYG-${normalized.slice(3, 7)}-${normalized.slice(7)}`
-}
-
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
@@ -2225,6 +2465,87 @@ async function hmacSha256Hex(secret: string, value: string): Promise<string> {
   )
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(value))
   return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+const personalEmailVerificationPurpose = 'personal_email_verification'
+
+export async function derivePersonalEmailVerificationToken(
+  secret: string,
+  operationId: string,
+  employeeId: string,
+  email: string,
+): Promise<string> {
+  const normalizedEmail = email.trim().toLowerCase()
+  if (!secret || !validUuid(operationId) || !validUuid(employeeId) || !normalizedEmail) {
+    throw new Error('Durable personal-email verification material is unavailable.')
+  }
+  const digest = await hmacSha256Hex(
+    secret,
+    [
+      'sygshift-personal-email-verification-v1',
+      operationId,
+      employeeId,
+      normalizedEmail,
+      personalEmailVerificationPurpose,
+    ].join('\u001f'),
+  )
+  return `sygshift-email-v1.${digest}`
+}
+
+function passwordFromDigest(digest: string): string {
+  const lower = 'abcdefghijkmnopqrstuvwxyz'
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+  const digits = '23456789'
+  const symbols = '!@#$%*-_+='
+  const all = `${lower}${upper}${digits}${symbols}`
+  const bytes = Array.from({ length: digest.length / 2 }, (_, index) => Number.parseInt(digest.slice(index * 2, index * 2 + 2), 16))
+  const characters = [
+    lower[bytes[0] % lower.length],
+    upper[bytes[1] % upper.length],
+    digits[bytes[2] % digits.length],
+    symbols[bytes[3] % symbols.length],
+    ...bytes.slice(4, 18).map((byte) => all[byte % all.length]),
+  ]
+  for (let index = characters.length - 1; index > 0; index -= 1) {
+    const byteIndex = (18 + (characters.length - 1 - index)) % bytes.length
+    const swapIndex = bytes[byteIndex] % (index + 1)
+    const current = characters[index]
+    characters[index] = characters[swapIndex]
+    characters[swapIndex] = current
+  }
+  return characters.join('')
+}
+
+export async function deriveAdminLoginTemporaryPassword(
+  secret: string,
+  operationId: string,
+  employeeId: string,
+  username: string,
+): Promise<string> {
+  if (!secret || !validUuid(operationId) || !validUuid(employeeId)) {
+    throw new Error('Durable login credential material is unavailable.')
+  }
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const digest = await hmacSha256Hex(
+      secret,
+      `sygshift-admin-login-instruction-v1\u001f${operationId}\u001f${employeeId}\u001f${attempt}`,
+    )
+    const password = passwordFromDigest(digest)
+    if (validateSuppliedTemporaryPassword(password, username).length === 0) return password
+  }
+  throw new Error('A policy-compliant durable login credential could not be derived.')
+}
+
+async function adminLoginCredentialFingerprint(
+  secret: string,
+  operationId: string,
+  employeeId: string,
+  password: string,
+): Promise<string> {
+  return hmacSha256Hex(
+    secret,
+    `sygshift-admin-login-fingerprint-v1\u001f${operationId}\u001f${employeeId}\u001f${password}`,
+  )
 }
 
 async function sha256BytesHex(value: Uint8Array): Promise<string> {
@@ -2749,6 +3070,52 @@ async function storePrivateStorageObject(
   if (!response.ok) throw new Error(`Protected storage rejected the generated file (${response.status}).`)
 }
 
+async function storeIdempotentPrivateStorageObject(
+  config: { serviceRoleKey: string, url: string },
+  bucket: string,
+  objectKey: string,
+  bytes: Uint8Array,
+  mimeType: string,
+  checksum: string,
+  signal?: AbortSignal,
+): Promise<'created' | 'reused'> {
+  const body = bytes.buffer instanceof ArrayBuffer
+    ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    : new Uint8Array(bytes).buffer
+  const response = await fetch(privateStorageObjectUrl(config, bucket, objectKey), {
+    body,
+    headers: {
+      apikey: config.serviceRoleKey,
+      authorization: `Bearer ${config.serviceRoleKey}`,
+      'content-type': mimeType,
+      'x-upsert': 'false',
+    },
+    method: 'POST',
+    signal,
+  })
+  if (!response.ok) {
+    // A Worker may be reclaimed after durable storage succeeds but before the
+    // database reference is committed. Deterministic object identities make
+    // that artifact discoverable; only reuse it after proving exact content.
+    const existing = await fetchPrivateStorageObject(config, bucket, objectKey, signal)
+    if (!existing.ok) throw new Error(`Protected storage rejected the generated file (${response.status}).`)
+    const existingChecksum = await privateStorageChecksum(existing, bytes.byteLength, signal)
+    if (existingChecksum !== checksum) {
+      throw new Error('The durable artifact identity is already associated with different content.')
+    }
+    return 'reused'
+  }
+  await verifyPrivateStorageObjectChecksum(
+    config,
+    bucket,
+    objectKey,
+    bytes.byteLength,
+    checksum,
+    signal,
+  )
+  return 'created'
+}
+
 async function storePrivateDocument(
   config: { serviceRoleKey: string, url: string },
   operation: HrDocumentUploadOperation,
@@ -2829,14 +3196,25 @@ async function privateStorageChecksum(
   if (!stored.ok || !stored.body) {
     throw new Error(`Protected storage object could not be read (${stored.status}).`)
   }
-  const contentLength = Number(stored.headers.get('content-length'))
+  const contentLengthHeader = stored.headers.get('content-length')
+  const contentLength = contentLengthHeader === null ? null : Number(contentLengthHeader)
   type DigestStreamCrypto = Crypto & { DigestStream?: new (algorithm: string) => WorkerDigestStream }
   const DigestStream = (crypto as DigestStreamCrypto).DigestStream
-  if (!DigestStream) throw new Error('The streaming integrity service is unavailable.')
+  if (!DigestStream) {
+    if (signal?.aborted) throw signal.reason
+    const storedBytes = new Uint8Array(await stored.arrayBuffer())
+    if (
+      (contentLength !== null && contentLength !== expectedSizeBytes)
+      || storedBytes.byteLength !== expectedSizeBytes
+    ) {
+      throw new Error('The stored file size does not match the authorized upload.')
+    }
+    return sha256BytesHex(storedBytes)
+  }
   const digestStream = new DigestStream('SHA-256')
   await stored.body.pipeTo(digestStream, signal ? { signal } : undefined)
   const observedBytes = Number(digestStream.bytesWritten)
-  if (contentLength !== expectedSizeBytes || observedBytes !== expectedSizeBytes) {
+  if ((contentLength !== null && contentLength !== expectedSizeBytes) || observedBytes !== expectedSizeBytes) {
     throw new Error('The stored file size does not match the authorized upload.')
   }
   return [...new Uint8Array(await digestStream.digest)]
@@ -2862,14 +3240,341 @@ async function verifyPrivateStorageObjectChecksum(
   }
 }
 
+type StoredObjectInspection = 'match' | 'mismatch' | 'missing' | 'unknown'
+
+type AmbiguousUploadReconciliation = {
+  outcome: 'confirmed'
+} | {
+  outcome: 'definitive_failure'
+  reason: 'mismatch' | 'missing'
+} | {
+  outcome: 'preserved'
+  reason: 'completed_object_unverified' | 'operation_changed' | 'state_unavailable' | 'terminal_state' | 'verification_unavailable'
+}
+
+export async function reconcileAmbiguousUploadCompletion<T extends { state: string }>(input: {
+  completedStates: readonly string[]
+  inspectObject: () => Promise<StoredObjectInspection>
+  operationMatches: (operation: T) => boolean
+  readOperation: () => Promise<T>
+  retryCompletion: () => Promise<unknown>
+  retryableStates: readonly string[]
+}): Promise<AmbiguousUploadReconciliation> {
+  let operation: T
+  try {
+    operation = await input.readOperation()
+  } catch {
+    return { outcome: 'preserved', reason: 'state_unavailable' }
+  }
+  if (!input.operationMatches(operation)) {
+    return { outcome: 'preserved', reason: 'operation_changed' }
+  }
+
+  let inspection: StoredObjectInspection
+  try {
+    inspection = await input.inspectObject()
+  } catch {
+    inspection = 'unknown'
+  }
+
+  if (input.completedStates.includes(operation.state)) {
+    return inspection === 'match'
+      ? { outcome: 'confirmed' }
+      : { outcome: 'preserved', reason: 'completed_object_unverified' }
+  }
+  if (!input.retryableStates.includes(operation.state)) {
+    return { outcome: 'preserved', reason: 'terminal_state' }
+  }
+  if (inspection === 'missing' || inspection === 'mismatch') {
+    return { outcome: 'definitive_failure', reason: inspection }
+  }
+  if (inspection !== 'match') {
+    return { outcome: 'preserved', reason: 'verification_unavailable' }
+  }
+
+  try {
+    await input.retryCompletion()
+    return { outcome: 'confirmed' }
+  } catch {
+    // A completion request can commit before its response is lost. Read the
+    // authoritative idempotency record once more before deciding whether the
+    // exact stored object must be preserved for a later retry.
+  }
+
+  try {
+    const afterRetry = await input.readOperation()
+    if (
+      input.operationMatches(afterRetry)
+      && input.completedStates.includes(afterRetry.state)
+    ) return { outcome: 'confirmed' }
+  } catch {
+    return { outcome: 'preserved', reason: 'state_unavailable' }
+  }
+  return { outcome: 'preserved', reason: 'verification_unavailable' }
+}
+
+async function inspectPrivateStorageObjectIntegrity(
+  config: { serviceRoleKey: string, url: string },
+  bucket: string,
+  objectKey: string,
+  expectedSizeBytes: number,
+  expectedChecksum: string,
+  signal?: AbortSignal,
+): Promise<StoredObjectInspection> {
+  let stored: Response
+  try {
+    stored = await fetchPrivateStorageObject(config, bucket, objectKey, signal)
+  } catch {
+    return 'unknown'
+  }
+  if (stored.status === 404) return 'missing'
+  if (!stored.ok || !stored.body) return 'unknown'
+  try {
+    const checksum = await privateStorageChecksum(stored, expectedSizeBytes, signal)
+    return checksum === expectedChecksum ? 'match' : 'mismatch'
+  } catch (error) {
+    return error instanceof Error && error.message.includes('size does not match')
+      ? 'mismatch'
+      : 'unknown'
+  }
+}
+
+function clientDocumentCleanupArguments(identity: ClientDocumentCleanupIdentity): Record<string, unknown> {
+  return {
+    target_actor_id: identity.actorId,
+    target_bucket: identity.bucket,
+    target_byte_size: identity.sizeBytes,
+    target_checksum: identity.checksum,
+    target_document_id: identity.documentId,
+    target_object_key: identity.objectKey,
+  }
+}
+
+async function completeClientDocumentCleanup(
+  config: RpcConfig & { serviceRoleKey: string },
+  identity: ClientDocumentCleanupIdentity,
+  rpc: RpcInvoker = callRpc,
+): Promise<void> {
+  await rpc<unknown>(
+    config,
+    'service_complete_client_document_cleanup',
+    clientDocumentCleanupArguments(identity),
+    config.serviceRoleKey,
+  )
+}
+
+async function deferClientDocumentCleanup(
+  config: RpcConfig & { serviceRoleKey: string },
+  identity: ClientDocumentCleanupIdentity,
+  error: string,
+  rpc: RpcInvoker = callRpc,
+): Promise<void> {
+  await rpc<unknown>(
+    config,
+    'service_defer_client_document_cleanup',
+    {
+      ...clientDocumentCleanupArguments(identity),
+      target_error: error.slice(0, 1000),
+    },
+    config.serviceRoleKey,
+  )
+}
+
+function licensingDocumentCleanupArguments(identity: LicensingDocumentCleanupIdentity): Record<string, unknown> {
+  return {
+    target_actor_id: identity.actorId,
+    target_byte_size: identity.sizeBytes,
+    target_checksum: identity.checksum,
+    target_document_id: identity.documentId,
+    target_object_key: identity.objectKey,
+  }
+}
+
+async function completeLicensingDocumentCleanup(
+  config: RpcConfig & { serviceRoleKey: string },
+  identity: LicensingDocumentCleanupIdentity,
+  rpc: RpcInvoker = callRpc,
+): Promise<void> {
+  // The RPC is row-locked and idempotent. A response can be lost after the
+  // commit, so bounded retries are safe and never touch storage again.
+  let lastError: unknown
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await rpc<unknown>(
+        config,
+        'service_complete_licensing_document_cleanup',
+        licensingDocumentCleanupArguments(identity),
+        config.serviceRoleKey,
+      )
+      return
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError
+}
+
+async function deferLicensingDocumentCleanup(
+  config: RpcConfig & { serviceRoleKey: string },
+  identity: LicensingDocumentCleanupIdentity,
+  error: string,
+  rpc: RpcInvoker = callRpc,
+): Promise<void> {
+  await rpc<unknown>(
+    config,
+    'service_defer_licensing_document_cleanup',
+    {
+      ...licensingDocumentCleanupArguments(identity),
+      target_error: error.slice(0, 1000),
+    },
+    config.serviceRoleKey,
+  )
+}
+
+async function reconcileRejectedLicensingCompletion(input: {
+  actorId: string
+  bytes: number
+  checksum: string
+  config: RpcConfig & { serviceRoleKey: string }
+  error: unknown
+  operation: LicensingDocumentUploadOperation
+  requestId: string
+}): Promise<'cleaned' | 'stored'> {
+  let decision: LicensingDocumentUploadFailureDecision
+  try {
+    decision = await callRpc<LicensingDocumentUploadFailureDecision>(
+      input.config,
+      'service_reconcile_licensing_document_upload_failure',
+      {
+        target_actor_id: input.actorId,
+        target_document_id: input.operation.documentId,
+        target_failure_detail: input.error instanceof Error
+          ? input.error.message.slice(0, 1000)
+          : 'Protected upload failed.',
+      },
+      input.config.serviceRoleKey,
+    )
+  } catch (error) {
+    console.warn(JSON.stringify({
+      documentId: input.operation.documentId,
+      event: 'licensing_document_cleanup_decision_deferred',
+      reason: error instanceof Error ? error.message : 'state_unavailable',
+      requestId: input.requestId,
+    }))
+    throw new ApiError(
+      'licensing_document_finalization_pending',
+      503,
+      'The uploaded document was preserved because its final status could not be confirmed. Retry this same upload request.',
+    )
+  }
+
+  const exactOperation = decision.documentId === input.operation.documentId
+    && decision.bucket === input.operation.bucket
+    && decision.objectKey === input.operation.objectKey
+    && decision.byteSize === input.bytes
+    && decision.checksum === input.checksum
+  if (decision.state === 'stored' && exactOperation) return 'stored'
+  if (!decision.cleanupAllowed || decision.state !== 'failed' || !exactOperation) {
+    throw new ApiError(
+      'licensing_document_finalization_pending',
+      503,
+      'The uploaded document was preserved because its final status could not be confirmed. Retry this same upload request.',
+    )
+  }
+
+  const cleanupIdentity: LicensingDocumentCleanupIdentity = {
+    actorId: input.actorId,
+    bucket: 'credential-documents',
+    checksum: input.checksum,
+    documentId: input.operation.documentId,
+    objectKey: input.operation.objectKey,
+    sizeBytes: input.bytes,
+  }
+
+  const objectState = await inspectPrivateStorageObjectIntegrity(
+    input.config,
+    input.operation.bucket,
+    input.operation.objectKey,
+    input.bytes,
+    input.checksum,
+  )
+  if (objectState === 'match') {
+    try {
+      await deletePrivateStorageObject(input.config, input.operation.bucket, input.operation.objectKey)
+    } catch (error) {
+      await deferLicensingDocumentCleanup(
+        input.config,
+        cleanupIdentity,
+        error instanceof Error ? error.message : 'Private storage cleanup failed.',
+      ).catch(() => undefined)
+      console.warn(JSON.stringify({
+        documentId: input.operation.documentId,
+        event: 'licensing_document_cleanup_deferred',
+        reason: error instanceof Error ? error.message : 'storage_unavailable',
+        requestId: input.requestId,
+      }))
+      throw new ApiError(
+        'licensing_document_cleanup_pending',
+        503,
+        'The rejected document remains private while storage cleanup requires review.',
+      )
+    }
+  } else if (objectState !== 'missing') {
+    await deferLicensingDocumentCleanup(
+      input.config,
+      cleanupIdentity,
+      `Cleanup withheld because object verification returned ${objectState}.`,
+    ).catch(() => undefined)
+    console.warn(JSON.stringify({
+      documentId: input.operation.documentId,
+      event: 'licensing_document_cleanup_withheld',
+      reason: objectState,
+      requestId: input.requestId,
+    }))
+    throw new ApiError(
+      'licensing_document_cleanup_pending',
+      503,
+      'The rejected document remains private because its stored object could not be safely verified.',
+    )
+  }
+  try {
+    await completeLicensingDocumentCleanup(input.config, cleanupIdentity)
+  } catch (error) {
+    console.warn(JSON.stringify({
+      documentId: input.operation.documentId,
+      event: 'licensing_document_cleanup_confirmation_deferred',
+      reason: error instanceof Error ? error.message : 'database_unavailable',
+      requestId: input.requestId,
+    }))
+    throw new ApiError(
+      'licensing_document_cleanup_pending',
+      503,
+      'The rejected document was removed from private storage, but cleanup confirmation is still pending.',
+    )
+  }
+  return 'cleaned'
+}
+
 async function handleDocumentPipelineCanary(
   request: Request,
   environment: Environment,
   requestId: string,
 ): Promise<Response> {
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
-  const config = configuredSupabase(environment)
-  if (!config) throw new ApiError('server_not_configured', 503, 'The secure data connection is unavailable.')
+  const session = await requireVerifiedOperationsSession(
+    request,
+    environment,
+    'document_pipeline_canary_mfa_required',
+  )
+  if (accessTokenAssuranceLevel(session.token) !== 'aal2') {
+    throw new ApiError(
+      'document_pipeline_canary_mfa_required',
+      403,
+      'Verify your authenticator before running the protected document release canary.',
+    )
+  }
+  requireSessionPermission(session.context, 'admin.security.manage')
+  const config = session.config
 
   const canaryRunId = crypto.randomUUID()
   const recoveryBytes = new TextEncoder().encode(`SygShift private storage recovery canary ${canaryRunId}`)
@@ -3145,23 +3850,25 @@ async function handleLicensingDocumentUpload(
   }
   const checksum = await sha256BytesHex(bytes)
   const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
-  const operation = await callRpc<LicensingDocumentUploadOperation>(
+  const prepareArguments = {
+    target_actor_id: session.context.employee_id,
+    target_byte_size: bytes.byteLength,
+    target_content_type: validated.detectedMimeType,
+    target_credential_id: credentialId,
+    target_extension: validated.extension,
+    target_mfa_method: mfa.method,
+    target_mfa_verified_at: mfa.verifiedAt,
+    target_original_filename: validated.sanitizedFilename,
+    target_sha256_checksum: checksum,
+    target_upload_request_id: metadata.idempotencyKey,
+  }
+  const readOperation = () => callRpc<LicensingDocumentUploadOperation>(
     serviceConfig,
     'service_prepare_licensing_document_upload',
-    {
-      target_actor_id: session.context.employee_id,
-      target_byte_size: bytes.byteLength,
-      target_content_type: validated.detectedMimeType,
-      target_credential_id: credentialId,
-      target_extension: validated.extension,
-      target_mfa_method: mfa.method,
-      target_mfa_verified_at: mfa.verifiedAt,
-      target_original_filename: validated.sanitizedFilename,
-      target_sha256_checksum: checksum,
-      target_upload_request_id: metadata.idempotencyKey,
-    },
+    prepareArguments,
     session.config.serviceRoleKey,
   )
+  const operation = await readOperation()
 
   if (operation.state === 'stored') {
     return json({ documentId: operation.documentId, requestId, state: 'stored' })
@@ -3170,8 +3877,10 @@ async function handleLicensingDocumentUpload(
     throw new ApiError('licensing_document_upload_unavailable', 409, 'This licensing document upload cannot be retried.')
   }
 
+  let completionStarted = false
   try {
     await storeLicensingDocument(serviceConfig, operation, bytes, validated.detectedMimeType, checksum)
+    completionStarted = true
     const completed = await callRpc<Record<string, unknown>>(
       serviceConfig,
       'service_complete_licensing_document_upload',
@@ -3184,18 +3893,74 @@ async function handleLicensingDocumentUpload(
     )
     return json({ ...completed, requestId }, 201)
   } catch (error) {
-    await deletePrivateStorageObject(serviceConfig, operation.bucket, operation.objectKey).catch(() => undefined)
-    await callRpc(
-      serviceConfig,
-      'service_fail_licensing_document_upload',
-      {
-        target_actor_id: session.context.employee_id,
-        target_document_id: operation.documentId,
-        target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Protected upload failed.',
-      },
-      session.config.serviceRoleKey,
-    ).catch(() => undefined)
-    throw new ApiError('licensing_document_storage_failed', 502, 'The licensing document could not be stored. No incomplete document was released.')
+    if (completionStarted && !completionFailureMayBeAmbiguous(error)) {
+      const outcome = await reconcileRejectedLicensingCompletion({
+        actorId: session.context.employee_id,
+        bytes: bytes.byteLength,
+        checksum,
+        config: serviceConfig,
+        error,
+        operation,
+        requestId,
+      })
+      if (outcome === 'stored') {
+        return json({ documentId: operation.documentId, requestId, state: 'stored' }, 201)
+      }
+      if (error instanceof SupabaseRequestError) {
+        throw new ApiError('licensing_document_completion_rejected', error.status, error.message)
+      }
+      throw error
+    }
+    const reconciliation = await reconcileAmbiguousUploadCompletion({
+      completedStates: ['stored'],
+      inspectObject: () => inspectPrivateStorageObjectIntegrity(
+        serviceConfig,
+        operation.bucket,
+        operation.objectKey,
+        bytes.byteLength,
+        checksum,
+      ),
+      operationMatches: (candidate) => candidate.documentId === operation.documentId
+        && candidate.bucket === operation.bucket
+        && candidate.objectKey === operation.objectKey,
+      readOperation,
+      retryCompletion: () => callRpc(
+        serviceConfig,
+        'service_complete_licensing_document_upload',
+        {
+          target_actor_id: session.context.employee_id,
+          target_document_id: operation.documentId,
+          target_request_id: requestId,
+        },
+        session.config.serviceRoleKey,
+      ),
+      retryableStates: ['pending'],
+    })
+    if (reconciliation.outcome === 'confirmed') {
+      return json({ documentId: operation.documentId, requestId, state: 'stored' }, 201)
+    }
+    if (reconciliation.outcome === 'definitive_failure') {
+      const outcome = await reconcileRejectedLicensingCompletion({
+        actorId: session.context.employee_id,
+        bytes: bytes.byteLength,
+        checksum,
+        config: serviceConfig,
+        error,
+        operation,
+        requestId,
+      })
+      if (outcome === 'stored') {
+        return json({ documentId: operation.documentId, requestId, state: 'stored' }, 201)
+      }
+      throw new ApiError('licensing_document_storage_failed', 502, 'The licensing document could not be stored. No incomplete document was released.')
+    }
+    console.warn(JSON.stringify({
+      documentId: operation.documentId,
+      event: 'licensing_document_completion_deferred',
+      reason: reconciliation.reason,
+      requestId,
+    }))
+    throw new ApiError('licensing_document_finalization_pending', 503, 'The uploaded document was preserved, but its final status could not be confirmed. Retry this same upload request.')
   }
 }
 
@@ -3227,29 +3992,33 @@ async function handleLicensingSubmissionDocumentUpload(
   }
   const checksum = await sha256BytesHex(bytes)
   const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
-  const operation = await callRpc<LicensingDocumentUploadOperation>(
+  const prepareArguments = {
+    target_actor_id: session.context.employee_id,
+    target_byte_size: bytes.byteLength,
+    target_content_type: validated.detectedMimeType,
+    target_extension: validated.extension,
+    target_original_filename: validated.sanitizedFilename,
+    target_sha256_checksum: checksum,
+    target_submission_id: submissionId,
+    target_upload_request_id: metadata.idempotencyKey,
+  }
+  const readOperation = () => callRpc<LicensingDocumentUploadOperation>(
     serviceConfig,
     'service_prepare_licensing_submission_document_upload',
-    {
-      target_actor_id: session.context.employee_id,
-      target_byte_size: bytes.byteLength,
-      target_content_type: validated.detectedMimeType,
-      target_extension: validated.extension,
-      target_original_filename: validated.sanitizedFilename,
-      target_sha256_checksum: checksum,
-      target_submission_id: submissionId,
-      target_upload_request_id: metadata.idempotencyKey,
-    },
+    prepareArguments,
     session.config.serviceRoleKey,
   )
+  const operation = await readOperation()
 
   if (operation.state === 'stored') return json({ documentId: operation.documentId, requestId, state: 'stored' })
   if (operation.state !== 'pending') {
     throw new ApiError('licensing_document_upload_unavailable', 409, 'This licensing document upload cannot be retried.')
   }
 
+  let completionStarted = false
   try {
     await storeLicensingDocument(serviceConfig, operation, bytes, validated.detectedMimeType, checksum)
+    completionStarted = true
     const completed = await callRpc<Record<string, unknown>>(
       serviceConfig,
       'service_complete_licensing_document_upload',
@@ -3262,18 +4031,74 @@ async function handleLicensingSubmissionDocumentUpload(
     )
     return json({ ...completed, requestId }, 201)
   } catch (error) {
-    await deletePrivateStorageObject(serviceConfig, operation.bucket, operation.objectKey).catch(() => undefined)
-    await callRpc(
-      serviceConfig,
-      'service_fail_licensing_document_upload',
-      {
-        target_actor_id: session.context.employee_id,
-        target_document_id: operation.documentId,
-        target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Protected upload failed.',
-      },
-      session.config.serviceRoleKey,
-    ).catch(() => undefined)
-    throw new ApiError('licensing_document_storage_failed', 502, 'The licensing document could not be stored. No incomplete document was released.')
+    if (completionStarted && !completionFailureMayBeAmbiguous(error)) {
+      const outcome = await reconcileRejectedLicensingCompletion({
+        actorId: session.context.employee_id,
+        bytes: bytes.byteLength,
+        checksum,
+        config: serviceConfig,
+        error,
+        operation,
+        requestId,
+      })
+      if (outcome === 'stored') {
+        return json({ documentId: operation.documentId, requestId, state: 'stored' }, 201)
+      }
+      if (error instanceof SupabaseRequestError) {
+        throw new ApiError('licensing_document_completion_rejected', error.status, error.message)
+      }
+      throw error
+    }
+    const reconciliation = await reconcileAmbiguousUploadCompletion({
+      completedStates: ['stored'],
+      inspectObject: () => inspectPrivateStorageObjectIntegrity(
+        serviceConfig,
+        operation.bucket,
+        operation.objectKey,
+        bytes.byteLength,
+        checksum,
+      ),
+      operationMatches: (candidate) => candidate.documentId === operation.documentId
+        && candidate.bucket === operation.bucket
+        && candidate.objectKey === operation.objectKey,
+      readOperation,
+      retryCompletion: () => callRpc(
+        serviceConfig,
+        'service_complete_licensing_document_upload',
+        {
+          target_actor_id: session.context.employee_id,
+          target_document_id: operation.documentId,
+          target_request_id: requestId,
+        },
+        session.config.serviceRoleKey,
+      ),
+      retryableStates: ['pending'],
+    })
+    if (reconciliation.outcome === 'confirmed') {
+      return json({ documentId: operation.documentId, requestId, state: 'stored' }, 201)
+    }
+    if (reconciliation.outcome === 'definitive_failure') {
+      const outcome = await reconcileRejectedLicensingCompletion({
+        actorId: session.context.employee_id,
+        bytes: bytes.byteLength,
+        checksum,
+        config: serviceConfig,
+        error,
+        operation,
+        requestId,
+      })
+      if (outcome === 'stored') {
+        return json({ documentId: operation.documentId, requestId, state: 'stored' }, 201)
+      }
+      throw new ApiError('licensing_document_storage_failed', 502, 'The licensing document could not be stored. No incomplete document was released.')
+    }
+    console.warn(JSON.stringify({
+      documentId: operation.documentId,
+      event: 'licensing_document_completion_deferred',
+      reason: reconciliation.reason,
+      requestId,
+    }))
+    throw new ApiError('licensing_document_finalization_pending', 503, 'The uploaded document was preserved, but its final status could not be confirmed. Retry this same upload request.')
   }
 }
 
@@ -3488,7 +4313,7 @@ async function handleClientDocumentUpload(request: Request, environment: Environ
   if (!allowed.includes(validated.detectedMimeType)) throw new ApiError('client_document_type_not_allowed', 400, 'Upload a PDF, PNG, JPEG, WebP, text, Word, or Excel document.')
   const checksum = await sha256BytesHex(bytes)
   const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
-  const operation = await callRpc<ClientDocumentUploadOperation>(serviceConfig, 'service_prepare_client_document_upload', {
+  const prepareArguments = {
     target_access_classification: metadata.accessClassification,
     target_actor_id: session.context.employee_id,
     target_byte_size: bytes.byteLength,
@@ -3506,17 +4331,200 @@ async function handleClientDocumentUpload(request: Request, environment: Environ
     target_sha256_checksum: checksum,
     target_title: metadata.title,
     target_upload_request_id: metadata.idempotencyKey,
-  }, session.config.serviceRoleKey)
+  }
+  const readOperation = () => callRpc<ClientDocumentUploadOperation>(
+    serviceConfig,
+    'service_prepare_client_document_upload',
+    prepareArguments,
+    session.config.serviceRoleKey,
+  )
+  const reconcileRejectedCompletion = (error: unknown) => callRpc<ClientDocumentUploadFailureDecision>(
+    serviceConfig,
+    'service_reconcile_client_document_upload_failure',
+    {
+      target_actor_id: session.context.employee_id,
+      target_document_id: operation.documentId,
+      target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Protected upload failed.',
+    },
+    session.config.serviceRoleKey,
+  )
+  const operation = await readOperation()
   if (operation.state === 'stored') return json({ documentId: operation.documentId, requestId, state: 'stored' })
   if (operation.state !== 'pending') throw new ApiError('client_document_upload_unavailable', 409, 'This upload request cannot be retried.')
+  const cleanupIdentity: ClientDocumentCleanupIdentity = {
+    actorId: session.context.employee_id,
+    bucket: operation.bucket,
+    checksum,
+    documentId: operation.documentId,
+    objectKey: operation.objectKey,
+    sizeBytes: bytes.byteLength,
+  }
+  let completionStarted = false
   try {
     await storeLicensingDocument(serviceConfig, operation, bytes, validated.detectedMimeType, checksum)
+    completionStarted = true
     const completed = await callRpc<Record<string, unknown>>(serviceConfig, 'service_complete_client_document_upload', { target_actor_id: session.context.employee_id, target_document_id: operation.documentId, target_request_id: requestId }, session.config.serviceRoleKey)
     return json({ ...completed, requestId }, 201)
   } catch (error) {
-    await deletePrivateStorageObject(serviceConfig, operation.bucket, operation.objectKey).catch(() => undefined)
-    await callRpc(serviceConfig, 'service_fail_client_document_upload', { target_actor_id: session.context.employee_id, target_document_id: operation.documentId, target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Protected upload failed.' }, session.config.serviceRoleKey).catch(() => undefined)
-    throw new ApiError('client_document_storage_failed', 502, 'The client document could not be stored. No incomplete document was released.')
+    if (completionStarted && !completionFailureMayBeAmbiguous(error)) {
+      let failureDecision: ClientDocumentUploadFailureDecision
+      try {
+        // This RPC locks the operation row. It either observes the concurrent
+        // stored commit or atomically moves a still-pending row to failed
+        // before it can authorize deletion.
+        failureDecision = await reconcileRejectedCompletion(error)
+      } catch (reconciliationError) {
+        console.warn(JSON.stringify({
+          documentId: operation.documentId,
+          event: 'client_document_cleanup_decision_deferred',
+          reason: reconciliationError instanceof Error ? reconciliationError.message : 'state_unavailable',
+          requestId,
+        }))
+        throw new ApiError('client_document_finalization_pending', 503, 'The uploaded document was preserved because its final status could not be confirmed. Retry this same upload request.')
+      }
+
+      const exactOperation = failureDecision.documentId === operation.documentId
+        && failureDecision.bucket === operation.bucket
+        && failureDecision.objectKey === operation.objectKey
+        && failureDecision.byteSize === bytes.byteLength
+        && failureDecision.checksum === checksum
+      if (failureDecision.state === 'stored' && exactOperation) {
+        return json({ documentId: operation.documentId, requestId, state: 'stored' }, 201)
+      }
+      if (!failureDecision.cleanupAllowed || failureDecision.state !== 'failed' || !exactOperation) {
+        console.warn(JSON.stringify({
+          documentId: operation.documentId,
+          event: 'client_document_cleanup_withheld',
+          reason: exactOperation ? `state_${failureDecision.state}` : 'operation_mismatch',
+          requestId,
+        }))
+        throw new ApiError('client_document_finalization_pending', 503, 'The uploaded document was preserved because its final status could not be confirmed. Retry this same upload request.')
+      }
+
+      const objectState = await inspectPrivateStorageObjectIntegrity(
+        serviceConfig,
+        operation.bucket,
+        operation.objectKey,
+        bytes.byteLength,
+        checksum,
+      )
+      if (objectState === 'match') {
+        try {
+          await deletePrivateStorageObject(serviceConfig, operation.bucket, operation.objectKey)
+        } catch (cleanupError) {
+          await deferClientDocumentCleanup(
+            serviceConfig,
+            cleanupIdentity,
+            cleanupError instanceof Error ? cleanupError.message : 'Private storage cleanup failed.',
+          ).catch(() => undefined)
+          console.warn(JSON.stringify({
+            documentId: operation.documentId,
+            event: 'client_document_cleanup_deferred',
+            reason: cleanupError instanceof Error ? cleanupError.message : 'storage_unavailable',
+            requestId,
+          }))
+          throw new ApiError('client_document_cleanup_pending', 503, 'The rejected document remains private while storage cleanup is retried.')
+        }
+      } else if (objectState !== 'missing') {
+        await deferClientDocumentCleanup(
+          serviceConfig,
+          cleanupIdentity,
+          `Cleanup withheld because object verification returned ${objectState}.`,
+        ).catch(() => undefined)
+        console.warn(JSON.stringify({
+          documentId: operation.documentId,
+          event: 'client_document_cleanup_withheld',
+          reason: objectState,
+          requestId,
+        }))
+        throw new ApiError('client_document_cleanup_pending', 503, 'The rejected document remains private because its stored object could not be safely verified.')
+      }
+      try {
+        await completeClientDocumentCleanup(serviceConfig, cleanupIdentity)
+      } catch (cleanupCompletionError) {
+        console.warn(JSON.stringify({
+          documentId: operation.documentId,
+          event: 'client_document_cleanup_confirmation_deferred',
+          reason: cleanupCompletionError instanceof Error ? cleanupCompletionError.message : 'state_unavailable',
+          requestId,
+        }))
+        throw new ApiError('client_document_cleanup_pending', 503, 'The rejected document was removed, but cleanup confirmation is pending.')
+      }
+      if (error instanceof SupabaseRequestError) {
+        throw new ApiError('client_document_completion_rejected', error.status, error.message)
+      }
+      throw error
+    }
+    const reconciliation = await reconcileAmbiguousUploadCompletion({
+      completedStates: ['stored'],
+      inspectObject: () => inspectPrivateStorageObjectIntegrity(
+        serviceConfig,
+        operation.bucket,
+        operation.objectKey,
+        bytes.byteLength,
+        checksum,
+      ),
+      operationMatches: (candidate) => candidate.documentId === operation.documentId
+        && candidate.bucket === operation.bucket
+        && candidate.objectKey === operation.objectKey,
+      readOperation,
+      retryCompletion: () => callRpc(
+        serviceConfig,
+        'service_complete_client_document_upload',
+        {
+          target_actor_id: session.context.employee_id,
+          target_document_id: operation.documentId,
+          target_request_id: requestId,
+        },
+        session.config.serviceRoleKey,
+      ),
+      retryableStates: ['pending'],
+    })
+    if (reconciliation.outcome === 'confirmed') {
+      return json({ documentId: operation.documentId, requestId, state: 'stored' }, 201)
+    }
+    if (reconciliation.outcome === 'definitive_failure') {
+      let failureDecision: ClientDocumentUploadFailureDecision
+      try {
+        failureDecision = await reconcileRejectedCompletion(error)
+      } catch (reconciliationError) {
+        console.warn(JSON.stringify({
+          documentId: operation.documentId,
+          event: 'client_document_failure_decision_deferred',
+          reason: reconciliationError instanceof Error ? reconciliationError.message : 'state_unavailable',
+          requestId,
+        }))
+        throw new ApiError('client_document_finalization_pending', 503, 'The upload was preserved because its final status could not be confirmed. Retry this same upload request.')
+      }
+      const exactOperation = failureDecision.documentId === operation.documentId
+        && failureDecision.bucket === operation.bucket
+        && failureDecision.objectKey === operation.objectKey
+        && failureDecision.byteSize === bytes.byteLength
+        && failureDecision.checksum === checksum
+      if (failureDecision.state === 'stored' && exactOperation) {
+        return json({ documentId: operation.documentId, requestId, state: 'stored' }, 201)
+      }
+      if (failureDecision.state !== 'failed' || !exactOperation) {
+        throw new ApiError('client_document_finalization_pending', 503, 'The upload was preserved because its final status could not be confirmed. Retry this same upload request.')
+      }
+      if (reconciliation.reason === 'missing') {
+        await completeClientDocumentCleanup(serviceConfig, cleanupIdentity).catch(() => undefined)
+      } else {
+        await deferClientDocumentCleanup(
+          serviceConfig,
+          cleanupIdentity,
+          'Cleanup withheld because the protected object did not match the authorized upload.',
+        ).catch(() => undefined)
+      }
+      throw new ApiError('client_document_storage_failed', 502, 'The client document could not be stored. No incomplete document was released.')
+    }
+    console.warn(JSON.stringify({
+      documentId: operation.documentId,
+      event: 'client_document_completion_deferred',
+      reason: reconciliation.reason,
+      requestId,
+    }))
+    throw new ApiError('client_document_finalization_pending', 503, 'The uploaded document was preserved, but its final status could not be confirmed. Retry this same upload request.')
   }
 }
 
@@ -4087,31 +5095,33 @@ async function handleHrDocumentUpload(
   const validated = validateHrDocumentFile(bytes, metadata.originalFilename, metadata.declaredMimeType)
   const checksum = await sha256BytesHex(bytes)
   const serviceConfig = { serviceRoleKey: config.serviceRoleKey, url: config.url }
-  const operation = await callRpc<HrDocumentUploadOperation>(
+  const prepareArguments = {
+    target_access_classification: metadata.accessClassification,
+    target_actor_id: actorId,
+    target_category: metadata.category,
+    target_declared_mime_type: metadata.declaredMimeType,
+    target_description: metadata.description,
+    target_detected_mime_type: validated.detectedMimeType,
+    target_document_id: metadata.documentId,
+    target_employee_id: metadata.employeeId,
+    target_extension: validated.extension,
+    target_idempotency_key: metadata.idempotencyKey,
+    target_original_filename: metadata.originalFilename,
+    target_replacement_reason: metadata.replacementReason,
+    target_request_id: requestId,
+    target_sanitized_filename: validated.sanitizedFilename,
+    target_sha256_checksum: checksum,
+    target_size_bytes: bytes.byteLength,
+    target_title: metadata.title,
+    target_vault_code: metadata.vaultCode,
+  }
+  const readOperation = () => callRpc<HrDocumentUploadOperation>(
     serviceConfig,
     'service_begin_hr_document_upload',
-    {
-      target_access_classification: metadata.accessClassification,
-      target_actor_id: actorId,
-      target_category: metadata.category,
-      target_declared_mime_type: metadata.declaredMimeType,
-      target_description: metadata.description,
-      target_detected_mime_type: validated.detectedMimeType,
-      target_document_id: metadata.documentId,
-      target_employee_id: metadata.employeeId,
-      target_extension: validated.extension,
-      target_idempotency_key: metadata.idempotencyKey,
-      target_original_filename: metadata.originalFilename,
-      target_replacement_reason: metadata.replacementReason,
-      target_request_id: requestId,
-      target_sanitized_filename: validated.sanitizedFilename,
-      target_sha256_checksum: checksum,
-      target_size_bytes: bytes.byteLength,
-      target_title: metadata.title,
-      target_vault_code: metadata.vaultCode,
-    },
+    prepareArguments,
     config.serviceRoleKey,
   )
+  const operation = await readOperation()
 
   if (operation.state === 'clean') {
     return json({
@@ -4123,8 +5133,10 @@ async function handleHrDocumentUpload(
     })
   }
 
+  let completionStarted = false
   try {
     await storePrivateDocument(serviceConfig, operation, bytes, validated.detectedMimeType, checksum)
+    completionStarted = true
     const completed = await callRpc<HrDocumentUploadOperation>(
       serviceConfig,
       'service_mark_hr_document_upload_stored',
@@ -4139,19 +5151,101 @@ async function handleHrDocumentUpload(
       versionId: operation.versionId,
     })
   } catch (error) {
-    await deletePrivateStorageObject(serviceConfig, operation.bucket, operation.objectKey).catch(() => undefined)
-    await callRpc(
-      serviceConfig,
-      'service_fail_hr_document_upload',
-      {
-        target_failure_code: 'protected_storage_failed',
-        target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Protected storage failed.',
-        target_operation_id: operation.operationId,
-        target_state: 'storage_error',
-      },
-      config.serviceRoleKey,
-    ).catch(() => undefined)
-    throw new ApiError('document_storage_failed', 502, 'The document could not be stored safely. Try the upload again.')
+    if (completionStarted && !completionFailureMayBeAmbiguous(error)) {
+      let failureState: Pick<HrDocumentUploadOperation, 'state'>
+      try {
+        // Persist the failure under the operation lock before responding. The
+        // stored object is deliberately preserved: an overlapping completion
+        // may already have committed, and deleting first could destroy the
+        // now-authoritative document. The same request key can safely retry
+        // completion against the exact preserved bytes.
+        failureState = await callRpc<Pick<HrDocumentUploadOperation, 'state'>>(
+          serviceConfig,
+          'service_fail_hr_document_upload',
+          {
+            target_failure_code: 'completion_rejected',
+            target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Document completion was rejected.',
+            target_operation_id: operation.operationId,
+            target_state: 'storage_error',
+          },
+          config.serviceRoleKey,
+        )
+      } catch (failureError) {
+        console.warn(JSON.stringify({
+          event: 'hr_document_failure_state_deferred',
+          operationId: operation.operationId,
+          reason: failureError instanceof Error ? failureError.message : 'state_unavailable',
+          requestId,
+        }))
+        throw new ApiError('document_finalization_pending', 503, 'The uploaded document was preserved because its final status could not be confirmed. Retry this same upload request.')
+      }
+      if (failureState.state === 'clean') {
+        return json({
+          documentId: operation.documentId,
+          operationId: operation.operationId,
+          requestId,
+          scanState: 'clean',
+          versionId: operation.versionId,
+        })
+      }
+      if (error instanceof SupabaseRequestError) {
+        throw new ApiError('document_completion_rejected', error.status, error.message)
+      }
+      throw error
+    }
+    const reconciliation = await reconcileAmbiguousUploadCompletion({
+      completedStates: ['clean'],
+      inspectObject: () => inspectPrivateStorageObjectIntegrity(
+        serviceConfig,
+        operation.bucket,
+        operation.objectKey,
+        bytes.byteLength,
+        checksum,
+      ),
+      operationMatches: (candidate) => candidate.operationId === operation.operationId
+        && candidate.documentId === operation.documentId
+        && candidate.versionId === operation.versionId
+        && candidate.bucket === operation.bucket
+        && candidate.objectKey === operation.objectKey,
+      readOperation,
+      retryCompletion: () => callRpc(
+        serviceConfig,
+        'service_mark_hr_document_upload_stored',
+        { target_operation_id: operation.operationId, target_request_id: requestId },
+        config.serviceRoleKey,
+      ),
+      retryableStates: ['initialized', 'quarantined', 'stored', 'scan_pending', 'scan_error', 'storage_error'],
+    })
+    if (reconciliation.outcome === 'confirmed') {
+      return json({
+        documentId: operation.documentId,
+        operationId: operation.operationId,
+        requestId,
+        scanState: 'clean',
+        versionId: operation.versionId,
+      })
+    }
+    if (reconciliation.outcome === 'definitive_failure') {
+      await callRpc(
+        serviceConfig,
+        'service_fail_hr_document_upload',
+        {
+          target_failure_code: 'protected_storage_failed',
+          target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Protected storage failed.',
+          target_operation_id: operation.operationId,
+          target_state: 'storage_error',
+        },
+        config.serviceRoleKey,
+      ).catch(() => undefined)
+      throw new ApiError('document_storage_failed', 502, 'The document could not be stored safely. Try the upload again.')
+    }
+    console.warn(JSON.stringify({
+      event: 'hr_document_completion_deferred',
+      operationId: operation.operationId,
+      reason: reconciliation.reason,
+      requestId,
+    }))
+    throw new ApiError('document_finalization_pending', 503, 'The uploaded document was preserved, but its final status could not be confirmed. Retry this same upload request.')
   }
 }
 
@@ -4885,6 +5979,24 @@ function signatureTimestamp(value: unknown): string {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString()
 }
 
+function signatureArtifactDate(payload: SignatureFinalizationPayload): Date {
+  const timestamps = [
+    ...(Array.isArray(payload.events) ? payload.events.map((event) => event.occurredAt) : []),
+    ...(Array.isArray(payload.recipients) ? payload.recipients.map((recipient) => recipient.actedAt) : []),
+  ]
+    .map(signatureTimestamp)
+    .filter(Boolean)
+    .sort()
+  // Signature events are immutable once an envelope begins finalization. The
+  // latest event therefore provides a stable PDF metadata date across Worker
+  // restarts without inventing mutable wall-clock input.
+  return new Date(timestamps.at(-1) ?? '1970-01-01T00:00:00.000Z')
+}
+
+export function signatureAppearanceObjectKey(employeeId: string, recipientId: string, operationId: string, checksum: string, mimeType: 'image/jpeg' | 'image/png'): string {
+  return `${employeeId}/${recipientId}/${operationId}/${checksum}.${mimeType === 'image/png' ? 'png' : 'jpg'}`
+}
+
 function drawWrappedAuditText(
   page: ReturnType<PDFDocument['addPage']>,
   font: Awaited<ReturnType<PDFDocument['embedFont']>>,
@@ -4987,7 +6099,7 @@ export async function buildSignedPdf(
     }
   }
   pdf.setProducer('SygShift Document Studio')
-  pdf.setModificationDate(new Date())
+  pdf.setModificationDate(signatureArtifactDate(payload))
   return pdf.save({ addDefaultPage: false, useObjectStreams: false })
 }
 
@@ -5038,8 +6150,39 @@ async function buildSignatureAuditCertificate(
   pdf.setTitle(`Signature audit certificate - ${safePdfText(payload.documentTitle, 160)}`)
   pdf.setAuthor('SygShift Document Studio')
   pdf.setProducer('SygShift Document Studio')
-  pdf.setCreationDate(new Date())
+  const artifactDate = signatureArtifactDate(payload)
+  pdf.setCreationDate(artifactDate)
+  pdf.setModificationDate(artifactDate)
   return pdf.save({ addDefaultPage: false, useObjectStreams: false })
+}
+
+async function scheduleSignatureArtifactCleanup(
+  config: { serviceRoleKey: string, url: string },
+  input: {
+    bucket: string
+    checksum: string
+    cleanupKind: 'signature_final_pdf' | 'signature_certificate'
+    envelopeId: string
+    jobId: string
+    objectKey: string
+    sizeBytes: number
+  },
+  rpc: RpcInvoker = callRpc,
+): Promise<void> {
+  await rpc(
+    config,
+    'service_schedule_signature_artifact_cleanup_v2',
+    {
+      target_bucket: input.bucket,
+      target_byte_size: input.sizeBytes,
+      target_checksum: input.checksum,
+      target_cleanup_kind: input.cleanupKind,
+      target_envelope_id: input.envelopeId,
+      target_job_id: input.jobId,
+      target_object_key: input.objectKey,
+    },
+    config.serviceRoleKey,
+  )
 }
 
 export async function finalizeSignatureEnvelope(
@@ -5073,36 +6216,45 @@ export async function finalizeSignatureEnvelope(
   const packageChecksum = await sha256Hex(`${payload.sourceChecksum}:${finalChecksum}:${payload.envelopeId}`)
   const auditBytes = await buildSignatureAuditCertificate(payload, finalChecksum, packageChecksum)
   const auditChecksum = await sha256BytesHex(auditBytes)
-  const finalObjectKey = `${crypto.randomUUID()}/${crypto.randomUUID()}`
-  const auditObjectKey = `${crypto.randomUUID()}/${crypto.randomUUID()}`
+  // The job is durable and uniquely owned by this envelope. Reusing these
+  // identities lets a reclaimed Worker rediscover artifacts that were stored
+  // before an unobserved database completion, instead of allocating orphans.
+  const finalObjectKey = `${payload.envelopeId}/${payload.jobId}`
+  const auditObjectKey = `${payload.jobId}/${payload.envelopeId}`
   const finalFilename = sanitizeHrDocumentFilename(`${payload.documentTitle ?? 'document'}-signed.pdf`)
   const auditFilename = sanitizeHrDocumentFilename(`${payload.documentTitle ?? 'document'}-audit-certificate.pdf`)
+  const readFinalizationState = () => rpc<SignatureFinalizationState>(
+    config,
+    'service_get_signature_finalization_state',
+    { target_envelope_id: payload.envelopeId, target_job_id: payload.jobId! },
+    config.serviceRoleKey,
+  )
   let finalStored = false
   let auditStored = false
   let commitStarted = false
+  let commitFinalization: (() => Promise<Record<string, unknown>>) | null = null
   try {
-    await storePrivateStorageObject(config, payload.sourceBucket, finalObjectKey, finalBytes, 'application/pdf', scheduledSignal)
-    finalStored = true
-    await verifyPrivateStorageObjectChecksum(
+    await storeIdempotentPrivateStorageObject(
       config,
       payload.sourceBucket,
       finalObjectKey,
-      finalBytes.byteLength,
+      finalBytes,
+      'application/pdf',
       finalChecksum,
       scheduledSignal,
     )
-    await storePrivateStorageObject(config, payload.sourceBucket, auditObjectKey, auditBytes, 'application/pdf', scheduledSignal)
-    auditStored = true
-    await verifyPrivateStorageObjectChecksum(
+    finalStored = true
+    await storeIdempotentPrivateStorageObject(
       config,
       payload.sourceBucket,
       auditObjectKey,
-      auditBytes.byteLength,
+      auditBytes,
+      'application/pdf',
       auditChecksum,
       scheduledSignal,
     )
-    commitStarted = true
-    return await rpc<Record<string, unknown>>(config, 'service_commit_signature_finalization', {
+    auditStored = true
+    commitFinalization = () => rpc<Record<string, unknown>>(config, 'service_commit_signature_finalization', {
       target_audit_bucket: payload.sourceBucket,
       target_audit_checksum: auditChecksum,
       target_audit_filename: auditFilename,
@@ -5115,17 +6267,84 @@ export async function finalizeSignatureEnvelope(
       target_final_object_key: finalObjectKey,
       target_final_size_bytes: finalBytes.byteLength,
       target_generated_by_service: 'sygshift-worker/pdf-lib',
-      target_job_id: payload.jobId,
+      target_job_id: payload.jobId!,
       target_package_checksum: packageChecksum,
       target_request_id: requestId,
     }, config.serviceRoleKey)
+    commitStarted = true
+    return await commitFinalization()
   } catch (error) {
-    // A scheduled timeout or circuit failure during the commit RPC has an
-    // ambiguous outcome: Postgres may have committed before the response was
-    // lost. Never delete the immutable objects in that state. The next run
-    // first re-reads the envelope and either observes completion or safely
-    // retries reconciliation with the preserved evidence.
-    if (commitStarted && isScheduledContainmentError(error)) throw error
+    if (commitStarted && (completionFailureMayBeAmbiguous(error) || isScheduledContainmentError(error))) {
+      // The transaction may have committed before the response disappeared.
+      // Reconcile the authoritative database references and retry only the
+      // completion transaction with these same immutable objects. Unknown
+      // outcomes preserve both objects; they are never treated as disposable.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        let state: SignatureFinalizationState
+        try {
+          state = await readFinalizationState()
+        } catch {
+          break
+        }
+        if (!state || typeof state !== 'object') break
+        if (state.envelopeStatus === 'completed' && state.jobStatus === 'completed') {
+          const finalIsAuthoritative = state.finalBucket === payload.sourceBucket
+            && state.finalObjectKey === finalObjectKey
+            && state.finalChecksum === finalChecksum
+          const auditIsAuthoritative = state.auditBucket === payload.sourceBucket
+            && state.auditObjectKey === auditObjectKey
+            && state.auditChecksum === auditChecksum
+          if (!finalIsAuthoritative && finalStored) {
+            await scheduleSignatureArtifactCleanup(config, {
+              bucket: payload.sourceBucket,
+              checksum: finalChecksum,
+              cleanupKind: 'signature_final_pdf',
+              envelopeId: payload.envelopeId,
+              jobId: payload.jobId,
+              objectKey: finalObjectKey,
+              sizeBytes: finalBytes.byteLength,
+            }, rpc)
+          }
+          if (!auditIsAuthoritative && auditStored) {
+            await scheduleSignatureArtifactCleanup(config, {
+              bucket: payload.sourceBucket,
+              checksum: auditChecksum,
+              cleanupKind: 'signature_certificate',
+              envelopeId: payload.envelopeId,
+              jobId: payload.jobId,
+              objectKey: auditObjectKey,
+              sizeBytes: auditBytes.byteLength,
+            }, rpc)
+          }
+          return {
+            finalVersionId: state.finalVersionId,
+            id: payload.envelopeId,
+            idempotent: true,
+            status: 'completed',
+          }
+        }
+        if (attempt === 0 && state.envelopeStatus === 'finalizing' && state.jobStatus === 'processing') {
+          try {
+            return await commitFinalization!()
+          } catch {
+            continue
+          }
+        }
+        break
+      }
+      if (isScheduledContainmentError(error)) throw error
+      console.warn(JSON.stringify({
+        envelopeId: payload.envelopeId,
+        event: 'signature_finalization_completion_deferred',
+        jobId: payload.jobId,
+        requestId,
+      }))
+      throw new ApiError(
+        'signature_finalization_pending',
+        503,
+        'The signed PDF and audit certificate were preserved because finalization could not be confirmed.',
+      )
+    }
     if (scheduledSignal?.aborted) {
       throw new ScheduledSupabaseUnavailableError(
         'signature_finalization_storage',
@@ -5133,11 +6352,20 @@ export async function finalizeSignatureEnvelope(
         'Scheduled signature storage work exceeded the invocation budget.',
       )
     }
-    if (finalStored) await deletePrivateStorageObject(config, payload.sourceBucket, finalObjectKey).catch(() => undefined)
-    if (auditStored) await deletePrivateStorageObject(config, payload.sourceBucket, auditObjectKey).catch(() => undefined)
-    await rpc(config, 'service_fail_signature_finalization', {
+    // Keep job-addressed artifacts until the authoritative job reaches a
+    // terminal database state. A reclaimed or overlapping lease may already
+    // be reusing them, so a local error alone is not cleanup authority.
+    await rpc(config, 'service_fail_signature_finalization_v2', {
+      target_audit_bucket: auditStored ? payload.sourceBucket : null,
+      target_audit_checksum: auditStored ? auditChecksum : null,
+      target_audit_object_key: auditStored ? auditObjectKey : null,
+      target_audit_size_bytes: auditStored ? auditBytes.byteLength : null,
       target_envelope_id: payload.envelopeId,
       target_error_code: error instanceof Error ? error.message.slice(0, 120) : 'finalization_failed',
+      target_final_bucket: finalStored ? payload.sourceBucket : null,
+      target_final_checksum: finalStored ? finalChecksum : null,
+      target_final_object_key: finalStored ? finalObjectKey : null,
+      target_final_size_bytes: finalStored ? finalBytes.byteLength : null,
       target_job_id: payload.jobId,
     }, config.serviceRoleKey).catch(() => undefined)
     throw error
@@ -5295,43 +6523,196 @@ async function handleMySignatureAction(request: Request, environment: Environmen
   if (!['fill','review','acknowledge','approve','certify','initial','sign','countersign','witness','decline','request_correction'].includes(action)) throw new ApiError('invalid_signature_action', 422, 'Choose an available document action.')
   const needsAppearance = ['initial','sign','countersign','witness'].includes(action)
   const config = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
-  let appearance: { bucket: string, objectKey: string, checksum: string } | null = null
-  let actionRecorded = false
+  const readActionState = () => callRpc<SignatureActionState>(
+    config,
+    'service_get_signature_action_state',
+    { target_actor_id: session.context.employee_id, target_recipient_id: recipientId },
+    config.serviceRoleKey,
+  )
+  const priorState = await readActionState()
+  if (priorState.completed) {
+    const finalization = priorState.finalizationRequired
+      ? await finalizeSignatureEnvelope(config, priorState.envelopeId, requestId)
+      : null
+    return json({ ...priorState, finalization, idempotent: true, requestId })
+  }
+  let appearance: SignatureAppearanceOperation | null = null
   if (needsAppearance) {
     const parsed = signatureAppearanceBytes(body.appearanceDataUrl)
-    const objectKey = `${session.context.employee_id}/${crypto.randomUUID()}`
-    await storePrivateStorageObject(config, 'signature-appearances', objectKey, parsed.bytes, parsed.mimeType)
-    appearance = { bucket: 'signature-appearances', objectKey, checksum: await sha256BytesHex(parsed.bytes) }
+    const checksum = await sha256BytesHex(parsed.bytes)
+    const prepared = await callRpc<SignatureAppearanceOperation>(
+      config,
+      'service_prepare_signature_appearance_v2',
+      {
+        target_actor_id: session.context.employee_id,
+        target_byte_size: parsed.bytes.byteLength,
+        target_checksum: checksum,
+        target_mime_type: parsed.mimeType,
+        target_recipient_id: recipientId,
+        target_request_id: requestId,
+      },
+      config.serviceRoleKey,
+    )
+    if (!prepared || prepared.state !== 'prepared'
+      || prepared.bucket !== 'signature-appearances'
+      || !validUuid(prepared.operationId)
+      || prepared.checksum !== checksum
+      || prepared.byteSize !== parsed.bytes.byteLength
+      || prepared.mimeType !== parsed.mimeType
+      || prepared.objectKey !== signatureAppearanceObjectKey(
+        session.context.employee_id,
+        recipientId,
+        prepared.operationId,
+        checksum,
+        parsed.mimeType,
+      )) {
+      throw new Error('The signature appearance preparation service returned an invalid identity.')
+    }
+    await storeIdempotentPrivateStorageObject(
+      config,
+      prepared.bucket,
+      prepared.objectKey,
+      parsed.bytes,
+      parsed.mimeType,
+      checksum,
+    )
+    appearance = {
+      ...prepared,
+      state: 'prepared',
+    }
   }
+  const claims = accessTokenClaims(session.token)
+  const actionArguments = {
+    target_action: action,
+    target_actor_id: session.context.employee_id,
+    target_appearance_bucket: appearance?.bucket ?? null,
+    target_appearance_checksum: appearance?.checksum ?? null,
+    target_appearance_object_key: appearance?.objectKey ?? null,
+    target_consent_shown_at: optionalIsoTimestamp(body.consentShownAt, 'Consent review time'),
+    target_consent_version: optionalText(body.consentVersion, 'Consent version', 80),
+    target_display_name: optionalText(body.displayName, 'Signature name', 200),
+    target_field_values: body.fieldValues && typeof body.fieldValues === 'object' && !Array.isArray(body.fieldValues) ? body.fieldValues : {},
+    target_mfa_method: mfa.method,
+    target_mfa_verified_at: mfa.verifiedAt,
+    target_reason: optionalText(body.reason, 'Reason', 2000),
+    target_recipient_id: recipientId,
+    target_request_id: requestId,
+    target_save_adoption: body.saveAdoption === true,
+    target_session_reference_hash: claims?.session_id ? await sha256Hex(claims.session_id) : null,
+    target_signature_method: needsAppearance ? requiredText(body.signatureMethod, 'Signature method', 20) : null,
+    target_signature_style: needsAppearance ? optionalText(body.signatureStyle, 'Signature style', 40) : null,
+  }
+  const recordAction = () => callRpc<SignatureActionResult>(
+    config,
+    appearance ? 'service_record_signature_action_v2' : 'service_record_signature_action',
+    appearance ? { ...actionArguments, target_appearance_operation_id: appearance.operationId } : actionArguments,
+    session.config.serviceRoleKey,
+  )
+  const reconcileAppearanceOperation = (abandon: boolean) => appearance
+    ? callRpc<SignatureAppearanceOperation>(
+      config,
+      'service_reconcile_signature_appearance_v2',
+      {
+        target_abandon: abandon,
+        target_actor_id: session.context.employee_id,
+        target_operation_id: appearance.operationId,
+        target_recipient_id: recipientId,
+      },
+      config.serviceRoleKey,
+    )
+    : Promise.resolve(null)
+  const reconcileAppearance = async (recorded: SignatureActionResult): Promise<SignatureActionResult> => {
+    if (!appearance) return recorded
+    let state: SignatureActionState
+    try {
+      state = await readActionState()
+    } catch {
+      throw new ApiError('signature_action_finalization_pending', 503, 'The signature appearance was preserved, but the completed action could not be reconciled. Retry after the document service recovers.')
+    }
+    if (!state.completed) {
+      throw new ApiError('signature_action_finalization_pending', 503, 'The signature appearance was preserved, but the action could not be confirmed. Retry after the document service recovers.')
+    }
+    const appearanceIsAuthoritative = state.appearanceBucket === appearance.bucket
+      && state.appearanceObjectKey === appearance.objectKey
+      && state.appearanceChecksum === appearance.checksum
+    const operationState = await reconcileAppearanceOperation(false)
+    if (!appearanceIsAuthoritative) {
+      if (!state.appearanceBucket || !state.appearanceObjectKey || !state.appearanceChecksum) {
+        throw new ApiError('signature_action_finalization_pending', 503, 'The signature appearance was preserved because the authoritative signature reference could not be confirmed.')
+      }
+      if (operationState?.state !== 'cleanup_pending') throw new ApiError('signature_action_finalization_pending', 503, 'The non-authoritative signature appearance could not be queued for protected cleanup.')
+    } else if (operationState?.state !== 'authoritative') {
+      throw new ApiError('signature_action_finalization_pending', 503, 'The authoritative signature appearance could not be confirmed durably.')
+    }
+    return {
+      envelopeId: state.envelopeId,
+      eventId: state.eventId,
+      finalizationRequired: state.finalizationRequired,
+      recipientId: state.recipientId,
+      status: state.status,
+    }
+  }
+  let result: SignatureActionResult
   try {
-    const claims = accessTokenClaims(session.token)
-    const result = await callRpc<SignatureActionResult>(config, 'service_record_signature_action', {
-      target_action: action,
-      target_actor_id: session.context.employee_id,
-      target_appearance_bucket: appearance?.bucket ?? null,
-      target_appearance_checksum: appearance?.checksum ?? null,
-      target_appearance_object_key: appearance?.objectKey ?? null,
-      target_consent_shown_at: optionalIsoTimestamp(body.consentShownAt, 'Consent review time'),
-      target_consent_version: optionalText(body.consentVersion, 'Consent version', 80),
-      target_display_name: optionalText(body.displayName, 'Signature name', 200),
-      target_field_values: body.fieldValues && typeof body.fieldValues === 'object' && !Array.isArray(body.fieldValues) ? body.fieldValues : {},
-      target_mfa_method: mfa.method,
-      target_mfa_verified_at: mfa.verifiedAt,
-      target_reason: optionalText(body.reason, 'Reason', 2000),
-      target_recipient_id: recipientId,
-      target_request_id: requestId,
-      target_save_adoption: body.saveAdoption === true,
-      target_session_reference_hash: claims?.session_id ? await sha256Hex(claims.session_id) : null,
-      target_signature_method: needsAppearance ? requiredText(body.signatureMethod, 'Signature method', 20) : null,
-      target_signature_style: needsAppearance ? optionalText(body.signatureStyle, 'Signature style', 40) : null,
-    }, session.config.serviceRoleKey)
-    actionRecorded = true
-    const finalization = result.finalizationRequired ? await finalizeSignatureEnvelope(config, result.envelopeId, requestId) : null
-    return json({ ...result, finalization, requestId })
+    result = await recordAction()
+    result = await reconcileAppearance(result)
   } catch (error) {
-    if (appearance && !actionRecorded) await deletePrivateStorageObject(config, appearance.bucket, appearance.objectKey).catch(() => undefined)
-    throw error
+    if (!appearance) throw error
+    if (error instanceof ApiError && error.code === 'signature_action_finalization_pending') throw error
+    if (!completionFailureMayBeAmbiguous(error)) {
+      // Confirm the recipient state before cleanup. The v2 database action
+      // holds the recipient and operation locks together, so a cleanup-pending
+      // operation cannot be adopted by a late concurrent signing request.
+      try {
+        const state = await readActionState()
+        if (state.completed) {
+          result = await reconcileAppearance(state)
+        } else {
+          await reconcileAppearanceOperation(true).catch((cleanupError) => {
+            console.warn(JSON.stringify({
+              event: 'signature_appearance_cleanup_queue_deferred',
+              reason: cleanupError instanceof Error ? cleanupError.message : 'account_service_unavailable',
+              recipientId,
+              requestId,
+            }))
+          })
+          if (error instanceof SupabaseRequestError) {
+            throw new ApiError('signature_action_rejected', error.status, error.message)
+          }
+          throw error
+        }
+      } catch (stateError) {
+        if (stateError instanceof ApiError) throw stateError
+        if (error instanceof SupabaseRequestError) {
+          throw new ApiError('signature_action_rejected', error.status, error.message)
+        }
+        throw error
+      }
+    } else {
+      const inspection = await inspectPrivateStorageObjectIntegrity(
+        config,
+        appearance.bucket,
+        appearance.objectKey,
+        appearance.byteSize,
+        appearance.checksum,
+      )
+      if (inspection !== 'match') {
+        console.warn(JSON.stringify({ event: 'signature_appearance_completion_deferred', reason: inspection, recipientId, requestId }))
+        throw new ApiError('signature_action_finalization_pending', 503, 'The signature appearance was preserved, but the action could not be confirmed. Retry after the document service recovers.')
+      }
+      try {
+        // The database action is idempotent for a completed recipient. Repeating
+        // the exact request reconciles a commit whose first response was lost.
+        result = await recordAction()
+        result = await reconcileAppearance(result)
+      } catch {
+        console.warn(JSON.stringify({ event: 'signature_appearance_completion_deferred', reason: 'state_unavailable', recipientId, requestId }))
+        throw new ApiError('signature_action_finalization_pending', 503, 'The signature appearance was preserved, but the action could not be confirmed. Retry after the document service recovers.')
+      }
+    }
   }
+  const finalization = result.finalizationRequired ? await finalizeSignatureEnvelope(config, result.envelopeId, requestId) : null
+  return json({ ...result, finalization, requestId })
 }
 
 async function handleSignatureAuditCertificate(request: Request, environment: Environment, requestId: string, envelopeId: string): Promise<Response> {
@@ -5692,30 +7073,100 @@ async function handleHrOnboardingApi(
     )
     requireApprovedEmployeeEmail(environment, target)
 
-    const delivery = { welcome: target.welcomeEmailStatus ?? 'not_sent', accountSetup: target.accountSetupStatus ?? 'not_sent' }
+    const attempt = await callRpc<OnboardingDeliveryAttempt>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_claim_hr_onboarding_delivery_attempt',
+      { target_actor_id: session.context.employee_id, target_case_id: welcomeCaseId },
+      session.config.serviceRoleKey,
+    )
+    if (!validUuid(attempt.attemptId) || attempt.caseId !== welcomeCaseId) {
+      throw new ApiError('onboarding_delivery_attempt_invalid', 503, 'The onboarding delivery attempt could not be verified. No email was sent.')
+    }
+
+    const delivery = { welcome: attempt.welcomeStatus, accountSetup: attempt.accountSetupStatus }
     if (delivery.welcome !== 'sent') {
+      let welcomeAccepted = false
       try {
-        await sendWelcomeEmail(environment, target)
-        await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, 'welcome', 'sent', null, reason)
+        await sendWelcomeEmail(environment, target, attempt.attemptId)
+        welcomeAccepted = true
+        await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, attempt.attemptId, 'welcome', 'sent', null, reason)
         delivery.welcome = 'sent'
       } catch (error) {
-        await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, 'welcome', 'failed', error instanceof Error ? error.message : 'Email delivery failed.', reason)
+        if (welcomeAccepted) {
+          throw new ApiError(
+            'onboarding_delivery_finalization_pending',
+            409,
+            'The welcome email was accepted, but the onboarding record could not be finalized. Retry this same case; SygShift will not resend it.',
+          )
+        }
+        const failure = adminLoginInstructionFailure(error)
+        if (failure.code !== 'email_delivery_unresolved' && failure.status < 500) {
+          await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, attempt.attemptId, 'welcome', 'failed', failure.detail, reason)
+        }
         throw error
       }
     }
 
     if (delivery.accountSetup !== 'sent') {
+      let accountSetupAccepted = false
       try {
-        const usersByEmail = new Map<string, AuthUser>()
-        for (const user of await listAuthUsers(session.config)) {
-          if (user.email) usersByEmail.set(user.email.toLowerCase(), user)
+        const accountSetupOperationId = await domainOperationUuid(
+          'hr-onboarding-account-setup',
+          attempt.attemptId,
+          target.employeeId,
+        )
+        let operation = await claimAdminLoginInstructionOperationIfExists(
+          session.config,
+          accountSetupOperationId,
+          session.context.employee_id,
+          'single',
+          'onboarding_account_setup',
+        )
+        const getUsersByEmail = async () => {
+          const usersByEmail = new Map<string, AuthUser>()
+          for (const user of await listAuthUsers(session.config)) {
+            if (user.email) usersByEmail.set(user.email.toLowerCase(), user)
+          }
+          return usersByEmail
         }
-        const result = await provisionOne(session.config, target, generateTemporaryPassword(), usersByEmail)
-        await sendLoginInstructions(environment, target, result.password)
-        await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, 'account_setup', 'sent', null, reason)
+        if (!operation) {
+          operation = await beginAdminLoginInstructionOperation(
+            session.config,
+            accountSetupOperationId,
+            session.context.employee_id,
+            'single',
+            [target],
+            await getUsersByEmail(),
+            'onboarding_account_setup',
+          )
+        }
+        const result = await executeAdminLoginInstructionOperation(
+          environment,
+          session.config,
+          operation.actorEmployeeId,
+          operation,
+          getUsersByEmail,
+        )
+        const failure = result.failures[0]
+        if (failure) throw new ApiError(failure.code, failure.status, failure.error)
+        if (!result.sent[0]) {
+          throw new ApiError('email_delivery_unresolved', 409, 'The account-setup email outcome could not be confirmed.')
+        }
+        accountSetupAccepted = true
+        await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, attempt.attemptId, 'account_setup', 'sent', null, reason)
         delivery.accountSetup = 'sent'
       } catch (error) {
-        await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, 'account_setup', 'failed', error instanceof Error ? error.message : 'Account setup failed.', reason)
+        if (accountSetupAccepted) {
+          throw new ApiError(
+            'onboarding_delivery_finalization_pending',
+            409,
+            'The account-setup email was accepted, but the onboarding record could not be finalized. Retry this same case; SygShift will not reset the password or resend it.',
+          )
+        }
+        const failure = adminLoginInstructionFailure(error)
+        if (!['email_delivery_unresolved', 'login_instruction_finalization_pending'].includes(failure.code) && failure.status < 500) {
+          await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, attempt.attemptId, 'account_setup', 'failed', failure.detail, reason)
+        }
         throw error
       }
     }
@@ -6685,6 +8136,7 @@ async function listAuthUsers(config: NonNullable<ReturnType<typeof configuredSup
 async function listAuthUserMfaFactors(
   config: NonNullable<ReturnType<typeof configuredSupabase>>,
   userId: string,
+  signal?: AbortSignal,
 ): Promise<AuthMfaFactor[]> {
   return supabaseJson<AuthMfaFactor[]>(`${config.url}/auth/v1/admin/users/${userId}/factors`, {
     headers: {
@@ -6692,6 +8144,7 @@ async function listAuthUserMfaFactors(
       authorization: `Bearer ${config.serviceRoleKey}`,
     },
     method: 'GET',
+    signal,
   })
 }
 
@@ -6699,25 +8152,195 @@ async function deleteAuthUserMfaFactor(
   config: NonNullable<ReturnType<typeof configuredSupabase>>,
   userId: string,
   factorId: string,
+  signal?: AbortSignal,
 ): Promise<void> {
-  await supabaseJson(`${config.url}/auth/v1/admin/users/${userId}/factors/${factorId}`, {
-    headers: {
-      apikey: config.serviceRoleKey,
-      authorization: `Bearer ${config.serviceRoleKey}`,
+  try {
+    await supabaseJson(`${config.url}/auth/v1/admin/users/${userId}/factors/${factorId}`, {
+      headers: {
+        apikey: config.serviceRoleKey,
+        authorization: `Bearer ${config.serviceRoleKey}`,
+      },
+      method: 'DELETE',
+      signal,
+    })
+  } catch (error) {
+    // A retry after an accepted Auth deletion must converge instead of failing
+    // merely because the factor is already gone.
+    if (error instanceof SupabaseRequestError && error.status === 404) return
+    throw error
+  }
+}
+
+function requireAdminMfaResetOperation(value: unknown): AdminMfaResetOperation {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('The durable MFA reset operation response was invalid.')
+  }
+  const operation = value as Partial<AdminMfaResetOperation>
+  if (!validUuid(String(operation.operationId ?? ''))
+    || !validUuid(String(operation.employeeId ?? ''))
+    || !validUuid(String(operation.authUserId ?? ''))
+    || !validUuid(String(operation.actorEmployeeId ?? ''))
+    || !Array.isArray(operation.factorIds)
+    || !operation.factorIds.every((factorId) => typeof factorId === 'string' && validUuid(factorId))
+    || !Number.isSafeInteger(operation.factorCount)
+    || Number(operation.factorCount) !== operation.factorIds.length
+    || !['prepared', 'deleting', 'completed'].includes(String(operation.state ?? ''))
+  ) {
+    throw new Error('The durable MFA reset operation response was invalid.')
+  }
+  return operation as AdminMfaResetOperation
+}
+
+function adminMfaResetIdentity(operation: AdminMfaResetOperation): Record<string, unknown> {
+  return {
+    target_actor_employee_id: operation.actorEmployeeId,
+    target_auth_user_id: operation.authUserId,
+    target_employee_id: operation.employeeId,
+    target_operation_id: operation.operationId,
+  }
+}
+
+function requireEmployeePasswordResetOperation(value: unknown): EmployeePasswordResetOperation {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('The durable password-reset operation response was invalid.')
+  }
+  const operation = value as Partial<EmployeePasswordResetOperation>
+  if (!validUuid(String(operation.operationId ?? ''))
+    || !validUuid(String(operation.employeeId ?? ''))
+    || !validUuid(String(operation.authUserId ?? ''))
+    || !validUuid(String(operation.actorEmployeeId ?? ''))
+    || !['prepared', 'completed'].includes(String(operation.state ?? ''))
+    || typeof operation.recorded !== 'boolean'
+    || operation.recorded !== (operation.state === 'completed')
+    || typeof operation.deliveryEmailMasked !== 'string'
+    || operation.deliveryEmailMasked.length < 3
+    || typeof operation.preparedAt !== 'string'
+    || (operation.state === 'completed'
+      ? typeof operation.completedAt !== 'string'
+      : operation.completedAt !== null)
+  ) {
+    throw new Error('The durable password-reset operation response was invalid.')
+  }
+  return operation as EmployeePasswordResetOperation
+}
+
+async function getAdminMfaResetOperation(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  operationId: string,
+  actorEmployeeId: string,
+  employeeId: string,
+  authUserId: string,
+  rpc: RpcInvoker = callRpc,
+): Promise<AdminMfaResetOperation | null> {
+  const operation = await rpc<unknown>(
+    config,
+    'service_get_admin_mfa_reset_operation',
+    {
+      target_actor_employee_id: actorEmployeeId,
+      target_auth_user_id: authUserId,
+      target_employee_id: employeeId,
+      target_operation_id: operationId,
     },
-    method: 'DELETE',
-  })
+    config.serviceRoleKey,
+  )
+  return operation === null ? null : requireAdminMfaResetOperation(operation)
+}
+
+export async function executeAdminMfaResetOperation(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  initialOperation: AdminMfaResetOperation,
+  rpc: RpcInvoker = callRpc,
+  signal?: AbortSignal,
+): Promise<AdminMfaResetOperation> {
+  let operation = initialOperation
+  if (operation.state === 'completed') return operation
+
+  if (operation.state === 'prepared') {
+    operation = requireAdminMfaResetOperation(await rpc(
+      config,
+      'service_mark_admin_mfa_reset_deleting',
+      adminMfaResetIdentity(operation),
+      config.serviceRoleKey,
+    ))
+  }
+  if (operation.state !== 'deleting') {
+    throw new Error('The durable MFA reset operation was not ready for Auth mutation.')
+  }
+
+  // Persist every known factor identity before deleting it. Re-listing closes
+  // ordinary enrollment races; a bounded loop leaves an operation recoverable
+  // instead of falsely reporting completion if Auth will not converge.
+  for (let pass = 0; pass < 4; pass += 1) {
+    for (const factorId of operation.factorIds) {
+      await deleteAuthUserMfaFactor(config, operation.authUserId, factorId, signal)
+    }
+
+    const remaining = await listAuthUserMfaFactors(config, operation.authUserId, signal)
+    const newFactorIds = Array.from(new Set(
+      remaining
+        .map((factor) => factor.id)
+        .filter((factorId) => validUuid(factorId) && !operation.factorIds.includes(factorId)),
+    ))
+    if (newFactorIds.length === 0 && remaining.length === 0) break
+    if (newFactorIds.length > 0) {
+      operation = requireAdminMfaResetOperation(await rpc(
+        config,
+        'service_extend_admin_mfa_reset_manifest',
+        { ...adminMfaResetIdentity(operation), target_factor_ids: newFactorIds },
+        config.serviceRoleKey,
+      ))
+    }
+    if (pass === 3) {
+      throw new ApiError(
+        'mfa_reset_auth_pending',
+        503,
+        'MFA factor removal has not converged yet. The durable reset will be retried safely.',
+      )
+    }
+  }
+
+  try {
+    return requireAdminMfaResetOperation(await rpc(
+      config,
+      'service_complete_admin_mfa_reset_operation',
+      adminMfaResetIdentity(operation),
+      config.serviceRoleKey,
+    ))
+  } catch {
+    // Completion may have committed even when its response was lost. Only a
+    // durable completed read may turn this into a success response.
+    try {
+      const reconciled = await getAdminMfaResetOperation(
+        config,
+        operation.operationId,
+        operation.actorEmployeeId,
+        operation.employeeId,
+        operation.authUserId,
+        rpc,
+      )
+      if (reconciled?.state === 'completed') return reconciled
+    } catch {
+      // The scheduled recovery lane can safely resume the persisted manifest.
+    }
+    throw new ApiError(
+      'mfa_reset_finalization_pending',
+      503,
+      'MFA factors were removed, but finalization could not yet be verified. The durable reset will be retried safely.',
+    )
+  }
 }
 
 async function createAuthUser(
   config: NonNullable<ReturnType<typeof configuredSupabase>>,
   target: AuthTarget,
   password: string,
+  operationId: string,
 ): Promise<AuthUser> {
   return supabaseJson<AuthUser>(`${config.url}/auth/v1/admin/users`, {
     body: JSON.stringify({
       app_metadata: {
         employeeId: target.employeeId,
+        loginInstructionOperationId: operationId,
         role: target.role,
         source: 'sygshift-admin',
         username: target.username,
@@ -6745,13 +8368,16 @@ async function createAuthUser(
 async function updateAuthUser(
   config: NonNullable<ReturnType<typeof configuredSupabase>>,
   target: AuthTarget,
-  userId: string,
+  user: AuthUser,
   password: string,
+  operationId: string,
 ): Promise<AuthUser> {
-  return supabaseJson<AuthUser>(`${config.url}/auth/v1/admin/users/${userId}`, {
+  return supabaseJson<AuthUser>(`${config.url}/auth/v1/admin/users/${user.id}`, {
     body: JSON.stringify({
       app_metadata: {
+        ...(user.app_metadata ?? {}),
         employeeId: target.employeeId,
+        loginInstructionOperationId: operationId,
         role: target.role,
         source: 'sygshift-admin',
         username: target.username,
@@ -6759,6 +8385,7 @@ async function updateAuthUser(
       email_confirm: true,
       password,
       user_metadata: {
+        ...(user.user_metadata ?? {}),
         displayName: target.displayName,
         employeeId: target.employeeId,
         employeeNumber: target.employeeNumber ?? null,
@@ -6780,31 +8407,450 @@ async function provisionOne(
   target: AuthTarget,
   password: string,
   usersByEmail: Map<string, AuthUser>,
+  operationId: string,
 ) {
+  const byEmail = usersByEmail.get(target.authEmail.toLowerCase())
   const existing = target.existingAuthUserId
-    ? { id: target.existingAuthUserId }
-    : usersByEmail.get(target.authEmail.toLowerCase())
-  const user = existing
-    ? await updateAuthUser(config, target, existing.id, password)
-    : await createAuthUser(config, target, password)
-
-  usersByEmail.set(target.authEmail.toLowerCase(), user)
-  const linked = await callRpc<unknown>(
+    ? byEmail?.id === target.existingAuthUserId ? byEmail : { id: target.existingAuthUserId }
+    : byEmail
+  const link = (authUserId: string) => callRpc<unknown>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_link_employee_auth_account',
     {
-      target_auth_user_id: user.id,
+      target_auth_user_id: authUserId,
       target_employee_id: target.employeeId,
       target_must_change_password: true,
     },
     config.serviceRoleKey,
   )
+  // A recovered Auth user is reserved through the unique employee-account
+  // link before its password or metadata changes. A corrupt/concurrently linked
+  // Auth identity therefore fails without mutating that identity.
+  let linked: unknown
+  let user: AuthUser
+  if (existing) {
+    linked = await link(existing.id)
+    user = await updateAuthUser(config, target, existing, password, operationId)
+  } else {
+    user = await createAuthUser(config, target, password, operationId)
+    linked = await link(user.id)
+  }
+
+  usersByEmail.set(target.authEmail.toLowerCase(), user)
 
   return {
     action: existing ? 'updated_existing_auth_user' : 'created_auth_user',
+    authUserId: user.id,
     linked,
     password,
     target,
+  }
+}
+
+function parseAdminLoginInstructionOperation(payload: unknown): AdminLoginInstructionOperation {
+  if (!payload || typeof payload !== 'object') throw new Error('The durable login-instruction operation response is invalid.')
+  const value = payload as Partial<AdminLoginInstructionOperation>
+  const purpose = value.purpose ?? 'admin_login_instructions'
+  if (!validUuid(value.operationId ?? '')
+    || !validUuid(value.actorEmployeeId ?? '')
+    || !['single', 'bulk'].includes(value.mode ?? '')
+    || !['admin_login_instructions', 'onboarding_account_setup'].includes(purpose)
+    || (purpose === 'onboarding_account_setup' && value.mode !== 'single')
+    || !['prepared', 'completed', 'completed_with_failures'].includes(value.state ?? '')
+    || !Array.isArray(value.items)) {
+    throw new Error('The durable login-instruction operation response is invalid.')
+  }
+  const employeeIds = new Set<string>()
+  const recipients = new Set<string>()
+  const items = value.items.map((raw) => {
+    if (!raw || typeof raw !== 'object') throw new Error('The durable login-instruction target response is invalid.')
+    const item = raw as Partial<AdminLoginInstructionOperationItem>
+    const contactEmail = typeof item.contactEmail === 'string' ? item.contactEmail.trim().toLowerCase() : ''
+    const authEmail = typeof item.authEmail === 'string' ? item.authEmail.trim().toLowerCase() : ''
+    if (!validUuid(item.employeeId ?? '')
+      || !Number.isInteger(item.ordinal)
+      || typeof item.username !== 'string'
+      || !item.username.trim()
+      || typeof item.displayName !== 'string'
+      || !item.displayName.trim()
+      || !contactEmail.includes('@')
+      || !authEmail.includes('@')
+      || !['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'].includes(item.role ?? '')
+      || !['hourly', 'salary', 'flex'].includes(item.employmentType ?? '')
+      || !['active', 'onboarding', 'leave', 'inactive', 'separated'].includes(item.status ?? '')
+      || typeof item.requiresMfa !== 'boolean'
+      || !/^[0-9a-f]{64}$/.test(item.credentialFingerprint ?? '')
+      || !['prepared', 'provisioned', 'completed', 'failed', 'unresolved'].includes(item.state ?? '')
+      || (item.existingAuthUserId != null && !validUuid(item.existingAuthUserId))
+      || (item.candidateAuthUserId != null && !validUuid(item.candidateAuthUserId))
+      || (item.authUserId != null && !validUuid(item.authUserId))) {
+      throw new Error('The durable login-instruction target response is invalid.')
+    }
+    if (employeeIds.has(item.employeeId!) || recipients.has(contactEmail)) {
+      throw new Error('The durable login-instruction target manifest contains duplicates.')
+    }
+    employeeIds.add(item.employeeId!)
+    recipients.add(contactEmail)
+    return {
+      ...item,
+      authEmail,
+      contactEmail,
+      employeeNumber: typeof item.employeeNumber === 'string' ? item.employeeNumber : null,
+      jobTitle: typeof item.jobTitle === 'string' ? item.jobTitle : null,
+      existingAuthUserId: item.existingAuthUserId ?? null,
+      candidateAuthUserId: typeof item.candidateAuthUserId === 'string' ? item.candidateAuthUserId : null,
+      authUserId: item.authUserId ?? null,
+      action: typeof item.action === 'string' ? item.action : null,
+      errorCode: typeof item.errorCode === 'string' ? item.errorCode : null,
+      errorStatus: typeof item.errorStatus === 'number' ? item.errorStatus : null,
+      errorDetail: typeof item.errorDetail === 'string' ? item.errorDetail : null,
+    } as AdminLoginInstructionOperationItem
+  })
+  if (items.length > 500 || (value.mode === 'single' && items.length !== 1)) {
+    throw new Error('The durable login-instruction target manifest size is invalid.')
+  }
+  return { ...value, items, purpose } as AdminLoginInstructionOperation
+}
+
+async function getAdminLoginInstructionOperation(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  operationId: string,
+  actorEmployeeId: string,
+  mode: AdminLoginInstructionMode,
+  purpose: AdminLoginInstructionPurpose = 'admin_login_instructions',
+): Promise<AdminLoginInstructionOperation | null> {
+  const payload = await callRpc<unknown>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_get_admin_login_instruction_operation',
+    {
+      target_actor_employee_id: actorEmployeeId,
+      target_mode: mode,
+      target_operation_id: operationId,
+      target_purpose: purpose,
+    },
+    config.serviceRoleKey,
+  )
+  return payload === null ? null : parseAdminLoginInstructionOperation(payload)
+}
+
+async function beginAdminLoginInstructionOperation(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  operationId: string,
+  actorEmployeeId: string,
+  mode: AdminLoginInstructionMode,
+  targets: LoginEmailTarget[],
+  usersByEmail: Map<string, AuthUser>,
+  purpose: AdminLoginInstructionPurpose = 'admin_login_instructions',
+): Promise<AdminLoginInstructionOperation> {
+  const orderedTargets = [...targets].sort((left, right) => left.employeeId.localeCompare(right.employeeId))
+  const manifest = []
+  for (const [ordinal, target] of orderedTargets.entries()) {
+    if (target.existingAuthUserId) {
+      throw new ApiError(
+        'existing_account_requires_password_reset',
+        409,
+        'This employee already has a linked login. Use the password-reset workflow instead of issuing temporary credentials.',
+      )
+    }
+    const candidateAuthUser = usersByEmail.get(target.authEmail.trim().toLowerCase())
+    if (candidateAuthUser) {
+      throw new ApiError(
+        'login_instruction_auth_identity_conflict',
+        409,
+        'An unlinked authentication record already uses this login address. No account or password was changed; an administrator must reconcile that record before issuing credentials.',
+      )
+    }
+    const password = await deriveAdminLoginTemporaryPassword(
+      config.serviceRoleKey,
+      operationId,
+      target.employeeId,
+      target.username,
+    )
+    manifest.push({
+      authEmail: target.authEmail.trim().toLowerCase(),
+      contactEmail: target.contactEmail?.trim().toLowerCase() ?? '',
+      credentialFingerprint: await adminLoginCredentialFingerprint(
+        config.serviceRoleKey,
+        operationId,
+        target.employeeId,
+        password,
+      ),
+      displayName: target.displayName,
+      employeeId: target.employeeId,
+      employeeNumber: target.employeeNumber ?? null,
+      employmentType: target.employmentType,
+      existingAuthUserId: target.existingAuthUserId
+        ?? null,
+      candidateAuthUserId: null,
+      jobTitle: target.jobTitle ?? null,
+      ordinal,
+      requiresMfa: target.requiresMfa,
+      role: target.role,
+      status: target.status,
+      username: target.username,
+    })
+  }
+  let payload: unknown
+  try {
+    payload = await callRpc<unknown>(
+      { serviceRoleKey: config.serviceRoleKey, url: config.url },
+      'service_begin_admin_login_instruction_operation',
+      {
+        target_actor_employee_id: actorEmployeeId,
+        target_items: manifest,
+        target_mode: mode,
+        target_operation_id: operationId,
+        target_purpose: purpose,
+      },
+      config.serviceRoleKey,
+    )
+  } catch (error) {
+    if (
+      error instanceof SupabaseRequestError
+      && error.message.includes('login_instruction_employee_operation_active')
+    ) {
+      throw new ApiError(
+        'login_instruction_employee_operation_active',
+        409,
+        'Another login-instruction operation is already active for this employee. Retry the original operation or wait for an administrator to resolve it.',
+      )
+    }
+    if (
+      error instanceof SupabaseRequestError
+      && error.message.includes('login_instruction_bulk_operation_active')
+    ) {
+      throw new ApiError(
+        'login_instruction_bulk_operation_active',
+        409,
+        'Another bulk login-instruction operation is already active. Resume that operation instead of starting a new one.',
+      )
+    }
+    throw error
+  }
+  return parseAdminLoginInstructionOperation(payload)
+}
+
+async function findActiveAdminLoginInstructionOperations(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  employeeId: string | null,
+  purpose: AdminLoginInstructionPurpose = 'admin_login_instructions',
+): Promise<AdminLoginInstructionOperation[]> {
+  const payload = await callRpc<unknown>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_find_active_admin_login_instruction_operations',
+    { target_employee_id: employeeId, target_purpose: purpose },
+    config.serviceRoleKey,
+  )
+  if (!Array.isArray(payload)) throw new Error('The active login-instruction operation response is invalid.')
+  return payload.map(parseAdminLoginInstructionOperation)
+}
+
+async function claimAdminLoginInstructionOperation(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  operationId: string,
+  recoveryActorEmployeeId: string,
+  mode: AdminLoginInstructionMode,
+  purpose: AdminLoginInstructionPurpose = 'admin_login_instructions',
+): Promise<AdminLoginInstructionOperation> {
+  const operation = await claimAdminLoginInstructionOperationIfExists(
+    config,
+    operationId,
+    recoveryActorEmployeeId,
+    mode,
+    purpose,
+  )
+  if (!operation) throw new Error('The recoverable login-instruction operation was not found.')
+  return operation
+}
+
+async function claimAdminLoginInstructionOperationIfExists(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  operationId: string,
+  recoveryActorEmployeeId: string,
+  mode: AdminLoginInstructionMode,
+  purpose: AdminLoginInstructionPurpose = 'admin_login_instructions',
+): Promise<AdminLoginInstructionOperation | null> {
+  const payload = await callRpc<unknown>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_claim_admin_login_instruction_operation',
+    {
+      target_mode: mode,
+      target_operation_id: operationId,
+      target_purpose: purpose,
+      target_recovery_actor_employee_id: recoveryActorEmployeeId,
+    },
+    config.serviceRoleKey,
+  )
+  return payload === null ? null : parseAdminLoginInstructionOperation(payload)
+}
+
+async function prepareAdminLoginInstructionDispatches(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  operation: AdminLoginInstructionOperation,
+  recipients: string[],
+): Promise<Map<string, EmailRecipientDispatchDecision>> {
+  const payload = await callRpc<unknown>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_prepare_admin_login_instruction_dispatches',
+    { target_operation_id: operation.operationId },
+    config.serviceRoleKey,
+  )
+  return parseEmailRecipientDispatchManifest(payload, recipients)
+}
+
+async function markAdminLoginInstructionProvisioned(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  operationId: string,
+  actorEmployeeId: string,
+  employeeId: string,
+  authUserId: string,
+  action: string,
+): Promise<void> {
+  await callRpc(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_mark_admin_login_instruction_provisioned',
+    {
+      target_action: action,
+      target_actor_employee_id: actorEmployeeId,
+      target_auth_user_id: authUserId,
+      target_employee_id: employeeId,
+      target_operation_id: operationId,
+    },
+    config.serviceRoleKey,
+  )
+}
+
+async function recordAdminLoginInstructionOutcome(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  operationId: string,
+  actorEmployeeId: string,
+  employeeId: string,
+  state: 'completed' | 'failed' | 'unresolved',
+  error?: { code: string, status: number, detail: string },
+): Promise<AdminLoginInstructionOperation> {
+  const result = await callRpc<unknown>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_record_admin_login_instruction_outcome',
+    {
+      target_actor_employee_id: actorEmployeeId,
+      target_employee_id: employeeId,
+      target_error_code: error?.code ?? null,
+      target_error_detail: error?.detail ?? null,
+      target_error_status: error?.status ?? null,
+      target_operation_id: operationId,
+      target_state: state,
+    },
+    config.serviceRoleKey,
+  )
+  return parseAdminLoginInstructionOperation(result)
+}
+
+function redactKnownCredential(value: string, credential?: string): string {
+  if (!credential) return value
+  return value.split(credential).join('[credential redacted]')
+}
+
+function adminLoginInstructionFailure(
+  error: unknown,
+  credential?: string,
+): { code: string, status: number, detail: string } {
+  if (error instanceof ApiError) {
+    return { code: error.code, detail: redactKnownCredential(error.message, credential), status: error.status }
+  }
+  if (error instanceof SupabaseRequestError) {
+    return {
+      code: error.code || 'login_instruction_data_unavailable',
+      detail: redactKnownCredential(error.message || 'The login-instruction operation could not be saved.', credential),
+      status: error.status >= 400 && error.status <= 599 ? error.status : 503,
+    }
+  }
+  return {
+    code: 'login_instruction_operation_failed',
+    detail: redactKnownCredential(
+      error instanceof Error ? error.message : 'The login-instruction operation failed.',
+      credential,
+    ),
+    status: 503,
+  }
+}
+
+function adminLoginInstructionFinalizationPending(): { code: string, status: number, detail: string } {
+  return {
+    code: 'login_instruction_finalization_pending',
+    detail: 'The email was accepted, but its operation result could not be finalized. Retry the same request; SygShift will not resend it.',
+    status: 409,
+  }
+}
+
+function adminLoginInstructionOutcomeState(
+  failure: { code: string, status: number },
+): 'failed' | 'unresolved' {
+  return failure.code === 'email_delivery_unresolved' || failure.status >= 500
+    ? 'unresolved'
+    : 'failed'
+}
+
+async function releaseUnsentLoginInstructionDispatch(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  initiatorEmployeeId: string | null,
+  decision: EmailRecipientDispatchDecision,
+  detail: string,
+): Promise<boolean> {
+  try {
+    const released = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: config.serviceRoleKey, url: config.url },
+      'service_release_known_unsent_email_dispatch',
+      {
+        target_dispatch_id: decision.dispatchId,
+        target_dispatch_token: decision.dispatchToken,
+        target_failure_detail: `No provider call occurred. ${detail}`.slice(0, 500),
+        target_initiator_employee_id: initiatorEmployeeId,
+      },
+      config.serviceRoleKey,
+    )
+    return released.state === 'retry_approved'
+      && released.dispatchId === decision.dispatchId
+      && released.dispatchToken === decision.dispatchToken
+  } catch {
+    return false
+  }
+}
+
+async function currentLoginInstructionTargetMatches(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  item: AdminLoginInstructionOperationItem,
+): Promise<{ authoritative: boolean, currentAuthUserId: string | null }> {
+  const current = await callRpc<LoginEmailTarget | null>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_get_employee_login_email_target',
+    { target_employee_id: item.employeeId },
+    config.serviceRoleKey,
+  )
+  if (!current) return { authoritative: false, currentAuthUserId: null }
+  const currentAuthUserId = current.existingAuthUserId ?? null
+  const expectedLinkedAuthUserIds = new Set(
+    [item.existingAuthUserId, item.authUserId]
+      .filter((value): value is string => typeof value === 'string'),
+  )
+  const permittedLinkedAuthUserIds = new Set(expectedLinkedAuthUserIds)
+  if (item.candidateAuthUserId) permittedLinkedAuthUserIds.add(item.candidateAuthUserId)
+  const authLinkMatches = currentAuthUserId === null
+    ? expectedLinkedAuthUserIds.size === 0
+    : permittedLinkedAuthUserIds.has(currentAuthUserId) || permittedLinkedAuthUserIds.size === 0
+  return {
+    authoritative: current.employeeId === item.employeeId
+    && current.username === item.username
+    && current.authEmail.trim().toLowerCase() === item.authEmail
+    && current.displayName === item.displayName
+    && current.role === item.role
+    && current.employmentType === item.employmentType
+    && current.status === item.status
+    && (current.employeeNumber ?? null) === (item.employeeNumber ?? null)
+    && (current.jobTitle ?? null) === (item.jobTitle ?? null)
+    && (current.contactEmail?.trim().toLowerCase() ?? null) === item.contactEmail
+    && current.requiresMfa === item.requiresMfa
+    && authLinkMatches,
+    currentAuthUserId,
   }
 }
 
@@ -7156,36 +9202,78 @@ async function handleSelfServicePasswordResetApi(
       }
 
       const target = claim as LoginEmailTarget
-      const recipient = requireApprovedEmployeeEmail(environment, target)
-      const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
-      const generated = await supabaseJson<GeneratedPasswordRecoveryLink>(`${config.url}/auth/v1/admin/generate_link`, {
-        body: JSON.stringify({
-          email: target.authEmail,
-          redirect_to: `${appUrl}/password-recovery`,
-          type: 'recovery',
-        }),
-        headers: {
-          apikey: config.serviceRoleKey,
-          authorization: `Bearer ${config.serviceRoleKey}`,
-          'content-type': 'application/json',
-        },
-        method: 'POST',
-      })
-      const recoveryLink = buildApplicationPasswordRecoveryLink(generated, appUrl)
-
-      const delivery = await sendAuditedEmail(
-        environment,
-        recipient,
-        buildPasswordResetEmail(target, recoveryLink, true),
-        {
-          notificationType: 'password_reset_self_service',
-          relatedRecordId: target.employeeId,
-          relatedRecordType: 'employee',
-        },
-        defaultSupportEmail,
+      const claimSourceId = await callRpc<string | null>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        'service_get_password_reset_claim_source',
+        { target_request_id: requestId },
+        config.serviceRoleKey,
       )
-      if (delivery.failed.length > 0 || delivery.suppressed.length > 0 || delivery.sent.length === 0) {
-        throw new Error('The password-reset email could not be delivered.')
+      if (!claimSourceId || !validUuid(claimSourceId)) {
+        throw new Error('The password-reset claim identity was unavailable.')
+      }
+      const recipient = requireApprovedEmployeeEmail(environment, target)
+      const emailContext: EmailAuditContext = {
+        notificationType: 'password_reset_self_service',
+        relatedRecordId: target.employeeId,
+        relatedRecordType: 'employee',
+      }
+      const prepared = await prepareInlineEmailDispatch(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        claimSourceId,
+        recipient,
+        emailContext,
+      )
+      if (!prepared.sendAllowed) {
+        if (prepared.state !== 'accepted') {
+          throw new Error('The password-reset email has an unresolved delivery outcome.')
+        }
+      } else {
+        const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
+        let recoveryLink: string
+        try {
+          const generated = await supabaseJson<GeneratedPasswordRecoveryLink>(`${config.url}/auth/v1/admin/generate_link`, {
+            body: JSON.stringify({
+              email: target.authEmail,
+              redirect_to: `${appUrl}/password-recovery`,
+              type: 'recovery',
+            }),
+            headers: {
+              apikey: config.serviceRoleKey,
+              authorization: `Bearer ${config.serviceRoleKey}`,
+              'content-type': 'application/json',
+            },
+            method: 'POST',
+          })
+          recoveryLink = buildApplicationPasswordRecoveryLink(generated, appUrl)
+        } catch (error) {
+          const released = await releaseUnsentLoginInstructionDispatch(
+            config,
+            null,
+            prepared,
+            'Password recovery link generation failed before the email provider was called.',
+          )
+          if (!released) {
+            throw new ApiError(
+              'email_delivery_unresolved',
+              409,
+              'The password-reset email reservation could not be safely released. Retry the same request; no provider call was made.',
+            )
+          }
+          throw error
+        }
+        const delivery = await sendDurableInlineEmail(
+          environment,
+          claimSourceId,
+          recipient,
+          buildPasswordResetEmail(target, recoveryLink, true),
+          emailContext,
+          defaultSupportEmail,
+          callRpc,
+          new Map([[recipient, prepared]]),
+        )
+        if (delivery.failed.length > 0 || delivery.suppressed.length > 0 || delivery.sent.length === 0) {
+          throw new Error('The password-reset email could not be delivered.')
+        }
       }
     }
   } catch (error) {
@@ -7251,9 +9339,20 @@ async function handleSelfServiceUsernameRecoveryApi(
         throw new Error('The username-recovery recipient is not approved for delivery.')
       }
 
+      const claimSourceId = await callRpc<string | null>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        'service_get_username_recovery_claim_source',
+        { target_request_id: requestId },
+        config.serviceRoleKey,
+      )
+      if (!claimSourceId || !validUuid(claimSourceId)) {
+        throw new Error('The username-recovery claim identity was unavailable.')
+      }
+
       const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
-      const delivery = await sendAuditedEmail(
+      const delivery = await sendDurableInlineEmail(
         environment,
+        claimSourceId,
         claim.contactEmail,
         buildUsernameReminderEmail(claim.displayName, claim.usernames, appUrl),
         {
@@ -7284,39 +9383,561 @@ async function sendLoginInstructions(
   environment: Environment,
   target: LoginEmailTarget,
   temporaryPassword: string,
-) {
-  const to = requireApprovedEmployeeEmail(environment, target)
+  sourceId: string,
+  preparedDecision?: EmailRecipientDispatchDecision,
+): Promise<DurableEmailDeliveryResult> {
+  const to = target.contactEmail?.trim().toLowerCase() ?? ''
+  if (!to || !to.includes('@')) throw new ApiError('email_required', 422, 'Add a personal email before sending login instructions.')
 
   const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
   const message = buildLoginInstructionsEmail(target, temporaryPassword, appUrl)
-  const result = await sendAuditedEmail(environment, to, message, {
-    notificationType: 'login_instructions',
-    relatedRecordId: target.employeeId,
-    relatedRecordType: 'employee',
-  })
+  const result = await deliverDurableEmailRecipients(
+    environment,
+    'inline_email',
+    sourceId,
+    [to],
+    message,
+    {
+      notificationType: 'login_instructions',
+      relatedRecordId: target.employeeId,
+      relatedRecordType: 'employee',
+    },
+    callRpc,
+    undefined,
+    preparedDecision ? new Map([[to, preparedDecision]]) : undefined,
+    'The login-instruction email provider outcome is unknown. Credential content was redacted.',
+  )
   if (result.suppressed.length > 0) {
     throw new ApiError('email_recipient_suppressed', 409, 'Email was suppressed because the recipient domain is temporarily blocked.')
   }
-  if (result.failed.length > 0) throw new ApiError('email_delivery_failed', 502, result.failed[0].error)
+  if (result.uncertain.length > 0 || result.completionPending.length > 0 || result.accepted.length === 0) {
+    throw new ApiError(
+      'email_delivery_unresolved',
+      409,
+      result.uncertain[0]?.error
+        ?? 'The email provider outcome could not be durably confirmed. Review the delivery before retrying.',
+    )
+  }
+  return result
+}
+
+interface AdminLoginInstructionExecutionResult {
+  sent: Array<{ action: string | null, displayName: string, email: string, username: string }>
+  failures: Array<{
+    code: string
+    displayName: string
+    error: string
+    status: number
+    username: string
+  }>
+}
+
+async function executeAdminLoginInstructionOperation(
+  environment: Environment,
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  actorEmployeeId: string,
+  operation: AdminLoginInstructionOperation,
+  getUsersByEmail: () => Promise<Map<string, AuthUser>>,
+): Promise<AdminLoginInstructionExecutionResult> {
+  if (operation.state !== 'prepared') {
+    return {
+      failures: operation.items
+        .filter((item) => item.state === 'failed')
+        .map((item) => ({
+          code: item.errorCode ?? 'login_instruction_operation_failed',
+          displayName: item.displayName,
+          error: item.errorDetail ?? 'The login-instruction operation failed.',
+          status: item.errorStatus ?? 409,
+          username: item.username,
+        })),
+      sent: operation.items
+        .filter((item) => item.state === 'completed')
+        .map((item) => ({
+          action: item.action,
+          displayName: item.displayName,
+          email: item.contactEmail,
+          username: item.username,
+        })),
+    }
+  }
+  const terminalFailures = operation.items
+    .filter((item) => item.state === 'failed')
+    .map((item) => ({
+      code: item.errorCode ?? 'login_instruction_operation_failed',
+      displayName: item.displayName,
+      error: item.errorDetail ?? 'The login-instruction operation failed.',
+      status: item.errorStatus ?? 409,
+      username: item.username,
+    }))
+  const terminalSent = operation.items
+    .filter((item) => item.state === 'completed')
+    .map((item) => ({
+      action: item.action,
+      displayName: item.displayName,
+      email: item.contactEmail,
+      username: item.username,
+    }))
+  const activeItems = operation.items.filter((item) => !['completed', 'failed'].includes(item.state))
+  const recipients = activeItems.map((item) => item.contactEmail)
+  if (recipients.length === 0) return { failures: terminalFailures, sent: terminalSent }
+  if (!environment.EMAIL) {
+    throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
+  }
+  if (!environment.SYGSHIFT_EMAIL_FROM?.trim()) {
+    throw new ApiError('email_sender_not_configured', 503, 'The email sender address is not configured.')
+  }
+  // This atomic manifest fence is deliberately established before the first
+  // Auth create/update.  A crash can therefore never mutate a password for a
+  // recipient set that was only partially recorded.
+  const decisions = await prepareAdminLoginInstructionDispatches(config, operation, recipients)
+  const sent: AdminLoginInstructionExecutionResult['sent'] = [...terminalSent]
+  const failures: AdminLoginInstructionExecutionResult['failures'] = [...terminalFailures]
+  let usersByEmail: Map<string, AuthUser> | null = null
+
+  const addFailure = (
+    item: AdminLoginInstructionOperationItem,
+    failure: { code: string, status: number, detail: string },
+  ) => failures.push({
+    code: failure.code,
+    displayName: item.displayName,
+    error: failure.detail,
+    status: failure.status,
+    username: item.username,
+  })
+
+  for (const item of activeItems) {
+    const decision = decisions.get(item.contactEmail)
+    if (!decision) throw new Error('The durable email recipient manifest is incomplete.')
+
+    if (!decision.sendAllowed) {
+      if (decision.state === 'accepted') {
+        try {
+          await recordAdminLoginInstructionOutcome(
+            config,
+            operation.operationId,
+            actorEmployeeId,
+            item.employeeId,
+            'completed',
+          )
+          sent.push({
+            action: item.action,
+            displayName: item.displayName,
+            email: item.contactEmail,
+            username: item.username,
+          })
+        } catch {
+          addFailure(item, adminLoginInstructionFinalizationPending())
+        }
+        continue
+      }
+      const failure = decision.state === 'suppressed'
+        ? {
+          code: 'email_recipient_suppressed',
+          detail: 'Email was suppressed because the recipient domain is temporarily blocked.',
+          status: 409,
+        }
+        : {
+          code: 'email_delivery_unresolved',
+          detail: 'The prior email provider outcome is unresolved. Review it before retrying.',
+          status: 409,
+        }
+      try {
+        const recorded = await recordAdminLoginInstructionOutcome(
+          config,
+          operation.operationId,
+          actorEmployeeId,
+          item.employeeId,
+          decision.state === 'suppressed' ? 'failed' : 'unresolved',
+          failure,
+        )
+        const current = recorded.items.find((candidate) => candidate.employeeId === item.employeeId)
+        if (current?.state === 'completed') {
+          sent.push({
+            action: current.action,
+            displayName: current.displayName,
+            email: current.contactEmail,
+            username: current.username,
+          })
+          continue
+        }
+      } catch (error) {
+        addFailure(item, adminLoginInstructionFailure(error))
+        continue
+      }
+      addFailure(item, failure)
+      continue
+    }
+
+    let targetAuthority: { authoritative: boolean, currentAuthUserId: string | null } = {
+      authoritative: false,
+      currentAuthUserId: null,
+    }
+    try {
+      targetAuthority = await currentLoginInstructionTargetMatches(config, item)
+    } catch (error) {
+      const failure = adminLoginInstructionFailure(error)
+      const released = await releaseUnsentLoginInstructionDispatch(config, actorEmployeeId, decision, failure.detail)
+      const durableFailure = released ? failure : {
+        code: 'email_delivery_unresolved',
+        detail: 'The current employee target could not be verified and the unsent email fence could not be released.',
+        status: 409,
+      }
+      try {
+        await recordAdminLoginInstructionOutcome(
+          config,
+          operation.operationId,
+          actorEmployeeId,
+          item.employeeId,
+          released ? adminLoginInstructionOutcomeState(failure) : 'unresolved',
+          durableFailure,
+        )
+      } catch (outcomeError) {
+        addFailure(item, adminLoginInstructionFailure(outcomeError))
+        continue
+      }
+      addFailure(item, durableFailure)
+      continue
+    }
+    if (!targetAuthority.authoritative) {
+      const failure = {
+        code: 'login_instruction_target_changed',
+        detail: 'The employee status, access, identity, or delivery address changed. No account or email was changed; start a new operation after reviewing the employee record.',
+        status: 409,
+      }
+      const released = await releaseUnsentLoginInstructionDispatch(config, actorEmployeeId, decision, failure.detail)
+      const durableFailure = released ? failure : {
+        code: 'email_delivery_unresolved',
+        detail: 'The employee target changed and the unsent email fence could not be released safely.',
+        status: 409,
+      }
+      try {
+        await recordAdminLoginInstructionOutcome(
+          config,
+          operation.operationId,
+          actorEmployeeId,
+          item.employeeId,
+          released ? adminLoginInstructionOutcomeState(failure) : 'unresolved',
+          durableFailure,
+        )
+      } catch (outcomeError) {
+        addFailure(item, adminLoginInstructionFailure(outcomeError))
+        continue
+      }
+      addFailure(item, durableFailure)
+      continue
+    }
+
+    let password: string
+    try {
+      password = await deriveAdminLoginTemporaryPassword(
+        config.serviceRoleKey,
+        operation.operationId,
+        item.employeeId,
+        item.username,
+      )
+      const fingerprint = await adminLoginCredentialFingerprint(
+        config.serviceRoleKey,
+        operation.operationId,
+        item.employeeId,
+        password,
+      )
+      if (fingerprint !== item.credentialFingerprint) {
+        throw new ApiError(
+          'login_credential_material_unavailable',
+          409,
+          'The original temporary credential cannot be reconstructed. No account or email was changed.',
+        )
+      }
+    } catch (error) {
+      const failure = adminLoginInstructionFailure(error)
+      const released = await releaseUnsentLoginInstructionDispatch(config, actorEmployeeId, decision, failure.detail)
+      const durableFailure = released ? failure : {
+        code: 'email_delivery_unresolved',
+        detail: 'The unsent email fence could not be released safely. Review it before retrying.',
+        status: 409,
+      }
+      try {
+        await recordAdminLoginInstructionOutcome(
+          config,
+          operation.operationId,
+          actorEmployeeId,
+          item.employeeId,
+          released ? adminLoginInstructionOutcomeState(failure) : 'unresolved',
+          durableFailure,
+        )
+      } catch (outcomeError) {
+        addFailure(item, adminLoginInstructionFailure(outcomeError))
+        continue
+      }
+      addFailure(item, durableFailure)
+      continue
+    }
+
+    if (isBlockedEmailRecipient(environment, item.contactEmail)) {
+      const failure = {
+        code: 'email_recipient_suppressed',
+        detail: 'Email was suppressed because the recipient domain is temporarily blocked.',
+        status: 409,
+      }
+      try {
+        await sendLoginInstructions(environment, item, password, operation.operationId, decision)
+      } catch {
+        // The durable dispatch function records the suppression; no Auth
+        // mutation has occurred and the temporary credential was not applied.
+      }
+      try {
+        await recordAdminLoginInstructionOutcome(
+          config,
+          operation.operationId,
+          actorEmployeeId,
+          item.employeeId,
+          'failed',
+          failure,
+        )
+      } catch (outcomeError) {
+        addFailure(item, adminLoginInstructionFailure(outcomeError))
+        continue
+      }
+      addFailure(item, failure)
+      continue
+    }
+
+    let action: string
+    try {
+      usersByEmail ??= await getUsersByEmail()
+      const currentAuthUser = usersByEmail.get(item.authEmail)
+      const currentAuthByEmail = currentAuthUser?.id ?? null
+      if (item.candidateAuthUserId) {
+        throw new ApiError(
+          'login_instruction_auth_identity_conflict',
+          409,
+          'The saved operation references an unlinked authentication candidate that cannot be mutated safely. No account or email was changed.',
+        )
+      }
+      if (currentAuthUser && currentAuthUser.app_metadata?.employeeId !== item.employeeId) {
+        throw new ApiError(
+          'login_instruction_auth_identity_conflict',
+          409,
+          'The authentication record at this login address is not authoritatively bound to this employee. No account or email was changed.',
+        )
+      }
+      let expectedAuthByEmail = item.authUserId
+        ?? item.existingAuthUserId
+        ?? item.candidateAuthUserId
+        ?? null
+      if (expectedAuthByEmail === null && currentAuthUser) {
+        const metadataOperationId = typeof currentAuthUser.app_metadata?.loginInstructionOperationId === 'string'
+          ? currentAuthUser.app_metadata.loginInstructionOperationId
+          : null
+        const metadataEmployeeId = typeof currentAuthUser.app_metadata?.employeeId === 'string'
+          ? currentAuthUser.app_metadata.employeeId
+          : null
+        if (metadataOperationId === operation.operationId && metadataEmployeeId === item.employeeId) {
+          expectedAuthByEmail = currentAuthUser.id
+        }
+      }
+      if (currentAuthByEmail !== expectedAuthByEmail) {
+        throw new ApiError(
+          'login_instruction_target_changed',
+          409,
+          'The employee account identity changed. No account or email was changed; start a new operation after reviewing the employee record.',
+        )
+      }
+      if (targetAuthority.currentAuthUserId !== null && targetAuthority.currentAuthUserId !== expectedAuthByEmail) {
+        throw new ApiError(
+          'login_instruction_target_changed',
+          409,
+          'The employee account link changed. No account or email was changed; start a new operation after reviewing the employee record.',
+        )
+      }
+      const currentAuthOperationId = typeof currentAuthUser?.app_metadata?.loginInstructionOperationId === 'string'
+        ? currentAuthUser.app_metadata.loginInstructionOperationId
+        : null
+      const currentAuthEmployeeId = typeof currentAuthUser?.app_metadata?.employeeId === 'string'
+        ? currentAuthUser.app_metadata.employeeId
+        : null
+      const provenByPersistedItem = Boolean(
+        item.authUserId
+        && item.action
+        && currentAuthByEmail === item.authUserId
+        && targetAuthority.currentAuthUserId === item.authUserId,
+      )
+      const provenByOperationMetadata = Boolean(
+        currentAuthUser
+        && currentAuthOperationId === operation.operationId
+        && currentAuthEmployeeId === item.employeeId
+        && (targetAuthority.currentAuthUserId === null || targetAuthority.currentAuthUserId === currentAuthUser.id),
+      )
+
+      if (provenByPersistedItem || provenByOperationMetadata) {
+        const provisionedAuthUserId = item.authUserId ?? currentAuthUser!.id
+        action = item.action ?? 'created_auth_user'
+        if (targetAuthority.currentAuthUserId === null) {
+          await callRpc<unknown>(
+            { serviceRoleKey: config.serviceRoleKey, url: config.url },
+            'service_link_employee_auth_account',
+            {
+              target_auth_user_id: provisionedAuthUserId,
+              target_employee_id: item.employeeId,
+              target_must_change_password: true,
+            },
+            config.serviceRoleKey,
+          )
+        }
+        if (!provenByPersistedItem) {
+          await markAdminLoginInstructionProvisioned(
+            config,
+            operation.operationId,
+            actorEmployeeId,
+            item.employeeId,
+            provisionedAuthUserId,
+            action,
+          )
+        }
+        // The exact operation already established this account. Recovery may
+        // finish its link, delivery, and audit bookkeeping, but invite-only
+        // authority must never rotate a now-linked account credential again.
+      } else {
+        if (targetAuthority.currentAuthUserId !== null) {
+          throw new ApiError(
+            'existing_account_requires_password_reset',
+            409,
+            'This employee already has a linked login. Use the password-reset workflow instead of issuing temporary credentials.',
+          )
+        }
+        const provisionTarget: LoginEmailTarget = {
+          ...item,
+          existingAuthUserId: expectedAuthByEmail,
+        }
+        const result = await provisionOne(
+          config,
+          provisionTarget,
+          password,
+          usersByEmail,
+          operation.operationId,
+        )
+        action = item.action
+          ?? (item.existingAuthUserId || item.candidateAuthUserId ? 'updated_existing_auth_user' : 'created_auth_user')
+        await markAdminLoginInstructionProvisioned(
+          config,
+          operation.operationId,
+          actorEmployeeId,
+          item.employeeId,
+          result.authUserId,
+          action,
+        )
+      }
+    } catch (error) {
+      const failure = adminLoginInstructionFailure(error, password)
+      const released = await releaseUnsentLoginInstructionDispatch(config, actorEmployeeId, decision, failure.detail)
+      const durableFailure = released ? failure : {
+        code: 'email_delivery_unresolved',
+        detail: 'Account provisioning may have completed, but the unsent email fence could not be released. Review it before retrying.',
+        status: 409,
+      }
+      try {
+        await recordAdminLoginInstructionOutcome(
+          config,
+          operation.operationId,
+          actorEmployeeId,
+          item.employeeId,
+          released ? adminLoginInstructionOutcomeState(failure) : 'unresolved',
+          durableFailure,
+        )
+      } catch (outcomeError) {
+        addFailure(item, adminLoginInstructionFailure(outcomeError, password))
+        continue
+      }
+      addFailure(item, durableFailure)
+      continue
+    }
+
+    try {
+      await sendLoginInstructions(environment, item, password, operation.operationId, decision)
+    } catch (error) {
+      const failure = adminLoginInstructionFailure(error, password)
+      const state = adminLoginInstructionOutcomeState(failure)
+      try {
+        await recordAdminLoginInstructionOutcome(
+          config,
+          operation.operationId,
+          actorEmployeeId,
+          item.employeeId,
+          state,
+          failure,
+        )
+      } catch (outcomeError) {
+        addFailure(item, adminLoginInstructionFailure(outcomeError, password))
+        continue
+      }
+      addFailure(item, failure)
+      continue
+    }
+
+    // Provider acceptance is already durable at this boundary. Never map an
+    // operation-finalization outage to an ordinary failure that could clear
+    // the client key and cause a new password/email operation.
+    try {
+      await recordAdminLoginInstructionOutcome(
+        config,
+        operation.operationId,
+        actorEmployeeId,
+        item.employeeId,
+        'completed',
+      )
+      sent.push({
+        action,
+        displayName: item.displayName,
+        email: item.contactEmail,
+        username: item.username,
+      })
+    } catch {
+      addFailure(item, adminLoginInstructionFinalizationPending())
+    }
+  }
+
+  return { failures, sent }
 }
 
 async function sendWelcomeEmail(
   environment: Environment,
   target: LoginEmailTarget,
+  sourceId: string,
 ): Promise<unknown> {
   const to = requireApprovedEmployeeEmail(environment, target)
+  const durableSourceId = await domainOperationUuid(
+    'welcome-email-delivery',
+    sourceId,
+    target.employeeId,
+  )
 
   const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
   const message = buildWelcomeEmail(target, appUrl)
-  const result = await sendAuditedEmail(environment, to, message, {
-    notificationType: 'welcome_email',
-    relatedRecordId: target.employeeId,
-    relatedRecordType: 'employee',
-  }, defaultSupportEmail)
+  const result = await deliverDurableEmailRecipients(
+    environment,
+    'inline_email',
+    durableSourceId,
+    [to],
+    message,
+    {
+      notificationType: 'welcome_email',
+      relatedRecordId: target.employeeId,
+      relatedRecordType: 'employee',
+    },
+    callRpc,
+    defaultSupportEmail,
+  )
   if (result.suppressed.length > 0) {
     throw new ApiError('email_recipient_suppressed', 409, 'Email was suppressed because the recipient domain is temporarily blocked.')
   }
-  if (result.failed.length > 0) throw new ApiError('email_delivery_failed', 502, result.failed[0].error)
+  if (result.uncertain.length > 0 || result.completionPending.length > 0 || result.accepted.length === 0) {
+    throw new ApiError(
+      'email_delivery_unresolved',
+      409,
+      result.uncertain[0]?.error
+        ?? 'The welcome email provider outcome could not be durably confirmed. Review it before retrying.',
+    )
+  }
   return result
 }
 
@@ -7324,6 +9945,7 @@ async function recordOnboardingDelivery(
   config: NonNullable<ReturnType<typeof configuredSupabase>>,
   actorId: string,
   caseId: string,
+  attemptId: string,
   deliveryKind: 'welcome' | 'account_setup',
   status: 'sent' | 'failed',
   error: string | null,
@@ -7334,6 +9956,7 @@ async function recordOnboardingDelivery(
     'service_hr_onboarding_record_delivery',
     {
       target_actor_id: actorId,
+      target_attempt_id: attemptId,
       target_case_id: caseId,
       target_kind: deliveryKind,
       target_error: error,
@@ -7347,7 +9970,30 @@ async function recordOnboardingDelivery(
 async function handleAccountMfaRecoveryApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
   const session = await requireAuthenticatedSession(request, environment)
-  const body = await readJsonBody(request)
+  const url = new URL(request.url)
+  if (url.pathname === '/api/v1/account/mfa-recovery') {
+    // Deleting GoTrue factors only lowers existing sessions to AAL1; it does
+    // not revoke them. Do not consume a one-time code or delete any factor
+    // until recovery can atomically establish a replacement credential and
+    // invalidate every existing session.
+    throw new ApiError(
+      'mfa_recovery_combined_reset_required',
+      409,
+      'One-time MFA recovery is temporarily unavailable while session-safe account recovery is completed. Use password recovery or contact an administrator.',
+    )
+  }
+
+  if (url.pathname === '/api/v1/account/mfa-recovery-codes') {
+    // Do not issue credentials that the fail-closed recovery route cannot
+    // safely consume. Existing protected hashes remain untouched for a later
+    // combined credential/session recovery design.
+    throw new ApiError(
+      'mfa_recovery_code_issuance_paused',
+      409,
+      'MFA recovery-code generation is temporarily paused. Use password recovery or contact an administrator if you lose access to your authenticator.',
+    )
+  }
+
   const target = await callRpc<AuthTarget>(
     { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
     'service_get_employee_auth_target',
@@ -7355,66 +10001,6 @@ async function handleAccountMfaRecoveryApi(request: Request, environment: Enviro
     session.config.serviceRoleKey,
   )
   if (!target?.existingAuthUserId) throw new ApiError('employee_login_missing', 422, 'This employee does not have a login account.')
-
-  const url = new URL(request.url)
-  if (url.pathname === '/api/v1/account/mfa-recovery-codes') {
-    if (!session.context.has_mfa || accessTokenAssuranceLevel(session.token) !== 'aal2') {
-      throw new ApiError('aal2_required', 403, 'Verify your authenticator code before generating recovery codes.')
-    }
-
-    const rawCodes = Array.from({ length: 10 }, () => generateRecoveryCode())
-    const records: MfaRecoveryCodeRecord[] = await Promise.all(rawCodes.map(async (code) => ({
-      hash: await sha256Hex(code),
-      hint: `****${code.slice(-4)}`,
-    })))
-    const batchId = crypto.randomUUID()
-    const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-    await callRpc(
-      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
-      'service_replace_mfa_recovery_codes',
-      {
-        target_batch_id: batchId,
-        target_codes: records,
-        target_employee_id: session.context.employee_id,
-        target_expires_at: expiresAt,
-        target_request_id: requestId,
-      },
-      session.config.serviceRoleKey,
-    )
-    return json({ batchId, codes: rawCodes, expiresAt, requestId })
-  }
-
-  if (url.pathname === '/api/v1/account/mfa-recovery') {
-    const suppliedCode = typeof body.code === 'string' ? normalizeRecoveryCode(body.code) : ''
-    if (!suppliedCode) throw new ApiError('invalid_recovery_code', 422, 'Enter a valid SygShift recovery code.')
-    const consumed = await callRpc<{ consumed?: boolean }>(
-      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
-      'service_consume_mfa_recovery_code',
-      {
-        target_code_hash: await sha256Hex(suppliedCode),
-        target_employee_id: session.context.employee_id,
-        target_request_id: requestId,
-      },
-      session.config.serviceRoleKey,
-    )
-    if (!consumed.consumed) throw new ApiError('invalid_recovery_code', 422, 'The recovery code is invalid, expired, or already used.')
-
-    const factors = await listAuthUserMfaFactors(session.config, target.existingAuthUserId)
-    for (const factor of factors) await deleteAuthUserMfaFactor(session.config, target.existingAuthUserId, factor.id)
-    const resetRecord = await callRpc<{ trustedDevicesRevoked?: number }>(
-      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
-      'service_record_employee_mfa_reset',
-      {
-        target_actor_employee_id: session.context.employee_id,
-        target_auth_user_id: target.existingAuthUserId,
-        target_employee_id: session.context.employee_id,
-        target_factor_count: factors.length,
-        target_request_id: requestId,
-      },
-      session.config.serviceRoleKey,
-    )
-    return json({ factorsRemoved: factors.length, requestId, trustedDevicesRevoked: resetRecord.trustedDevicesRevoked ?? 0 })
-  }
 
   return errorJson('not_found', requestId, 404)
 }
@@ -7597,7 +10183,6 @@ async function handleAccountSecurityKeysApi(
     const storedCredentials = await listSecurityKeyCredentials(serviceConfig, session.context.employee_id)
     const stored = storedCredentials.find((credential) => credential.credentialId === info.credential.id)
     if (!stored) throw new ApiError('security_key_store_failed', 500, 'The security key was verified but could not be loaded. Try again.')
-    await sendSecurityKeyChangeNotice(environment, session.context.employee_id, 'added', stored.label, stored.id)
     return json({ key: securityKeySummary(stored), requestId, verified: true })
   }
 
@@ -7739,7 +10324,6 @@ async function handleAccountSecurityKeysApi(
       },
       session.config.serviceRoleKey,
     )
-    await sendSecurityKeyChangeNotice(environment, session.context.employee_id, 'removed', key.label, key.id)
     return json({ ...result, requestId })
   }
 
@@ -7769,25 +10353,257 @@ function storageObjectUrl(config: { url: string }, path: string): string {
   return `${config.url}/storage/v1/object/employee-photos/${path.split('/').map(encodeURIComponent).join('/')}`
 }
 
-async function deleteStoredPhoto(
-  config: { serviceRoleKey: string; url: string },
-  path: string | null | undefined,
-): Promise<void> {
-  if (!path) return
-  const response = await fetch(storageObjectUrl(config, path), {
-    headers: {
-      apikey: config.serviceRoleKey,
-      authorization: `Bearer ${config.serviceRoleKey}`,
+interface ProfilePhotoCompletionState {
+  cleanupJobId?: string | null
+  currentPath?: string | null
+  idempotent?: boolean
+  operationId?: string
+  photoPath?: string
+  previousPath?: string | null
+  state: 'prepared' | 'completed' | 'conflict'
+}
+
+export async function persistProfilePhotoUpload(
+  config: { serviceRoleKey: string, url: string },
+  employeeId: string,
+  expectedPhotoPath: string | null,
+  photoBytes: Uint8Array,
+  imageType: 'image/jpeg' | 'image/png',
+  requestId: string,
+  rpc: RpcInvoker = callRpc,
+): Promise<{ path: string, previousPath: string | null }> {
+  const checksum = await sha256BytesHex(photoBytes)
+  const extension = imageType === 'image/png' ? 'png' : 'jpg'
+  const prepareArguments = {
+    target_byte_size: photoBytes.byteLength,
+    target_employee_id: employeeId,
+    target_expected_photo_path: expectedPhotoPath,
+    target_extension: extension,
+    target_mime_type: imageType,
+    target_photo_checksum: checksum,
+    target_request_id: requestId,
+  }
+  const prepare = () => rpc<ProfilePhotoCompletionState>(
+    config,
+    'service_prepare_employee_photo_upload_v2',
+    prepareArguments,
+    config.serviceRoleKey,
+  )
+  let prepared: ProfilePhotoCompletionState
+  try {
+    prepared = await prepare()
+  } catch (error) {
+    if (!completionFailureMayBeAmbiguous(error)) {
+      if (error instanceof SupabaseRequestError) {
+        throw new ApiError('profile_photo_update_rejected', error.status, error.message)
+      }
+      throw error
+    }
+    try {
+      prepared = await prepare()
+    } catch {
+      throw new ApiError('profile_photo_finalization_pending', 503, 'The photo update could not be prepared safely. Retry after the account service recovers.')
+    }
+  }
+  if (!prepared || !['prepared', 'completed', 'conflict'].includes(prepared.state)) {
+    throw new Error('The profile photo preparation service returned an invalid state.')
+  }
+  if (prepared.state === 'conflict') {
+    throw new ApiError('profile_photo_changed', 409, 'Your profile photo changed in another session. Reload it before trying again.')
+  }
+  if (!prepared.operationId || !validUuid(prepared.operationId) || !prepared.photoPath) {
+    throw new Error('The profile photo preparation service returned an incomplete identity.')
+  }
+  const candidatePath = `${employeeId}/${prepared.operationId}/${checksum}.${extension}`
+  if (prepared.photoPath !== candidatePath
+    || (prepared.state === 'completed' && prepared.currentPath !== candidatePath)) {
+    throw new Error('The profile photo preparation service returned an invalid storage identity.')
+  }
+  const durablePreviousPath = prepared.previousPath ?? null
+  await storeIdempotentPrivateStorageObject(
+    config,
+    'employee-photos',
+    candidatePath,
+    photoBytes,
+    imageType,
+    checksum,
+  )
+  const complete = () => rpc<ProfilePhotoCompletionState>(
+    config,
+    'service_complete_employee_photo_upload_v2',
+    {
+      target_employee_id: employeeId,
+      target_operation_id: prepared.operationId,
+      target_photo_checksum: checksum,
+      target_photo_path: candidatePath,
+      target_request_id: requestId,
     },
-    method: 'DELETE',
-  })
-  if (!response.ok && response.status !== 404) throw new Error('The previous profile photo could not be removed.')
+    config.serviceRoleKey,
+  )
+  const finish = async (state: ProfilePhotoCompletionState): Promise<{ path: string, previousPath: string | null }> => {
+    if (state?.state === 'completed' && state.currentPath === candidatePath) {
+      const previousPath = state.previousPath ?? durablePreviousPath
+      return { path: candidatePath, previousPath }
+    }
+    if (state?.state === 'conflict') {
+      // The row-locked completion transaction durably queues the exact,
+      // operation-scoped loser before returning this conflict.
+      throw new ApiError('profile_photo_changed', 409, 'Your profile photo changed in another session. Reload it before trying again.')
+    }
+    throw new Error('The profile photo completion service returned an invalid state.')
+  }
+
+  try {
+    return await finish(await complete())
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    if (!completionFailureMayBeAmbiguous(error)) {
+      // The prepared operation is durable and another concurrent request may
+      // already be completing it. Preserve the bounded deterministic object;
+      // only an explicit row-locked conflict below authorizes cleanup.
+      if (error instanceof SupabaseRequestError) {
+        throw new ApiError('profile_photo_update_rejected', error.status, error.message)
+      }
+      throw error
+    }
+
+    let authoritativePath: string | null
+    try {
+      authoritativePath = await rpc<string | null>(
+        config,
+        'service_get_employee_photo_path',
+        { target_employee_id: employeeId },
+        config.serviceRoleKey,
+      )
+    } catch {
+      console.warn(JSON.stringify({ event: 'profile_photo_completion_deferred', reason: 'state_unavailable', requestId }))
+      throw new ApiError('profile_photo_finalization_pending', 503, 'The photo was preserved, but its final status could not be confirmed. Retry after the account service recovers.')
+    }
+    const inspection = await inspectPrivateStorageObjectIntegrity(
+      config,
+      'employee-photos',
+      candidatePath,
+      photoBytes.byteLength,
+      checksum,
+    )
+    if (authoritativePath === candidatePath && inspection === 'match') {
+      return { path: candidatePath, previousPath: durablePreviousPath }
+    }
+    if (inspection !== 'match') {
+      console.warn(JSON.stringify({ event: 'profile_photo_completion_deferred', reason: inspection, requestId }))
+      throw new ApiError('profile_photo_finalization_pending', 503, 'The photo was preserved, but its final status could not be confirmed. Retry after the account service recovers.')
+    }
+    try {
+      // A second compare-and-set call serializes behind any first transaction
+      // whose response was lost. It either confirms this exact candidate or
+      // returns an explicit conflicting winner that is safe to reconcile.
+      return await finish(await complete())
+    } catch (retryError) {
+      if (retryError instanceof ApiError) throw retryError
+      console.warn(JSON.stringify({ event: 'profile_photo_completion_deferred', reason: 'state_unavailable', requestId }))
+      throw new ApiError('profile_photo_finalization_pending', 503, 'The photo was preserved, but its final status could not be confirmed. Retry after the account service recovers.')
+    }
+  }
 }
 
 async function handleMyAccountApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
   const session = await requireAuthenticatedSession(request, environment)
   const url = new URL(request.url)
   const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+
+  if (url.pathname === '/api/v1/account/password') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const body = await readJsonBody(request)
+    const expectedEmployeeId = typeof body.expectedEmployeeId === 'string' ? body.expectedEmployeeId : ''
+    const expectedAuthUserId = typeof body.expectedAuthUserId === 'string' ? body.expectedAuthUserId : ''
+    const password = typeof body.password === 'string' ? body.password : ''
+    const claims = accessTokenClaims(session.token)
+    const authUserId = claims?.sub ?? ''
+
+    if (
+      !validUuid(expectedEmployeeId)
+      || !validUuid(expectedAuthUserId)
+      || !validUuid(authUserId)
+      || expectedEmployeeId !== session.context.employee_id
+      || expectedAuthUserId !== authUserId
+    ) {
+      throw new ApiError(
+        'account_context_changed',
+        409,
+        'The signed-in account changed before the password request was sent. Reload the account and try again.',
+      )
+    }
+    const policyFailures = validateSuppliedTemporaryPassword(password, session.context.username)
+    if (policyFailures.length > 0) {
+      throw new ApiError('password_policy_failed', 422, policyFailures.join(' '))
+    }
+
+    let passwordAlreadyCurrent = false
+    try {
+      const passwordResponse = await fetch(`${session.config.url}/auth/v1/user`, {
+        body: JSON.stringify({ password }),
+        headers: {
+          apikey: session.config.publishableKey,
+          authorization: `Bearer ${session.token}`,
+          'content-type': 'application/json',
+        },
+        method: 'PUT',
+      })
+      if (!passwordResponse.ok) {
+        const payload = await passwordResponse.json().catch(() => null) as {
+          error?: string
+          error_description?: string
+          message?: string
+          msg?: string
+        } | null
+        const message = [payload?.message, payload?.msg, payload?.error_description, payload?.error]
+          .find((value): value is string => typeof value === 'string')
+          ?.toLowerCase() ?? ''
+        passwordAlreadyCurrent = message.includes('different from the old password')
+          || message.includes('same as the old password')
+          || message.includes('same password')
+          || message.includes('new password should be different')
+        if (!passwordAlreadyCurrent) {
+          throw new ApiError(
+            'password_update_failed',
+            passwordResponse.status >= 500 ? 503 : 422,
+            'Your password could not be changed. Retry from the same signed-in account.',
+          )
+        }
+      }
+    } catch (error) {
+      if (error instanceof ApiError) throw error
+      throw new ApiError(
+        'password_update_unresolved',
+        503,
+        'The password provider outcome could not be confirmed. Retry the same password from the same signed-in account.',
+      )
+    }
+
+    try {
+      await callRpc<unknown>(
+        { publishableKey: session.config.publishableKey, url: session.config.url },
+        'mark_password_changed',
+        {},
+        session.token,
+        forwardedAssuranceHeaders(request),
+      )
+    } catch {
+      throw new ApiError(
+        'password_change_finalization_pending',
+        503,
+        'Your password was accepted, but SygShift could not finish clearing the password checkpoint. Retry the same password from this account.',
+      )
+    }
+
+    return json({
+      authUserId,
+      employeeId: session.context.employee_id,
+      passwordAlreadyCurrent,
+      requestId,
+      saved: true,
+    })
+  }
 
   if (url.pathname === '/api/v1/account/photo') {
     const currentPath = await callRpc<string | null>(
@@ -7814,13 +10630,29 @@ async function handleMyAccountApi(request: Request, environment: Environment, re
 
     if (request.method === 'DELETE') {
       await requireMaintenanceWriteAccess(serviceConfig, 'user_accounts')
-      await callRpc(
+      const removal = await callRpc<{
+        cleanupJobId?: string | null
+        currentPath?: string | null
+        idempotent?: boolean
+        previousPath?: string | null
+        state?: 'conflict' | 'removed'
+      }>(
         serviceConfig,
-        'service_update_employee_photo',
-        { target_employee_id: session.context.employee_id, target_photo_path: null },
+        'service_remove_employee_photo_v2',
+        {
+          target_employee_id: session.context.employee_id,
+          target_expected_photo_path: currentPath,
+          target_request_id: requestId,
+        },
         session.config.serviceRoleKey,
       )
-      await deleteStoredPhoto(session.config, currentPath).catch(() => undefined)
+      if (removal?.state === 'conflict') {
+        throw new ApiError('profile_photo_changed', 409, 'Your profile photo changed in another session. Reload it before trying again.')
+      }
+      if (removal?.state !== 'removed') throw new Error('The profile photo removal service returned an invalid state.')
+      // The row-locked transaction clears exactly the selected photo and
+      // persists cleanup before returning. Storage deletion is deliberately
+      // asynchronous so a provider outage cannot erase the only recovery key.
       return json({ removed: true, requestId })
     }
 
@@ -7833,35 +10665,18 @@ async function handleMyAccountApi(request: Request, environment: Environment, re
     if (buffer.byteLength === 0 || buffer.byteLength > 5 * 1024 * 1024) {
       throw new ApiError('profile_photo_too_large', 413, 'Choose a JPG or PNG photo no larger than 5 MB.')
     }
-    const imageType = verifiedImageType(new Uint8Array(buffer), suppliedType)
+    const photoBytes = new Uint8Array(buffer)
+    const imageType = verifiedImageType(photoBytes, suppliedType)
     if (!imageType) throw new ApiError('profile_photo_invalid', 422, 'The selected file must be a valid JPG or PNG image.')
 
-    const extension = imageType === 'image/png' ? 'png' : 'jpg'
-    const newPath = `${session.context.employee_id}/${crypto.randomUUID()}.${extension}`
-    const uploaded = await fetch(storageObjectUrl(session.config, newPath), {
-      body: buffer,
-      headers: {
-        apikey: session.config.serviceRoleKey,
-        authorization: `Bearer ${session.config.serviceRoleKey}`,
-        'content-type': imageType,
-        'x-upsert': 'false',
-      },
-      method: 'POST',
-    })
-    if (!uploaded.ok) throw new ApiError('profile_photo_upload_failed', 502, 'The profile photo could not be saved.')
-
-    try {
-      await callRpc(
-        serviceConfig,
-        'service_update_employee_photo',
-        { target_employee_id: session.context.employee_id, target_photo_path: newPath },
-        session.config.serviceRoleKey,
-      )
-    } catch (error) {
-      await deleteStoredPhoto(session.config, newPath).catch(() => undefined)
-      throw error
-    }
-    await deleteStoredPhoto(session.config, currentPath).catch(() => undefined)
+    await persistProfilePhotoUpload(
+      serviceConfig,
+      session.context.employee_id,
+      currentPath,
+      photoBytes,
+      imageType,
+      requestId,
+    )
     return json({ saved: true, requestId })
   }
 
@@ -7870,29 +10685,76 @@ async function handleMyAccountApi(request: Request, environment: Environment, re
     await requireMaintenanceWriteAccess(serviceConfig, 'user_accounts')
     const body = await readJsonBody(request)
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+    const operationId = typeof body.operationId === 'string' ? body.operationId.trim() : ''
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
       throw new ApiError('invalid_personal_email', 422, 'Enter a valid personal email address.')
+    }
+    if (!validUuid(operationId)) {
+      throw new ApiError('email_verification_operation_required', 422, 'Retry from the personal-email form to create a protected verification request.')
     }
     if (isBlockedEmailRecipient(environment, email)) {
       throw new ApiError('company_email_not_allowed', 422, 'Use a personal email address. Company-domain delivery is currently disabled.')
     }
-    const rawToken = `${crypto.randomUUID()}${crypto.randomUUID().replaceAll('-', '')}`
+    // The operation id is generated by the signed-in caller and bound by the
+    // service-only RPC to this employee, recipient, purpose, and token hash.
+    // HMAC derivation lets an exact response-lost retry reconstruct the same
+    // valid link while Postgres stores only SHA-256(rawToken).
+    const rawToken = await derivePersonalEmailVerificationToken(
+      session.config.serviceRoleKey,
+      operationId,
+      session.context.employee_id,
+      email,
+    )
     const tokenHash = await sha256Hex(rawToken)
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-    await callRpc(
+    const createArguments = {
+      target_email: email,
+      target_employee_id: session.context.employee_id,
+      target_expires_at: expiresAt,
+      target_operation_id: operationId,
+      target_purpose: personalEmailVerificationPurpose,
+      target_token_hash: tokenHash,
+    }
+    const createVerification = () => callRpc<{
+      employeeId?: string
+      expiresAt?: string
+      operationId?: string
+      purpose?: string
+      requestedEmail?: string
+      verificationId?: string
+    }>(
       serviceConfig,
-      'service_create_email_verification',
-      {
-        target_email: email,
-        target_employee_id: session.context.employee_id,
-        target_expires_at: expiresAt,
-        target_token_hash: tokenHash,
-      },
+      'service_create_email_verification_operation',
+      createArguments,
       session.config.serviceRoleKey,
     )
+    let verification: Awaited<ReturnType<typeof createVerification>>
+    try {
+      verification = await createVerification()
+    } catch (error) {
+      if (!completionFailureMayBeAmbiguous(error)) throw error
+      try {
+        verification = await createVerification()
+      } catch {
+        throw new ApiError(
+          'email_verification_finalization_pending',
+          503,
+          'The verification request was preserved, but its status could not be confirmed. Retry this same request after the account service recovers.',
+        )
+      }
+    }
+    const durableExpiresAt = typeof verification?.expiresAt === 'string' ? verification.expiresAt : ''
+    if (!verification?.verificationId || !validUuid(verification.verificationId)
+      || verification.operationId !== operationId
+      || verification.employeeId !== session.context.employee_id
+      || verification.requestedEmail !== email
+      || verification.purpose !== personalEmailVerificationPurpose
+      || !Number.isFinite(Date.parse(durableExpiresAt))) {
+      throw new Error('The email-verification operation identity was unavailable.')
+    }
     const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
     const verificationUrl = `${appUrl}/account?verify=${encodeURIComponent(rawToken)}`
-    const delivery = await sendAuditedEmail(environment, email, {
+    const delivery = await sendDurableInlineEmail(environment, verification.verificationId, email, {
       subject: 'Verify your SygShift personal email',
       text: `Confirm this personal email for your SygShift account: ${verificationUrl}\n\nThis link expires in one hour. If you did not request this change, no action is required.`,
     }, {
@@ -7902,7 +10764,7 @@ async function handleMyAccountApi(request: Request, environment: Environment, re
     }, defaultSupportEmail)
     if (delivery.failed.length) throw new ApiError('email_delivery_failed', 502, delivery.failed[0].error)
     if (delivery.suppressed.length) throw new ApiError('email_recipient_suppressed', 409, 'That email address cannot receive SygShift messages right now.')
-    return json({ expiresAt, requestId, sent: true })
+    return json({ expiresAt: durableExpiresAt, operationId, requestId, sent: true })
   }
 
   if (url.pathname === '/api/v1/account/email-verification/confirm') {
@@ -7970,6 +10832,59 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     return usersByEmail
   }
 
+  if (url.pathname === '/api/v1/admin/users/email-dispatch-review') {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    const requestedLimit = Number(url.searchParams.get('limit') ?? 50)
+    const items = await callRpc<unknown>(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'service_list_email_recipient_dispatch_review',
+      { target_limit: Number.isInteger(requestedLimit) ? Math.max(1, Math.min(requestedLimit, 200)) : 50 },
+      admin.config.serviceRoleKey,
+    )
+    if (!Array.isArray(items)) throw new Error('The email dispatch review response is invalid.')
+    return json({ items, requestId })
+  }
+
+  const emailDispatchReviewMatch = /^\/api\/v1\/admin\/users\/email-dispatch-review\/([0-9a-f-]{36})$/i.exec(url.pathname)
+  if (emailDispatchReviewMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const resolution = typeof body.resolution === 'string' ? body.resolution.trim() : ''
+    const operationId = typeof body.operationId === 'string' ? body.operationId.trim() : ''
+    const reviewToken = typeof body.reviewToken === 'string' ? body.reviewToken.trim() : ''
+    const failureDetail = typeof body.failureDetail === 'string' ? body.failureDetail.trim() : ''
+    if (!validUuid(operationId)) {
+      throw new ApiError('email_dispatch_review_operation_required', 422, 'A valid review operation id is required.')
+    }
+    if (!validUuid(reviewToken)) {
+      throw new ApiError('email_dispatch_review_token_required', 422, 'The current review generation token is required.')
+    }
+    if (!['accepted', 'suppressed', 'retry_verified_unsent', 'failed_verified_unsent'].includes(resolution)) {
+      throw new ApiError('invalid_email_dispatch_resolution', 422, 'Choose a supported email dispatch resolution.')
+    }
+    if (['retry_verified_unsent', 'failed_verified_unsent'].includes(resolution) && failureDetail.length < 12) {
+      throw new ApiError(
+        'email_dispatch_review_evidence_required',
+        422,
+        'Add a concrete evidence note explaining how provider non-acceptance was verified.',
+      )
+    }
+    const result = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'service_resolve_email_recipient_dispatch_review',
+      {
+        target_actor_employee_id: admin.context.employee_id,
+        target_dispatch_id: emailDispatchReviewMatch[1],
+        target_failure_detail: failureDetail || null,
+        target_operation_id: operationId,
+        target_provider_reference: typeof body.providerReference === 'string' ? body.providerReference.trim() || null : null,
+        target_review_token: reviewToken,
+        target_resolution: resolution,
+      },
+      admin.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+
   const adminSecurityKeysMatch = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/security-keys(?:\/([0-9a-f-]{36}))?$/i.exec(url.pathname)
   if (adminSecurityKeysMatch) {
     const employeeId = adminSecurityKeysMatch[1]
@@ -8006,123 +10921,176 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       },
       admin.config.serviceRoleKey,
     )
-    await sendSecurityKeyChangeNotice(environment, employeeId, 'removed', key.label, key.id)
     return json({ ...result, requestId })
   }
 
   if (url.pathname === '/api/v1/admin/users/provision-missing') {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
-
-    const targets = await callRpc<AuthTarget[]>(
-      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
-      'service_get_employee_auth_targets',
-      { target_include_existing: false },
-      admin.config.serviceRoleKey,
+    throw new ApiError(
+      'durable_login_instructions_required',
+      409,
+      'Direct bulk password creation is retired. Use Send new user invites so account changes and credential delivery share one retry-safe operation.',
     )
-    const results = []
-    const failures = []
-
-    for (const target of targets) {
-      try {
-        const result = await provisionOne(admin.config, target, generateTemporaryPassword(), await getUsersByEmail())
-        results.push({
-          action: result.action,
-          displayName: target.displayName,
-          role: target.role,
-          temporaryPassword: result.password,
-          username: target.username,
-        })
-      } catch (error) {
-        failures.push({
-          displayName: target.displayName,
-          error: error instanceof Error ? error.message : 'Provisioning failed.',
-          username: target.username,
-        })
-      }
-    }
-
-    return json({
-      failures,
-      provisioned: results,
-      requestId,
-      requestedBy: admin.context.username,
-    })
   }
 
   if (url.pathname === '/api/v1/admin/users/login-emails') {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
-
-    const targets = await callRpc<LoginEmailTarget[]>(
-      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
-      'service_get_employee_login_email_targets',
-      { target_include_existing: false },
-      admin.config.serviceRoleKey,
+    let loginOperationId = await adminEmailOperationUuid(
+      body,
+      'bulk-login-instructions',
+      admin.context.employee_id,
+      'bulk',
     )
-    const sent = []
-    const failures = []
-
-    for (const target of targets) {
-      try {
-        requireApprovedEmployeeEmail(environment, target)
-        const result = await provisionOne(admin.config, target, generateTemporaryPassword(), await getUsersByEmail())
-        await sendLoginInstructions(environment, target, result.password)
-        sent.push({
-          displayName: target.displayName,
-          email: target.contactEmail,
-          username: target.username,
-        })
-      } catch (error) {
-        failures.push({
-          displayName: target.displayName,
-          error: error instanceof Error ? error.message : 'Login email failed.',
-          username: target.username,
-        })
+    let operation = await getAdminLoginInstructionOperation(
+      admin.config,
+      loginOperationId,
+      admin.context.employee_id,
+      'bulk',
+    )
+    if (!operation) {
+      const activeOperations = await findActiveAdminLoginInstructionOperations(admin.config, null)
+      const activeBulk = activeOperations.find((candidate) => candidate.mode === 'bulk')
+      if (activeBulk) {
+        operation = await claimAdminLoginInstructionOperation(
+          admin.config,
+          activeBulk.operationId,
+          admin.context.employee_id,
+          'bulk',
+        )
+        loginOperationId = operation.operationId
+      } else {
+        if (activeOperations.some((candidate) => candidate.mode === 'single')) {
+          throw new ApiError(
+            'login_instruction_individual_operations_active',
+            409,
+            'One or more individual login-instruction operations are still active. Resume those employee actions before starting the bulk workflow.',
+          )
+        }
+        const targets = await callRpc<LoginEmailTarget[]>(
+          { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+          'service_get_employee_login_email_targets',
+          { target_include_existing: false },
+          admin.config.serviceRoleKey,
+        )
+        // Reject the whole request before its durable manifest or any Auth
+        // mutation if even one member lacks an approved destination.
+        for (const target of targets) requireApprovedEmployeeEmail(environment, target)
+        operation = await beginAdminLoginInstructionOperation(
+          admin.config,
+          loginOperationId,
+          admin.context.employee_id,
+          'bulk',
+          targets,
+          targets.length > 0 ? await getUsersByEmail() : new Map(),
+        )
       }
     }
+    const result = await executeAdminLoginInstructionOperation(
+      environment,
+      admin.config,
+      operation.actorEmployeeId,
+      operation,
+      getUsersByEmail,
+    )
 
     return json({
-      failures,
+      failures: result.failures,
+      operationId: loginOperationId,
       requestId,
       requestedBy: admin.context.username,
-      sent,
+      sent: result.sent,
     })
   }
 
   const emailMatch = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/login-email$/i.exec(url.pathname)
   if (emailMatch) {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
-
-    const target = await callRpc<LoginEmailTarget>(
-      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
-      'service_get_employee_login_email_target',
-      { target_employee_id: emailMatch[1] },
-      admin.config.serviceRoleKey,
-    )
-    if (!target) throw new ApiError('employee_not_found', 404, 'The employee record was not found.')
-    requireApprovedEmployeeEmail(environment, target)
-
-    if ('temporaryPassword' in body && body.temporaryPassword !== null && typeof body.temporaryPassword !== 'string') {
-      throw new ApiError('invalid_temporary_password', 400, 'Temporary password must be text.')
+    if ('temporaryPassword' in body && body.temporaryPassword !== null) {
+      throw new ApiError(
+        'custom_temporary_password_not_supported',
+        422,
+        'Login instructions now use a protected retry-safe temporary credential. A custom password cannot be used.',
+      )
     }
-
-    const suppliedPassword = typeof body.temporaryPassword === 'string' ? body.temporaryPassword.trim() : ''
-    if (suppliedPassword) {
-      const passwordFailures = validateSuppliedTemporaryPassword(suppliedPassword, target.username)
-      if (passwordFailures.length > 0) {
-        throw new ApiError('temporary_password_rejected', 422, passwordFailures.join(' '))
+    const employeeId = emailMatch[1]
+    let loginOperationId = await adminEmailOperationUuid(
+      body,
+      'login-instructions',
+      admin.context.employee_id,
+      employeeId,
+    )
+    let operation = await getAdminLoginInstructionOperation(
+      admin.config,
+      loginOperationId,
+      admin.context.employee_id,
+      'single',
+    )
+    if (!operation) {
+      const activeOperations = await findActiveAdminLoginInstructionOperations(admin.config, employeeId)
+      const activeOperation = activeOperations[0]
+      if (activeOperation) {
+        if (activeOperation.mode !== 'single') {
+          throw new ApiError(
+            'login_instruction_bulk_operation_active',
+            409,
+            'This employee belongs to an active bulk login-instruction operation. Resume the bulk workflow instead of starting an individual one.',
+          )
+        }
+        operation = await claimAdminLoginInstructionOperation(
+          admin.config,
+          activeOperation.operationId,
+          admin.context.employee_id,
+          'single',
+        )
+        loginOperationId = operation.operationId
+      } else {
+        const target = await callRpc<LoginEmailTarget>(
+          { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+          'service_get_employee_login_email_target',
+          { target_employee_id: employeeId },
+          admin.config.serviceRoleKey,
+        )
+        if (!target) throw new ApiError('employee_not_found', 404, 'The employee record was not found.')
+        requireApprovedEmployeeEmail(environment, target)
+        if (target.existingAuthUserId) {
+          throw new ApiError(
+            'existing_account_requires_password_reset',
+            409,
+            'This employee already has a linked login. Use the password-reset workflow instead of issuing temporary credentials.',
+          )
+        }
+        operation = await beginAdminLoginInstructionOperation(
+          admin.config,
+          loginOperationId,
+          admin.context.employee_id,
+          'single',
+          [target],
+          await getUsersByEmail(),
+        )
       }
     }
-
-    const result = await provisionOne(admin.config, target, suppliedPassword || generateTemporaryPassword(), await getUsersByEmail())
-    await sendLoginInstructions(environment, target, result.password)
+    if (operation.items[0]?.employeeId !== employeeId) {
+      throw new ApiError('login_instruction_identity_mismatch', 409, 'The saved login-instruction operation belongs to a different employee.')
+    }
+    const result = await executeAdminLoginInstructionOperation(
+      environment,
+      admin.config,
+      operation.actorEmployeeId,
+      operation,
+      getUsersByEmail,
+    )
+    const failure = result.failures[0]
+    if (failure) throw new ApiError(failure.code, failure.status, failure.error)
+    const sent = result.sent[0]
+    if (!sent) throw new ApiError('email_delivery_unresolved', 409, 'The login-instruction outcome could not be confirmed.')
 
     return json({
-      action: result.action,
-      displayName: target.displayName,
-      email: target.contactEmail,
+      action: sent.action,
+      displayName: sent.displayName,
+      email: sent.email,
+      operationId: loginOperationId,
       requestId,
-      role: target.role,
-      username: target.username,
+      username: sent.username,
     })
   }
 
@@ -8138,7 +11106,13 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     )
     if (!target) throw new ApiError('employee_not_found', 404, 'The active employee record was not found.')
 
-    const delivery = await sendWelcomeEmail(environment, target)
+    const welcomeOperationId = await adminEmailOperationUuid(
+      body,
+      'welcome-email',
+      admin.context.employee_id,
+      target.employeeId,
+    )
+    const delivery = await sendWelcomeEmail(environment, target, welcomeOperationId)
 
     return json({
       delivery,
@@ -8163,52 +11137,158 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       throw new ApiError('employee_login_missing', 422, 'This employee does not have an active login account to reset.')
     }
     const recipient = requireApprovedEmployeeEmail(environment, target)
-    const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
-    const generated = await supabaseJson<GeneratedPasswordRecoveryLink>(`${admin.config.url}/auth/v1/admin/generate_link`, {
-      body: JSON.stringify({
-        email: target.authEmail,
-        redirect_to: `${appUrl}/password-recovery`,
-        type: 'recovery',
-      }),
-      headers: {
-        apikey: admin.config.serviceRoleKey,
-        authorization: `Bearer ${admin.config.serviceRoleKey}`,
-        'content-type': 'application/json',
-      },
-      method: 'POST',
-    })
-    let recoveryLink: string
-    try {
-      recoveryLink = buildApplicationPasswordRecoveryLink(generated, appUrl)
-    } catch {
-      throw new ApiError('password_reset_link_failed', 502, 'A secure password-reset link could not be generated.')
+    const passwordResetOperationId = await adminEmailOperationUuid(
+      body,
+      'password-reset',
+      admin.context.employee_id,
+      target.employeeId,
+    )
+    const resetOperationIdentity = {
+      target_actor_employee_id: admin.context.employee_id,
+      target_auth_user_id: target.existingAuthUserId,
+      target_employee_id: target.employeeId,
+      target_operation_id: passwordResetOperationId,
+      target_recipient_email: recipient,
     }
-
-    const delivery = await sendAuditedEmail(environment, recipient, buildPasswordResetEmail(target, recoveryLink), {
+    let resetOperation = requireEmployeePasswordResetOperation(await callRpc(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'service_prepare_employee_password_reset_operation',
+      resetOperationIdentity,
+      admin.config.serviceRoleKey,
+    ))
+    if (resetOperation.state === 'completed') {
+      return json({
+        displayName: target.displayName,
+        email: resetOperation.deliveryEmailMasked,
+        requestId,
+        username: target.username,
+      })
+    }
+    const emailContext: EmailAuditContext = {
       notificationType: 'password_reset',
       relatedRecordId: target.employeeId,
       relatedRecordType: 'employee',
-    }, defaultSupportEmail)
-    if (delivery.suppressed.length > 0) throw new ApiError('email_recipient_suppressed', 409, 'The reset email was suppressed by the active recipient safeguards.')
-    if (delivery.failed.length > 0) throw new ApiError('email_delivery_failed', 502, delivery.failed[0].error)
-
-    const maskedEmail = maskEmailAddress(recipient)
-    await callRpc(
+    }
+    const prepared = await prepareInlineEmailDispatch(
       { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
-      'service_record_employee_password_reset',
-      {
-        target_actor_employee_id: admin.context.employee_id,
-        target_auth_user_id: target.existingAuthUserId,
-        target_delivery_email_masked: maskedEmail,
-        target_employee_id: target.employeeId,
-        target_request_id: requestId,
-      },
-      admin.config.serviceRoleKey,
+      passwordResetOperationId,
+      recipient,
+      emailContext,
     )
+    if (!prepared.sendAllowed) {
+      if (prepared.state === 'suppressed') {
+        throw new ApiError('email_recipient_suppressed', 409, 'The reset email was suppressed by the active recipient safeguards.')
+      }
+      if (prepared.state !== 'accepted') {
+        throw new ApiError('email_delivery_unresolved', 409, 'The reset email has an unresolved delivery outcome that requires review.')
+      }
+    } else {
+      const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
+      let recoveryLink: string
+      try {
+        const generated = await supabaseJson<GeneratedPasswordRecoveryLink>(`${admin.config.url}/auth/v1/admin/generate_link`, {
+          body: JSON.stringify({
+            email: target.authEmail,
+            redirect_to: `${appUrl}/password-recovery`,
+            type: 'recovery',
+          }),
+          headers: {
+            apikey: admin.config.serviceRoleKey,
+            authorization: `Bearer ${admin.config.serviceRoleKey}`,
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        })
+        recoveryLink = buildApplicationPasswordRecoveryLink(generated, appUrl)
+      } catch {
+        const released = await releaseUnsentLoginInstructionDispatch(
+          admin.config,
+          admin.context.employee_id,
+          prepared,
+          'Password recovery link generation failed before the email provider was called.',
+        )
+        if (!released) {
+          throw new ApiError(
+            'email_delivery_unresolved',
+            409,
+            'The password-reset email reservation could not be safely released. Retry the same request; no provider call was made.',
+          )
+        }
+        throw new ApiError('password_reset_link_failed', 502, 'A secure password-reset link could not be generated.')
+      }
+      const delivery = await sendDurableInlineEmail(
+        environment,
+        passwordResetOperationId,
+        recipient,
+        buildPasswordResetEmail(target, recoveryLink),
+        emailContext,
+        defaultSupportEmail,
+        callRpc,
+        new Map([[recipient, prepared]]),
+      )
+      if (delivery.suppressed.length > 0) throw new ApiError('email_recipient_suppressed', 409, 'The reset email was suppressed by the active recipient safeguards.')
+      if (delivery.failed.length > 0) throw new ApiError('email_delivery_failed', 502, delivery.failed[0].error)
+    }
+
+    let completionError: unknown
+    for (let attempt = 1; attempt <= 3 && resetOperation.state !== 'completed'; attempt += 1) {
+      try {
+        resetOperation = requireEmployeePasswordResetOperation(await callRpc(
+          { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+          'service_complete_employee_password_reset_operation',
+          resetOperationIdentity,
+          admin.config.serviceRoleKey,
+        ))
+        completionError = undefined
+      } catch (error) {
+        completionError = error
+        if (!completionFailureMayBeAmbiguous(error)) {
+          throw new ApiError(
+            'password_reset_identity_changed',
+            409,
+            'The employee login or approved email changed during this reset. No reset was reported for the replacement account.',
+          )
+        }
+        try {
+          // Completion may have committed before its response was lost.  The
+          // exact prepare replay returns completed only for the same employee,
+          // account, actor, and normalized recipient.
+          resetOperation = requireEmployeePasswordResetOperation(await callRpc(
+            { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+            'service_prepare_employee_password_reset_operation',
+            resetOperationIdentity,
+            admin.config.serviceRoleKey,
+          ))
+          if (resetOperation.state === 'completed') completionError = undefined
+        } catch (reconciliationError) {
+          if (!completionFailureMayBeAmbiguous(reconciliationError)) {
+            throw new ApiError(
+              'password_reset_identity_changed',
+              409,
+              'The employee login or approved email changed during this reset. No reset was reported for the replacement account.',
+            )
+          }
+          completionError = reconciliationError
+        }
+      }
+    }
+    if (resetOperation.state !== 'completed') {
+      console.warn(JSON.stringify({
+        event: 'admin_password_reset_completion_deferred',
+        operationId: passwordResetOperationId,
+        reason: completionError instanceof Error ? completionError.message : 'completion_unavailable',
+        requestId,
+      }))
+      throw new ApiError(
+        'password_reset_finalization_pending',
+        503,
+        'The recovery email was preserved, but its exact account binding could not yet be confirmed. Retry the same request.',
+      )
+    }
 
     return json({
       displayName: target.displayName,
-      email: maskedEmail,
+      email: resetOperation.deliveryEmailMasked,
       requestId,
       username: target.username,
     })
@@ -8217,106 +11297,22 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
   const mfaResetMatch = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/mfa-reset$/i.exec(url.pathname)
   if (mfaResetMatch) {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
-
-    const target = await callRpc<AuthTarget>(
-      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
-      'service_get_employee_auth_target',
-      { target_employee_id: mfaResetMatch[1] },
-      admin.config.serviceRoleKey,
+    throw new ApiError(
+      'mfa_reset_combined_recovery_required',
+      409,
+      'Administrative MFA reset is temporarily unavailable because a safe reset must also replace the login credential and invalidate active sessions. Use password recovery or disable login access while support completes the combined recovery workflow.',
     )
-    if (!target?.existingAuthUserId) {
-      throw new ApiError('employee_login_missing', 422, 'This employee does not have a login account to reset.')
-    }
-
-    const factors = await listAuthUserMfaFactors(admin.config, target.existingAuthUserId)
-    for (const factor of factors) {
-      await deleteAuthUserMfaFactor(admin.config, target.existingAuthUserId, factor.id)
-    }
-
-    const recoveryCodesRevoked = await callRpc<number>(
-      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
-      'service_revoke_mfa_recovery_codes',
-      {
-        target_actor_employee_id: admin.context.employee_id,
-        target_employee_id: target.employeeId,
-        target_request_id: requestId,
-      },
-      admin.config.serviceRoleKey,
-    )
-
-    const resetRecord = await callRpc<{
-      securityKeysRevoked?: number
-      securityKeySessionsRevoked?: number
-      trustedDevicesRevoked?: number
-    }>(
-      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
-      'service_record_employee_mfa_reset',
-      {
-        target_actor_employee_id: admin.context.employee_id,
-        target_auth_user_id: target.existingAuthUserId,
-        target_employee_id: target.employeeId,
-        target_factor_count: factors.length,
-        target_request_id: requestId,
-      },
-      admin.config.serviceRoleKey,
-    )
-    if ((resetRecord.securityKeysRevoked ?? 0) > 0) {
-      await sendSecurityKeyChangeNotice(
-        environment,
-        target.employeeId,
-        'removed',
-        `${resetRecord.securityKeysRevoked} security key${resetRecord.securityKeysRevoked === 1 ? '' : 's'} during an MFA reset`,
-        target.employeeId,
-      )
-    }
-
-    return json({
-      displayName: target.displayName,
-      factorsRemoved: factors.length,
-      recoveryCodesRevoked,
-      requestId,
-      securityKeysRevoked: resetRecord.securityKeysRevoked ?? 0,
-      securityKeySessionsRevoked: resetRecord.securityKeySessionsRevoked ?? 0,
-      trustedDevicesRevoked: resetRecord.trustedDevicesRevoked ?? 0,
-      username: target.username,
-    })
   }
 
   const match = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/account$/i.exec(url.pathname)
   if (!match) return errorJson('not_found', requestId, 404)
 
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
-
-  const target = await callRpc<AuthTarget>(
-    { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
-    'service_get_employee_auth_target',
-    { target_employee_id: match[1] },
-    admin.config.serviceRoleKey,
+  throw new ApiError(
+    'durable_login_instructions_required',
+    409,
+    'Direct password provisioning is retired. Send login instructions so the password change and email delivery remain retry-safe.',
   )
-
-  if ('temporaryPassword' in body && body.temporaryPassword !== null && typeof body.temporaryPassword !== 'string') {
-    throw new ApiError('invalid_temporary_password', 400, 'Temporary password must be text.')
-  }
-
-  const suppliedPassword = typeof body.temporaryPassword === 'string' ? body.temporaryPassword.trim() : ''
-  if (suppliedPassword) {
-    const passwordFailures = validateSuppliedTemporaryPassword(suppliedPassword, target.username)
-    if (passwordFailures.length > 0) {
-      throw new ApiError('temporary_password_rejected', 422, passwordFailures.join(' '))
-    }
-  }
-
-  const password = suppliedPassword || generateTemporaryPassword()
-  const result = await provisionOne(admin.config, target, password, await getUsersByEmail())
-
-  return json({
-    action: result.action,
-    displayName: target.displayName,
-    requestId,
-    role: target.role,
-    temporaryPassword: result.password,
-    username: target.username,
-  })
 }
 
 function escapeHtml(value: string): string {
@@ -8520,17 +11516,21 @@ async function handleAttendanceReportApi(request: Request, environment: Environm
       '<p>This alert was sent automatically so Dispatch can review coverage immediately.</p>',
     ].join('')
 
-    const delivery = await sendAuditedEmail(
+    const delivery = await deliverDurableEmailRecipients(
       environment,
-      dispatchAlertEmail,
+      'attendance_accountability_event',
+      report.id,
+      [dispatchAlertEmail],
       { html, subject, text },
       { notificationType: 'attendance_call_off', relatedRecordId: report.id, relatedRecordType: 'attendance_accountability_event' },
+      callRpc,
       defaultSupportEmail,
     )
-    dispatchNotified = delivery.sent.length > 0
+    dispatchNotified = delivery.accepted.length > 0
     dispatchError = delivery.suppressed.length > 0
       ? 'Suppressed — Blocked Domain'
-      : delivery.failed[0]?.error ?? null
+      : delivery.uncertain[0]?.error
+        ?? (delivery.completionPending.length > 0 ? 'Dispatch email outcome requires reconciliation.' : null)
   } catch (error) {
     dispatchError = error instanceof Error ? error.message : 'Dispatch email delivery failed.'
   }
@@ -8557,6 +11557,14 @@ async function handleAttendanceReportApi(request: Request, environment: Environm
 async function handleNotificationProcessApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
 
+  const input = await request.json().catch(() => ({})) as Record<string, unknown>
+  const targetNotificationId = typeof input.notificationId === 'string' && input.notificationId.trim()
+    ? input.notificationId.trim()
+    : undefined
+  if (targetNotificationId && !validUuid(targetNotificationId)) {
+    return errorJson('invalid_notification_id', requestId, 400, 'A valid queued notification id is required.')
+  }
+
   let operator: Awaited<ReturnType<typeof requireVerifiedOperationsSession>>
   try {
     operator = await requireVerifiedOperationsSession(request, environment)
@@ -8577,12 +11585,16 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
     'communications',
   )
 
-  const processing = await processNotificationJobs(environment, 10)
+  const processing = await processNotificationJobs(environment, 10, callRpc, 'all', targetNotificationId)
 
   return json({
     ...processing,
     requestId,
     requestedBy: operator.context.username,
+    target: targetNotificationId ? {
+      notificationId: targetNotificationId,
+      outcome: processing.outcomes.find((outcome) => outcome.id === targetNotificationId) ?? null,
+    } : null,
   })
 }
 
@@ -8709,10 +11721,16 @@ async function processPushJobs(
   const publicKey = environment.SYGSHIFT_PUSH_PUBLIC_KEY
   const privateKey = environment.SYGSHIFT_PUSH_PRIVATE_KEY
   const hookSecret = environment.SYGSHIFT_PUSH_HOOK_SECRET
-  if (!config || !publicKey || !privateKey || !hookSecret) return { status: 'disabled' }
+  if (!config) return { status: 'disabled' }
+  const pushRpc = (name: string, input: Record<string, unknown>) =>
+    rpc({ serviceRoleKey: config.serviceRoleKey, url: config.url }, name, input, config.serviceRoleKey)
   try {
-    const processed = await deliverPushBatch({ publicKey, privateKey, hookSecret }, (name, input) =>
-      rpc({ serviceRoleKey: config.serviceRoleKey, url: config.url }, name, input, config.serviceRoleKey))
+    const reconciliation = await reconcilePushProviderOutcomes(pushRpc)
+    if (reconciliation.reconciled || reconciliation.completionPending) {
+      console.info(JSON.stringify({ event: 'push_provider_reconciled', ...reconciliation }))
+    }
+    if (!publicKey || !privateKey || !hookSecret) return { status: 'disabled' }
+    const processed = await deliverPushBatch({ publicKey, privateKey, hookSecret }, pushRpc)
     if (processed) console.info(JSON.stringify({ event: 'push_batch_processed', processed }))
     return { status: 'completed' }
   } catch (error) {
@@ -8745,14 +11763,260 @@ async function processSygTasksReminderJobs(environment: Environment, rpc: RpcInv
 
 type NotificationProcessingLane = 'all' | 'noncritical' | 'timekeeping'
 
-async function processNotificationJobs(
+function emailProviderReference(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null
+  const result = value as Record<string, unknown>
+  const reference = result.messageId ?? result.message_id ?? result.id
+  return typeof reference === 'string' && reference.trim() ? reference.trim().slice(0, 200) : null
+}
+
+async function completeDurableEmailRecipientDispatch(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  rpc: RpcInvoker,
+  input: {
+    dispatchToken: string
+    failureDetail?: string | null
+    intendedRecipient: string
+    notificationType: string
+    providerReference?: string | null
+    sourceId: string
+    sourceKind: EmailDispatchSourceKind
+    state: 'accepted' | 'suppressed' | 'uncertain'
+  },
+): Promise<boolean> {
+  // A response can be lost after the database commits. The completion RPC is
+  // row-locked and idempotent, so bounded retries are safe. When the scheduled
+  // Supabase circuit is open these attempts intentionally finish quickly.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const completed = await rpc<Record<string, unknown>>(
+        config,
+        'service_complete_email_recipient_dispatch',
+        {
+          target_dispatch_token: input.dispatchToken,
+          target_failure_detail: input.failureDetail ?? null,
+          target_intended_recipient: input.intendedRecipient,
+          target_notification_type: input.notificationType,
+          target_provider_reference: input.providerReference ?? null,
+          target_source_id: input.sourceId,
+          target_source_kind: input.sourceKind,
+          target_state: input.state,
+        },
+        config.serviceRoleKey,
+      )
+      if (completed.dispatchToken !== input.dispatchToken || completed.state !== input.state) {
+        throw new Error('The email dispatch completion receipt did not match the requested generation and outcome.')
+      }
+      return true
+    } catch (error) {
+      if (attempt === 2) {
+        console.error(JSON.stringify({
+          event: 'email_recipient_dispatch_completion_deferred',
+          sourceId: input.sourceId,
+          sourceKind: input.sourceKind,
+          state: input.state,
+          failureType: error instanceof SupabaseRequestError ? error.operation : 'completion_unavailable',
+        }))
+      }
+    }
+  }
+  return false
+}
+
+async function getExistingEmailRecipientManifest(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  rpc: RpcInvoker,
+  sourceKind: EmailDispatchSourceKind,
+  sourceId: string,
+): Promise<ExistingEmailRecipientManifest | null> {
+  const payload = await rpc<unknown>(
+    config,
+    'service_get_email_recipient_dispatch_manifest',
+    { target_source_id: sourceId, target_source_kind: sourceKind },
+    config.serviceRoleKey,
+  )
+  if (payload === null) return null
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('The durable email recipient manifest response is invalid.')
+  }
+  const manifest = payload as Partial<ExistingEmailRecipientManifest>
+  if (manifest.sourceKind !== sourceKind
+    || manifest.sourceId !== sourceId
+    || typeof manifest.notificationType !== 'string'
+    || !Array.isArray(manifest.intendedRecipients)
+    || manifest.intendedRecipients.some((recipient) => typeof recipient !== 'string' || !recipient.trim())) {
+    throw new Error('The durable email recipient manifest response is invalid.')
+  }
+  return {
+    intendedRecipients: [...new Set(manifest.intendedRecipients.map((recipient) => recipient.trim().toLowerCase()))],
+    notificationType: manifest.notificationType,
+    relatedRecordId: manifest.relatedRecordId ?? null,
+    relatedRecordType: manifest.relatedRecordType ?? null,
+    sourceId,
+    sourceKind,
+  }
+}
+
+export async function deliverDurableEmailRecipients(
+  environment: Environment,
+  sourceKind: EmailDispatchSourceKind,
+  sourceId: string,
+  recipients: string[],
+  message: NotificationJob['message'],
+  context: EmailAuditContext,
+  rpc: RpcInvoker = callRpc,
+  replyTo?: string,
+  preparedDecisions?: ReadonlyMap<string, EmailRecipientDispatchDecision>,
+  redactedProviderFailureDetail?: string,
+): Promise<DurableEmailDeliveryResult> {
+  const config = configuredSupabase(environment)
+  if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
+  if (!environment.EMAIL) throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
+  const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
+  if (!fromEmail) throw new ApiError('email_sender_not_configured', 503, 'The email sender address is not configured.')
+  if (!validUuid(sourceId)) throw new Error('A valid notification source id is required.')
+
+  const result: DurableEmailDeliveryResult = {
+    accepted: [],
+    completionPending: [],
+    suppressed: [],
+    uncertain: [],
+  }
+  const uniqueRecipients = [...new Set(recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
+
+  // Materialize every recipient fence atomically before any provider call. A
+  // crash cannot otherwise leave a partial recipient set that review might
+  // incorrectly treat as a complete source operation.
+  let decisionManifest: ReadonlyMap<string, EmailRecipientDispatchDecision>
+  if (preparedDecisions) {
+    if (preparedDecisions.size !== uniqueRecipients.length
+      || uniqueRecipients.some((recipient) => !preparedDecisions.has(recipient))) {
+      throw new Error('The prepared email recipient manifest does not exactly match the delivery recipients.')
+    }
+    decisionManifest = preparedDecisions
+  } else {
+    const prepared = await rpc<unknown>(
+      config,
+      'service_prepare_email_recipient_dispatch_batch',
+      {
+        target_intended_recipients: uniqueRecipients,
+        target_notification_type: context.notificationType,
+        target_related_record_id: context.relatedRecordId ?? null,
+        target_related_record_type: context.relatedRecordType ?? null,
+        target_source_id: sourceId,
+        target_source_kind: sourceKind,
+      },
+      config.serviceRoleKey,
+    )
+    if (!Array.isArray(prepared)) throw new Error('The email recipient dispatch manifest response is invalid.')
+    const decisions = new Map<string, EmailRecipientDispatchDecision>()
+    for (const item of prepared) {
+      if (!item || typeof item !== 'object') throw new Error('The email recipient dispatch manifest response is invalid.')
+      const decision = item as Partial<EmailRecipientDispatchManifestDecision>
+      const recipient = typeof decision.intendedRecipient === 'string'
+        ? decision.intendedRecipient.trim().toLowerCase()
+        : ''
+      if (!uniqueRecipients.includes(recipient)
+        || !validUuid(decision.dispatchToken ?? '')
+        || !validUuid(decision.dispatchId ?? '')
+        || typeof decision.sendAllowed !== 'boolean'
+        || typeof decision.state !== 'string') {
+        throw new Error('The email recipient dispatch manifest response is invalid.')
+      }
+      decisions.set(recipient, decision as EmailRecipientDispatchDecision)
+    }
+    if (decisions.size !== uniqueRecipients.length) {
+      throw new Error('The email recipient dispatch manifest is incomplete.')
+    }
+    decisionManifest = decisions
+  }
+
+  for (const recipient of uniqueRecipients) {
+    const decision = decisionManifest.get(recipient)
+    if (!decision || !validUuid(decision.dispatchToken) || !validUuid(decision.dispatchId)) {
+      throw new Error('The email recipient dispatch fence response is invalid.')
+    }
+
+    if (!decision.sendAllowed) {
+      if (decision.state === 'accepted') result.accepted.push(recipient)
+      else if (decision.state === 'suppressed') result.suppressed.push(recipient)
+      else result.uncertain.push({
+        error: 'This recipient has an unresolved provider outcome that requires reconciliation.',
+        recipient,
+      })
+      continue
+    }
+
+    if (isBlockedEmailRecipient(environment, recipient)) {
+      const completed = await completeDurableEmailRecipientDispatch(config, rpc, {
+        dispatchToken: decision.dispatchToken,
+        failureDetail: 'Suppressed - Blocked Domain',
+        intendedRecipient: recipient,
+        notificationType: context.notificationType,
+        sourceId,
+        sourceKind,
+        state: 'suppressed',
+      })
+      if (completed) result.suppressed.push(recipient)
+      else result.completionPending.push(recipient)
+      continue
+    }
+
+    try {
+      const outboundMessage = {
+        from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
+        headers: { 'X-SygShift-Delivery-ID': decision.dispatchToken },
+        html: brandedEmailHtml(message, environment.SYGSHIFT_PUBLIC_APP_URL),
+        replyTo,
+        subject: message.subject,
+        text: message.text,
+        to: recipient,
+      }
+      const providerResult = await environment.EMAIL.send(outboundMessage)
+      const providerReference = emailProviderReference(providerResult)
+      const completed = await completeDurableEmailRecipientDispatch(config, rpc, {
+        dispatchToken: decision.dispatchToken,
+        intendedRecipient: recipient,
+        notificationType: context.notificationType,
+        providerReference,
+        sourceId,
+        sourceKind,
+        state: 'accepted',
+      })
+      if (completed) result.accepted.push(recipient)
+      else result.completionPending.push(recipient)
+    } catch (error) {
+      const detail = redactedProviderFailureDetail
+        ?? (error instanceof Error ? error.message : 'Email provider outcome is unknown.')
+      await completeDurableEmailRecipientDispatch(config, rpc, {
+        dispatchToken: decision.dispatchToken,
+        failureDetail: detail,
+        intendedRecipient: recipient,
+        notificationType: context.notificationType,
+        sourceId,
+        sourceKind,
+        state: 'uncertain',
+      })
+      // Provider exceptions can occur before transmission or after acceptance.
+      // Without a provider idempotency contract, automatic resend can duplicate
+      // an accepted message, so this recipient is fenced for reconciliation.
+      result.uncertain.push({ error: detail, recipient })
+    }
+  }
+
+  return result
+}
+
+export async function processNotificationJobs(
   environment: Environment,
   limit = 10,
   rpc: RpcInvoker = callRpc,
   lane: NotificationProcessingLane = 'all',
+  targetNotificationId?: string,
 ): Promise<{
   delivered: string[]
   failed: Array<{ id: string, error: string }>
+  outcomes: NotificationJobOutcome[]
   processed: number
   suppressed: string[]
 }> {
@@ -8760,7 +12024,11 @@ async function processNotificationJobs(
   if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
   if (!environment.EMAIL) throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
 
-  const timekeepingJobs = lane === 'noncritical'
+  if (targetNotificationId && (!validUuid(targetNotificationId) || lane !== 'all')) {
+    throw new Error('Targeted notification processing requires a valid notification id and the all lane.')
+  }
+
+  const timekeepingJobs = lane === 'noncritical' || targetNotificationId
     ? []
     : await rpc<NotificationJob[]>(
       { serviceRoleKey: config.serviceRoleKey, url: config.url },
@@ -8770,31 +12038,41 @@ async function processNotificationJobs(
     )
   const delivered: string[] = []
   const failed: Array<{ id: string, error: string }> = []
+  const outcomes: NotificationJobOutcome[] = []
   const suppressed: string[] = []
-  const recordDeferredAudit = async (
-    job: NotificationJob,
-    result: EmailDeliveryResult,
-    context: EmailAuditContext,
-  ) => {
-    try {
-      await logDeferredEmailDelivery(environment, result, context, rpc)
-    } catch (error) {
-      if (isScheduledContainmentError(error)) throw error
-      console.error(JSON.stringify({ event: 'email_delivery_audit_deferred', notificationId: job.id }))
-    }
-  }
 
-  const deliverJobs = async (jobs: NotificationJob[], respectEmployeePreferences = false) => {
+  const deliverJobs = async (
+    jobs: NotificationJob[],
+    options: {
+      markResult: (job: NotificationJob, delivered: boolean, error: string | null) => Promise<void>
+      markSuppressed?: (job: NotificationJob, reason: string) => Promise<void>
+      relatedRecordType?: string
+      respectEmployeePreferences?: boolean
+      sourceKind: EmailDispatchSourceKind
+    },
+  ) => {
     for (const job of jobs) {
+      if (!validUuid(job.claimToken)) {
+        throw new Error('The claimed notification is missing its durable claim token.')
+      }
       const auditContext: EmailAuditContext = {
         notificationType: job.messageType ?? 'outbox_notification',
         relatedRecordId: job.aggregateId ?? null,
-        relatedRecordType: job.aggregateType ?? null,
+        relatedRecordType: options.relatedRecordType ?? job.aggregateType ?? null,
       }
-      let deferredAudit: EmailDeliveryResult | null = null
+      let recipients: string[] = []
       try {
-        let recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
-        if (job.messageType === 'announcement_published' && job.aggregateId) {
+        const existingManifest = await getExistingEmailRecipientManifest(
+          config,
+          rpc,
+          options.sourceKind,
+          job.id,
+        )
+        const recipientManifestFrozen = job.recipientManifestFrozen === true || existingManifest !== null
+        recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
+        if (existingManifest) {
+          recipients = existingManifest.intendedRecipients
+        } else if (!recipientManifestFrozen && job.messageType === 'announcement_published' && job.aggregateId) {
           recipients = await rpc<string[]>(
             { serviceRoleKey: config.serviceRoleKey, url: config.url },
             'service_get_announcement_email_recipients',
@@ -8803,7 +12081,10 @@ async function processNotificationJobs(
           )
         }
         const isRequiredDocumentDelivery = job.messageType === 'document_signature_required'
-        if (respectEmployeePreferences && !isRequiredDocumentDelivery && recipients.length > 0) {
+        if (options.respectEmployeePreferences
+          && !isRequiredDocumentDelivery
+          && !recipientManifestFrozen
+          && recipients.length > 0) {
           recipients = await rpc<string[]>(
             { serviceRoleKey: config.serviceRoleKey, url: config.url },
             'service_filter_notification_recipients',
@@ -8816,173 +12097,193 @@ async function processNotificationJobs(
           )
         }
         if (recipients.length === 0) {
-          await rpc<unknown>(
-            { serviceRoleKey: config.serviceRoleKey, url: config.url },
-            'service_mark_notification_suppressed',
-            { target_notification_id: job.id, target_reason: 'Suppressed — Employee Preference' },
-            config.serviceRoleKey,
-          )
+          if (options.markSuppressed) await options.markSuppressed(job, 'Suppressed - Employee Preference')
+          else await options.markResult(job, false, 'No approved employee email is available for this notification.')
           suppressed.push(job.id)
+          outcomes.push({
+            id: job.id,
+            recipients: { accepted: 0, completionPending: 0, suppressed: 0, total: 0, uncertain: 0 },
+            status: 'suppressed',
+          })
           continue
         }
 
-        deferredAudit = await sendAuditedEmail(
+        const delivery = await deliverDurableEmailRecipients(
           environment,
+          options.sourceKind,
+          job.id,
           recipients,
           job.message,
           auditContext,
-          undefined,
           rpc,
-          'deferred',
         )
-        if (deferredAudit.failed.length > 0) {
-          throw new Error(deferredAudit.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
+        const recipientSummary = {
+          accepted: delivery.accepted.length,
+          completionPending: delivery.completionPending.length,
+          suppressed: delivery.suppressed.length,
+          total: recipients.length,
+          uncertain: delivery.uncertain.length,
         }
-        if (deferredAudit.sent.length === 0 && deferredAudit.suppressed.length > 0) {
-          await rpc<unknown>(
-            { serviceRoleKey: config.serviceRoleKey, url: config.url },
-            'service_mark_notification_suppressed',
-            { target_notification_id: job.id, target_reason: 'Suppressed — Blocked Domain' },
-            config.serviceRoleKey,
-          )
+        if (delivery.uncertain.length > 0 || delivery.completionPending.length > 0) {
+          const message = 'One or more recipient deliveries require reconciliation; no automatic resend was attempted.'
+          await options.markResult(job, false, message)
+          failed.push({ id: job.id, error: message })
+          outcomes.push({ id: job.id, recipients: recipientSummary, status: 'pending' })
+        } else if (delivery.accepted.length === 0 && delivery.suppressed.length > 0) {
+          if (options.markSuppressed) await options.markSuppressed(job, 'Suppressed - Blocked Domain')
+          else await options.markResult(job, true, null)
           suppressed.push(job.id)
+          outcomes.push({ id: job.id, recipients: recipientSummary, status: 'suppressed' })
         } else {
-          // Provider acceptance is made durable before the optional audit row.
-          // If audit storage is temporarily unavailable, the claimed outbox row
-          // is already complete and a later cycle cannot resend the email.
-          await rpc<unknown>(
-            { serviceRoleKey: config.serviceRoleKey, url: config.url },
-            'service_mark_notification_result',
-            { delivered: true, delivery_error: null, target_notification_id: job.id },
-            config.serviceRoleKey,
-          )
-          delivered.push(job.id)
+          try {
+            await options.markResult(job, true, null)
+            delivered.push(job.id)
+            outcomes.push({ id: job.id, recipients: recipientSummary, status: 'delivered' })
+          } catch (error) {
+            // Every accepted recipient is already fenced. Leave the source job
+            // reclaimable so a later cycle can finish bookkeeping without a
+            // second provider send.
+            const message = error instanceof Error ? error.message : 'Notification completion is temporarily unavailable.'
+            failed.push({ id: job.id, error: message })
+            outcomes.push({ id: job.id, recipients: recipientSummary, status: 'pending' })
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Email delivery failed.'
-        await rpc<unknown>(
-          { serviceRoleKey: config.serviceRoleKey, url: config.url },
-          'service_mark_notification_result',
-          { delivered: false, delivery_error: message, target_notification_id: job.id },
-          config.serviceRoleKey,
-        )
+        await options.markResult(job, false, message)
         failed.push({ id: job.id, error: message })
-      }
-      if (deferredAudit) {
-        await recordDeferredAudit(job, deferredAudit, auditContext)
+        outcomes.push({
+          id: job.id,
+          recipients: { accepted: 0, completionPending: 0, suppressed: 0, total: recipients.length, uncertain: 0 },
+          status: 'failed',
+        })
       }
     }
   }
 
-  await deliverJobs(timekeepingJobs)
+  const markOutboxResult = async (job: NotificationJob, result: boolean, error: string | null) => {
+    await rpc<unknown>(
+      config,
+      'service_mark_notification_result',
+      {
+        delivered: result,
+        delivery_error: error,
+        target_claim_token: job.claimToken,
+        target_notification_id: job.id,
+      },
+      config.serviceRoleKey,
+    )
+  }
+  const markOutboxSuppressed = async (job: NotificationJob, reason: string) => {
+    await rpc<unknown>(
+      config,
+      'service_mark_notification_suppressed',
+      { target_claim_token: job.claimToken, target_notification_id: job.id, target_reason: reason },
+      config.serviceRoleKey,
+    )
+  }
+
+  await deliverJobs(timekeepingJobs, {
+    markResult: markOutboxResult,
+    markSuppressed: markOutboxSuppressed,
+    sourceKind: 'notification_outbox',
+  })
 
   if (lane === 'timekeeping') {
     return {
       delivered,
       failed,
-      processed: delivered.length + failed.length + suppressed.length,
+      outcomes,
+      processed: outcomes.length,
       suppressed,
     }
   }
 
-  const timeOffJobs = await rpc<NotificationJob[]>(
-    { serviceRoleKey: config.serviceRoleKey, url: config.url },
-    'service_claim_time_off_notification_batch',
-    { target_limit: limit },
-    config.serviceRoleKey,
-  )
-  await deliverJobs(timeOffJobs, true)
+  if (!targetNotificationId) {
+    const timeOffJobs = await rpc<NotificationJob[]>(
+      config,
+      'service_claim_time_off_notification_batch',
+      { target_limit: limit },
+      config.serviceRoleKey,
+    )
+    await deliverJobs(timeOffJobs, {
+      markResult: markOutboxResult,
+      markSuppressed: markOutboxSuppressed,
+      respectEmployeePreferences: true,
+      sourceKind: 'notification_outbox',
+    })
+  }
 
   const generalJobs = await rpc<NotificationJob[]>(
-    { serviceRoleKey: config.serviceRoleKey, url: config.url },
-    'service_claim_notification_batch',
-    { target_limit: limit },
+    config,
+    targetNotificationId ? 'service_claim_notification_by_id' : 'service_claim_notification_batch',
+    targetNotificationId ? { target_notification_id: targetNotificationId } : { target_limit: limit },
     config.serviceRoleKey,
   )
-  await deliverJobs(generalJobs, true)
+  await deliverJobs(generalJobs, {
+    markResult: markOutboxResult,
+    markSuppressed: markOutboxSuppressed,
+    respectEmployeePreferences: true,
+    sourceKind: 'notification_outbox',
+  })
+
+  if (targetNotificationId) {
+    return { delivered, failed, outcomes, processed: outcomes.length, suppressed }
+  }
 
   const supportJobs = await rpc<NotificationJob[]>(
-    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    config,
     'service_claim_support_ticket_notification_batch',
     { target_limit: limit },
     config.serviceRoleKey,
   )
-  for (const job of supportJobs) {
-    const auditContext: EmailAuditContext = {
-      notificationType: job.messageType ?? 'support_ticket_update',
-      relatedRecordId: job.aggregateId ?? null,
-      relatedRecordType: 'support_ticket',
-    }
-    let deferredAudit: EmailDeliveryResult | null = null
-    try {
-      const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
-      if (recipients.length === 0) throw new Error('No approved employee email is available for this ticket update.')
-      deferredAudit = await sendAuditedEmail(environment, recipients, job.message, auditContext, undefined, rpc, 'deferred')
-      if (deferredAudit.failed.length > 0) throw new Error(deferredAudit.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
-      if (deferredAudit.sent.length === 0) throw new Error('The ticket email was suppressed by the active recipient safeguards.')
+  await deliverJobs(supportJobs, {
+    markResult: async (job, result, error) => {
       await rpc<unknown>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        config,
         'service_mark_support_ticket_notification_result',
-        { delivered: true, delivery_error: null, target_notification_id: job.id },
+        {
+          delivered: result,
+          delivery_error: error,
+          target_claim_token: job.claimToken,
+          target_notification_id: job.id,
+        },
         config.serviceRoleKey,
       )
-      delivered.push(job.id)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Ticket email delivery failed.'
-      await rpc<unknown>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
-        'service_mark_support_ticket_notification_result',
-        { delivered: false, delivery_error: message, target_notification_id: job.id },
-        config.serviceRoleKey,
-      )
-      failed.push({ id: job.id, error: message })
-    }
-    if (deferredAudit) await recordDeferredAudit(job, deferredAudit, auditContext)
-  }
+    },
+    relatedRecordType: 'support_ticket',
+    sourceKind: 'support_ticket_notification',
+  })
 
   const employeeNotificationJobs = await rpc<NotificationJob[]>(
-    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    config,
     'service_claim_employee_notification_batch',
     { target_limit: limit },
     config.serviceRoleKey,
   )
-  for (const job of employeeNotificationJobs) {
-    const auditContext: EmailAuditContext = {
-      notificationType: job.messageType ?? 'direct_employee_notification',
-      relatedRecordId: job.aggregateId ?? null,
-      relatedRecordType: 'employee_notification',
-    }
-    let deferredAudit: EmailDeliveryResult | null = null
-    try {
-      const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
-      if (recipients.length === 0) throw new Error('No approved employee email is available for this notification.')
-      deferredAudit = await sendAuditedEmail(environment, recipients, job.message, auditContext, undefined, rpc, 'deferred')
-      if (deferredAudit.failed.length > 0) throw new Error(deferredAudit.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
-      if (deferredAudit.sent.length === 0) throw new Error('The notification email was suppressed by the active recipient safeguards.')
+  await deliverJobs(employeeNotificationJobs, {
+    markResult: async (job, result, error) => {
       await rpc<unknown>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        config,
         'service_mark_employee_notification_result',
-        { delivered: true, delivery_error: null, target_delivery_id: job.id },
+        {
+          delivered: result,
+          delivery_error: error,
+          target_claim_token: job.claimToken,
+          target_delivery_id: job.id,
+        },
         config.serviceRoleKey,
       )
-      delivered.push(job.id)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Notification email delivery failed.'
-      await rpc<unknown>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
-        'service_mark_employee_notification_result',
-        { delivered: false, delivery_error: message, target_delivery_id: job.id },
-        config.serviceRoleKey,
-      )
-      failed.push({ id: job.id, error: message })
-    }
-    if (deferredAudit) await recordDeferredAudit(job, deferredAudit, auditContext)
-  }
+    },
+    relatedRecordType: 'employee_notification',
+    sourceKind: 'employee_notification_delivery',
+  })
 
   return {
     delivered,
     failed,
-    processed: delivered.length + failed.length + suppressed.length,
+    outcomes,
+    processed: outcomes.length,
     suppressed,
   }
 }
@@ -9011,6 +12312,7 @@ async function readiness(environment: Environment, requestId: string): Promise<R
   const scheduledRuntimeFresh = Boolean(
     sourceCommit.valid
     && scheduledRuntime?.mode === 'closed'
+    && scheduledRuntime.consecutiveFailures === 0
     && scheduledRuntime.lastFullSuccessAtMs !== null
     && readinessCheckedAtMs >= scheduledRuntime.lastFullSuccessAtMs
     && readinessCheckedAtMs - scheduledRuntime.lastFullSuccessAtMs <= scheduledReadinessFreshnessMs
@@ -9020,6 +12322,7 @@ async function readiness(environment: Environment, requestId: string): Promise<R
     assetsBinding: Boolean(environment.ASSETS),
     scheduledRuntimeCoordinator: Boolean(coordinator && scheduledRuntime),
     scheduledRuntimeFresh,
+    scheduledRuntimeNoFailures: scheduledRuntime?.consecutiveFailures === 0,
     scheduledRuntimeSourceCommit: sourceCommit.valid,
     supabasePublishableKey: Boolean(
       environment.SUPABASE_PUBLISHABLE_KEY?.trim() || environment.VITE_SUPABASE_PUBLISHABLE_KEY?.trim(),
@@ -9033,7 +12336,7 @@ async function readiness(environment: Environment, requestId: string): Promise<R
     sygilantSharedIdentitySigningSecret: !sygilantSharedIdentityEnabled || sygilantSigningSecret.length >= 32,
   }
   const configured = Boolean(config && Object.entries(checks)
-    .filter(([name]) => name !== 'scheduledRuntimeFresh')
+    .filter(([name]) => name !== 'scheduledRuntimeFresh' && name !== 'scheduledRuntimeNoFailures')
     .every(([, value]) => value))
   const ready = configured && scheduledRuntimeFresh
   const status = !configured ? 'misconfigured' : ready ? 'ready' : 'degraded'
@@ -9109,6 +12412,689 @@ async function recoverLegacyHrDocumentAvailability(
     }
   }
   return { recovered, failed }
+}
+
+export async function recoverClientDocumentAvailability(
+  environment: Environment,
+  rpc: RpcInvoker = callRpc,
+  limit = 25,
+  scheduledSignal?: AbortSignal,
+): Promise<{ deferred: number, failed: number, recovered: number }> {
+  const config = configuredSupabase(environment)
+  if (!config) return { deferred: 0, failed: 0, recovered: 0 }
+  const candidates = await rpc<unknown>(
+    config,
+    'service_list_client_document_upload_recovery',
+    { target_limit: Math.max(1, Math.min(limit, 25)) },
+    config.serviceRoleKey,
+  )
+  if (!Array.isArray(candidates)) throw new Error('The client document availability recovery response is invalid.')
+
+  let recovered = 0
+  let failed = 0
+  let deferred = 0
+  for (const candidate of candidates) {
+    if (scheduledSignal?.aborted) {
+      throw new ScheduledSupabaseUnavailableError(
+        'client_document_availability_storage',
+        504,
+        'Scheduled storage recovery exceeded the invocation budget.',
+      )
+    }
+    if (!candidate || typeof candidate !== 'object') { failed += 1; continue }
+    const item = candidate as Record<string, unknown>
+    const actorId = String(item.actorId ?? '')
+    const bucket = String(item.bucket ?? '')
+    const checksum = String(item.checksum ?? '')
+    const documentId = String(item.documentId ?? '')
+    const objectKey = String(item.objectKey ?? '')
+    const sizeBytes = Number(item.sizeBytes)
+    if (!validUuid(actorId) || !validUuid(documentId) || !bucket || bucket.includes('..')
+      || !objectKey || objectKey.includes('..') || !/^[a-f0-9]{64}$/.test(checksum)
+      || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > maxHrDocumentBytes) {
+      failed += 1
+      continue
+    }
+
+    const inspection = await inspectPrivateStorageObjectIntegrity(config, bucket, objectKey, sizeBytes, checksum)
+    if (inspection === 'match') {
+      try {
+        await rpc<unknown>(
+          config,
+          'service_complete_client_document_upload',
+          {
+            target_actor_id: actorId,
+            target_document_id: documentId,
+            target_request_id: crypto.randomUUID(),
+          },
+          config.serviceRoleKey,
+        )
+        recovered += 1
+      } catch (error) {
+        if (isScheduledContainmentError(error)) throw error
+        deferred += 1
+      }
+      continue
+    }
+
+    if (inspection === 'missing') {
+      try {
+        const decision = await rpc<ClientDocumentUploadFailureDecision>(
+          config,
+          'service_reconcile_client_document_upload_failure',
+          {
+            target_actor_id: actorId,
+            target_document_id: documentId,
+            target_failure_detail: 'Stale pending upload has no protected storage object.',
+          },
+          config.serviceRoleKey,
+        )
+        if (decision.state === 'stored') recovered += 1
+        else if (decision.state === 'failed') {
+          const exactDecision = decision.documentId === documentId
+            && decision.bucket === bucket
+            && decision.objectKey === objectKey
+            && decision.byteSize === sizeBytes
+            && decision.checksum === checksum
+          if (!exactDecision) {
+            deferred += 1
+            continue
+          }
+          await completeClientDocumentCleanup(config, {
+            actorId,
+            bucket,
+            checksum,
+            documentId,
+            objectKey,
+            sizeBytes,
+          }, rpc)
+          failed += 1
+        }
+        else deferred += 1
+      } catch (error) {
+        if (isScheduledContainmentError(error)) throw error
+        deferred += 1
+      }
+      continue
+    }
+
+    // A checksum/size mismatch or a storage outage is not proof that deletion
+    // is safe. Preserve the row and object for explicit investigation.
+    deferred += 1
+  }
+
+  return { deferred, failed, recovered }
+}
+
+export async function recoverClientDocumentCleanup(
+  environment: Environment,
+  rpc: RpcInvoker = callRpc,
+  limit = 25,
+  scheduledSignal?: AbortSignal,
+): Promise<{ cleaned: number, deferred: number, failed: number }> {
+  const config = configuredSupabase(environment)
+  if (!config) return { cleaned: 0, deferred: 0, failed: 0 }
+  const candidates = await rpc<unknown>(
+    config,
+    'service_list_client_document_cleanup_recovery',
+    { target_limit: Math.max(1, Math.min(limit, 25)) },
+    config.serviceRoleKey,
+  )
+  if (!Array.isArray(candidates)) throw new Error('The client document cleanup recovery response is invalid.')
+
+  let cleaned = 0
+  let deferred = 0
+  let failed = 0
+  for (const candidate of candidates) {
+    if (scheduledSignal?.aborted) {
+      throw new ScheduledSupabaseUnavailableError(
+        'client_document_cleanup_storage',
+        504,
+        'Scheduled storage cleanup exceeded the invocation budget.',
+      )
+    }
+    if (!candidate || typeof candidate !== 'object') { failed += 1; continue }
+    const item = candidate as Record<string, unknown>
+    const identity: ClientDocumentCleanupIdentity = {
+      actorId: String(item.actorId ?? ''),
+      bucket: String(item.bucket ?? ''),
+      checksum: String(item.checksum ?? ''),
+      documentId: String(item.documentId ?? ''),
+      objectKey: String(item.objectKey ?? ''),
+      sizeBytes: Number(item.sizeBytes),
+    }
+    if (!validUuid(identity.actorId) || !validUuid(identity.documentId)
+      || !identity.bucket || identity.bucket.includes('..')
+      || !identity.objectKey || identity.objectKey.includes('..')
+      || !/^[a-f0-9]{64}$/.test(identity.checksum)
+      || !Number.isSafeInteger(identity.sizeBytes) || identity.sizeBytes < 1
+      || identity.sizeBytes > maxHrDocumentBytes) {
+      // The list RPC reads these values from the row itself. When the row is
+      // still addressable, persist the failed attempt so malformed legacy data
+      // cannot occupy every oldest-first batch forever.
+      if (validUuid(identity.actorId) && validUuid(identity.documentId)) {
+        await deferClientDocumentCleanup(
+          config,
+          identity,
+          'Cleanup candidate failed protected-storage identity validation.',
+          rpc,
+        ).catch(() => undefined)
+        deferred += 1
+      }
+      failed += 1
+      continue
+    }
+
+    let inspection: StoredObjectInspection
+    try {
+      inspection = await inspectPrivateStorageObjectIntegrity(
+        config,
+        identity.bucket,
+        identity.objectKey,
+        identity.sizeBytes,
+        identity.checksum,
+        scheduledSignal,
+      )
+    } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
+      await deferClientDocumentCleanup(
+        config,
+        identity,
+        error instanceof Error ? error.message : 'Private storage inspection failed.',
+        rpc,
+      ).catch(() => undefined)
+      deferred += 1
+      continue
+    }
+    if (inspection === 'match') {
+      try {
+        await deletePrivateStorageObject(config, identity.bucket, identity.objectKey, scheduledSignal)
+      } catch (error) {
+        if (isScheduledContainmentError(error)) throw error
+        await deferClientDocumentCleanup(
+          config,
+          identity,
+          error instanceof Error ? error.message : 'Private storage cleanup failed.',
+          rpc,
+        ).catch(() => undefined)
+        deferred += 1
+        continue
+      }
+    } else if (inspection !== 'missing') {
+      await deferClientDocumentCleanup(
+        config,
+        identity,
+        `Cleanup withheld because object verification returned ${inspection}.`,
+        rpc,
+      ).catch(() => undefined)
+      deferred += 1
+      continue
+    }
+
+    try {
+      await completeClientDocumentCleanup(config, identity, rpc)
+      cleaned += 1
+    } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
+      await deferClientDocumentCleanup(
+        config,
+        identity,
+        error instanceof Error ? error.message : 'Client document cleanup confirmation failed.',
+        rpc,
+      ).catch(() => undefined)
+      deferred += 1
+    }
+  }
+
+  return { cleaned, deferred, failed }
+}
+
+function validLicensingRecoveryCandidate(candidate: unknown): LicensingDocumentRecoveryCandidate | null {
+  if (!candidate || typeof candidate !== 'object') return null
+  const item = candidate as Record<string, unknown>
+  const result: LicensingDocumentRecoveryCandidate = {
+    actorId: String(item.actorId ?? ''),
+    bucket: 'credential-documents',
+    checksum: String(item.checksum ?? ''),
+    documentId: String(item.documentId ?? ''),
+    objectKey: String(item.objectKey ?? ''),
+    sizeBytes: Number(item.sizeBytes),
+  }
+  const filename = result.objectKey.split('/').at(-1) ?? ''
+  if (item.bucket !== result.bucket
+    || !validUuid(result.actorId) || !validUuid(result.documentId)
+    || !result.objectKey || result.objectKey.includes('..') || result.objectKey.startsWith('/')
+    || !filename.toLowerCase().startsWith(`${result.documentId.toLowerCase()}.`)
+    || !/^[a-f0-9]{64}$/.test(result.checksum)
+    || !Number.isSafeInteger(result.sizeBytes) || result.sizeBytes < 1
+    || result.sizeBytes > maxHrDocumentBytes) return null
+  return result
+}
+
+export async function recoverLicensingDocumentAvailability(
+  environment: Environment,
+  rpc: RpcInvoker = callRpc,
+  limit = 25,
+  scheduledSignal?: AbortSignal,
+): Promise<{ cleaned: number, deferred: number, failed: number, recovered: number }> {
+  const config = configuredSupabase(environment)
+  if (!config) return { cleaned: 0, deferred: 0, failed: 0, recovered: 0 }
+  const candidates = await rpc<unknown>(
+    config,
+    'service_list_licensing_document_availability_recovery',
+    { target_limit: Math.max(1, Math.min(limit, 25)) },
+    config.serviceRoleKey,
+  )
+  if (!Array.isArray(candidates)) throw new Error('The licensing document availability recovery response is invalid.')
+
+  let cleaned = 0
+  let deferred = 0
+  let failed = 0
+  let recovered = 0
+  for (const candidate of candidates) {
+    if (scheduledSignal?.aborted) {
+      throw new ScheduledSupabaseUnavailableError(
+        'licensing_document_availability_storage',
+        504,
+        'Scheduled licensing-document recovery exceeded the invocation budget.',
+      )
+    }
+    const identity = validLicensingRecoveryCandidate(candidate)
+    if (!identity) { failed += 1; continue }
+
+    const inspection = await inspectPrivateStorageObjectIntegrity(
+      config,
+      identity.bucket,
+      identity.objectKey,
+      identity.sizeBytes,
+      identity.checksum,
+      scheduledSignal,
+    )
+    if (inspection === 'unknown') { deferred += 1; continue }
+
+    if (inspection === 'match') {
+      try {
+        const decision = await rpc<Record<string, unknown>>(
+          config,
+          'service_complete_licensing_document_upload_recovery',
+          {
+            target_actor_id: identity.actorId,
+            target_byte_size: identity.sizeBytes,
+            target_checksum: identity.checksum,
+            target_document_id: identity.documentId,
+            target_object_key: identity.objectKey,
+          },
+          config.serviceRoleKey,
+        )
+        if (decision?.state === 'stored') {
+          recovered += 1
+          continue
+        }
+        const exactCleanupDecision = decision?.state === 'failed'
+          && decision.cleanupAllowed === true
+          && decision.documentId === identity.documentId
+          && decision.bucket === identity.bucket
+          && decision.objectKey === identity.objectKey
+          && decision.byteSize === identity.sizeBytes
+          && decision.checksum === identity.checksum
+        if (!exactCleanupDecision) {
+          deferred += 1
+          continue
+        }
+        await deletePrivateStorageObject(config, identity.bucket, identity.objectKey, scheduledSignal)
+        await completeLicensingDocumentCleanup(config, identity, rpc)
+        cleaned += 1
+        failed += 1
+      } catch (error) {
+        if (isScheduledContainmentError(error)) throw error
+        deferred += 1
+      }
+      continue
+    }
+
+    try {
+      await rpc(
+        config,
+        'service_fail_licensing_document_upload_recovery',
+        {
+          target_actor_id: identity.actorId,
+          target_byte_size: identity.sizeBytes,
+          target_checksum: identity.checksum,
+          target_document_id: identity.documentId,
+          target_failure_detail: inspection === 'missing'
+            ? 'Protected storage object was not found during scheduled recovery.'
+            : 'Protected storage object failed exact size or SHA-256 verification during scheduled recovery.',
+          target_object_key: identity.objectKey,
+        },
+        config.serviceRoleKey,
+      )
+      if (inspection === 'mismatch') {
+        await deletePrivateStorageObject(config, identity.bucket, identity.objectKey, scheduledSignal)
+      }
+      await completeLicensingDocumentCleanup(config, identity, rpc)
+      cleaned += 1
+    } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
+      await deferLicensingDocumentCleanup(
+        config,
+        identity,
+        error instanceof Error ? error.message : 'Licensing upload recovery cleanup failed.',
+        rpc,
+      ).catch(() => undefined)
+      deferred += 1
+    }
+  }
+
+  return { cleaned, deferred, failed, recovered }
+}
+
+export async function recoverLicensingDocumentCleanup(
+  environment: Environment,
+  rpc: RpcInvoker = callRpc,
+  limit = 25,
+  scheduledSignal?: AbortSignal,
+): Promise<{ cleaned: number, deferred: number, failed: number }> {
+  const config = configuredSupabase(environment)
+  if (!config) return { cleaned: 0, deferred: 0, failed: 0 }
+  const candidates = await rpc<unknown>(
+    config,
+    'service_list_licensing_document_cleanup_recovery',
+    { target_limit: Math.max(1, Math.min(limit, 25)) },
+    config.serviceRoleKey,
+  )
+  if (!Array.isArray(candidates)) throw new Error('The licensing document cleanup recovery response is invalid.')
+
+  let cleaned = 0
+  let deferred = 0
+  let failed = 0
+  for (const candidate of candidates) {
+    if (scheduledSignal?.aborted) {
+      throw new ScheduledSupabaseUnavailableError(
+        'licensing_document_cleanup_storage',
+        504,
+        'Scheduled storage cleanup exceeded the invocation budget.',
+      )
+    }
+    if (!candidate || typeof candidate !== 'object') { failed += 1; continue }
+    const item = candidate as Record<string, unknown>
+    const identity: LicensingDocumentCleanupIdentity = {
+      actorId: String(item.actorId ?? ''),
+      bucket: 'credential-documents',
+      checksum: String(item.checksum ?? ''),
+      documentId: String(item.documentId ?? ''),
+      objectKey: String(item.objectKey ?? ''),
+      sizeBytes: Number(item.sizeBytes),
+    }
+    if (item.bucket !== identity.bucket
+      || !validUuid(identity.actorId) || !validUuid(identity.documentId)
+      || !identity.objectKey || identity.objectKey.includes('..')
+      || !/^[a-f0-9]{64}$/.test(identity.checksum)
+      || !Number.isSafeInteger(identity.sizeBytes) || identity.sizeBytes < 1
+      || identity.sizeBytes > maxHrDocumentBytes) {
+      if (validUuid(identity.actorId) && validUuid(identity.documentId)) {
+        await deferLicensingDocumentCleanup(
+          config,
+          identity,
+          'Cleanup candidate failed protected-storage identity validation.',
+          rpc,
+        ).catch(() => undefined)
+        deferred += 1
+      }
+      failed += 1
+      continue
+    }
+
+    let inspection: StoredObjectInspection
+    try {
+      inspection = await inspectPrivateStorageObjectIntegrity(
+        config,
+        identity.bucket,
+        identity.objectKey,
+        identity.sizeBytes,
+        identity.checksum,
+        scheduledSignal,
+      )
+    } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
+      await deferLicensingDocumentCleanup(
+        config,
+        identity,
+        error instanceof Error ? error.message : 'Private storage inspection failed.',
+        rpc,
+      ).catch(() => undefined)
+      deferred += 1
+      continue
+    }
+    if (inspection === 'match') {
+      try {
+        await deletePrivateStorageObject(config, identity.bucket, identity.objectKey, scheduledSignal)
+      } catch (error) {
+        if (isScheduledContainmentError(error)) throw error
+        await deferLicensingDocumentCleanup(
+          config,
+          identity,
+          error instanceof Error ? error.message : 'Private storage cleanup failed.',
+          rpc,
+        ).catch(() => undefined)
+        deferred += 1
+        continue
+      }
+    } else if (inspection !== 'missing') {
+      await deferLicensingDocumentCleanup(
+        config,
+        identity,
+        `Cleanup withheld because object verification returned ${inspection}.`,
+        rpc,
+      ).catch(() => undefined)
+      deferred += 1
+      continue
+    }
+
+    try {
+      await completeLicensingDocumentCleanup(config, identity, rpc)
+      cleaned += 1
+    } catch (error) {
+      if (isScheduledContainmentError(error)) throw error
+      await deferLicensingDocumentCleanup(
+        config,
+        identity,
+        error instanceof Error ? error.message : 'Licensing document cleanup confirmation failed.',
+        rpc,
+      ).catch(() => undefined)
+      deferred += 1
+    }
+  }
+
+  return { cleaned, deferred, failed }
+}
+
+export async function recoverProtectedStorageCleanup(
+  environment: Environment,
+  rpc: RpcInvoker = callRpc,
+  limit = 25,
+  scheduledSignal?: AbortSignal,
+): Promise<{ cleaned: number, deferred: number, failed: number, reconciled: number }> {
+  const config = configuredSupabase(environment)
+  if (!config) return { cleaned: 0, deferred: 0, failed: 0, reconciled: 0 }
+  const boundedLimit = Math.max(1, Math.min(limit, 25))
+  const staleProfiles = await rpc<{ reconciled?: number }>(
+    config,
+    'service_reconcile_stale_employee_photo_uploads_v2',
+    { target_limit: boundedLimit },
+    config.serviceRoleKey,
+  )
+  const staleAppearances = await rpc<{ reconciled?: number }>(
+    config,
+    'service_reconcile_stale_signature_appearances_v2',
+    { target_limit: boundedLimit },
+    config.serviceRoleKey,
+  )
+  const profileReconciled = Number.isSafeInteger(staleProfiles?.reconciled) && Number(staleProfiles.reconciled) >= 0
+    ? Number(staleProfiles.reconciled)
+    : 0
+  const appearanceReconciled = Number.isSafeInteger(staleAppearances?.reconciled) && Number(staleAppearances.reconciled) >= 0
+    ? Number(staleAppearances.reconciled)
+    : 0
+  const reconciled = profileReconciled + appearanceReconciled
+  const leaseOwner = `protected-storage:${crypto.randomUUID()}`
+  const candidates = await rpc<unknown>(
+    config,
+    'service_list_protected_storage_cleanup_v2',
+    { target_lease_owner: leaseOwner, target_limit: boundedLimit },
+    config.serviceRoleKey,
+  )
+  if (!Array.isArray(candidates)) throw new Error('The protected-storage cleanup response is invalid.')
+
+  let cleaned = 0
+  let deferred = 0
+  let failed = 0
+  const persistLeaseResult = async (
+    name: 'service_complete_protected_storage_cleanup_v2' | 'service_defer_protected_storage_cleanup_v2',
+    args: Record<string, unknown>,
+  ): Promise<void> => {
+    let lastError: unknown
+    // These RPCs record an idempotent receipt for this exact opaque lease. A
+    // committed response can be lost, so retry the result only; never repeat
+    // the storage delete as part of response recovery.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await rpc(config, name, args, config.serviceRoleKey)
+        return
+      } catch (error) {
+        lastError = error
+        if (!completionFailureMayBeAmbiguous(error)) throw error
+      }
+    }
+    throw lastError
+  }
+  const defer = async (candidate: ProtectedStorageCleanupCandidate, reason: string): Promise<void> => {
+    await persistLeaseResult(
+      'service_defer_protected_storage_cleanup_v2',
+      {
+        target_cleanup_id: candidate.id,
+        target_error: reason.slice(0, 500),
+        target_lease_owner: leaseOwner,
+      },
+    )
+  }
+  const complete = async (candidate: ProtectedStorageCleanupCandidate): Promise<void> => {
+    await persistLeaseResult(
+      'service_complete_protected_storage_cleanup_v2',
+      { target_cleanup_id: candidate.id, target_lease_owner: leaseOwner },
+    )
+  }
+
+  for (const rawCandidate of candidates) {
+    if (scheduledSignal?.aborted) {
+      throw new ScheduledSupabaseUnavailableError(
+        'protected_storage_cleanup',
+        504,
+        'Scheduled protected-storage cleanup exceeded the invocation budget.',
+      )
+    }
+    if (!rawCandidate || typeof rawCandidate !== 'object') { failed += 1; continue }
+    const item = rawCandidate as Record<string, unknown>
+    const candidate: ProtectedStorageCleanupCandidate = {
+      attemptCount: Number(item.attemptCount),
+      bucket: String(item.bucket ?? ''),
+      checksum: item.checksum === null || item.checksum === undefined ? null : String(item.checksum),
+      id: String(item.id ?? ''),
+      kind: String(item.kind ?? '') as ProtectedStorageCleanupCandidate['kind'],
+      leaseOwner: String(item.leaseOwner ?? ''),
+      objectKey: String(item.objectKey ?? ''),
+      sizeBytes: item.sizeBytes === null || item.sizeBytes === undefined ? null : Number(item.sizeBytes),
+    }
+    const recognizedKind = ['profile_photo', 'signature_appearance', 'signature_final_pdf', 'signature_certificate'].includes(candidate.kind)
+    const expectedBucket = candidate.kind === 'profile_photo'
+      ? 'employee-photos'
+      : candidate.kind === 'signature_appearance'
+        ? 'signature-appearances'
+        : candidate.bucket
+    const hasIntegrityIdentity = candidate.sizeBytes !== null && candidate.sizeBytes !== undefined
+      && candidate.checksum !== null && candidate.checksum !== undefined
+    const missingPartialIdentity = (candidate.sizeBytes === null || candidate.sizeBytes === undefined)
+      !== (candidate.checksum === null || candidate.checksum === undefined)
+    const safeIdentity = validUuid(candidate.id)
+      && candidate.leaseOwner === leaseOwner
+      && recognizedKind
+      && candidate.bucket === expectedBucket
+      && /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(candidate.bucket)
+      && candidate.objectKey.length > 0
+      && candidate.objectKey.length <= 1024
+      && !candidate.objectKey.startsWith('/')
+      && !candidate.objectKey.includes('..')
+      && ![...candidate.objectKey].some((character) => {
+        const code = character.charCodeAt(0)
+        return code < 32 || code === 127
+      })
+      && Number.isSafeInteger(candidate.attemptCount)
+      && candidate.attemptCount > 0
+      && !missingPartialIdentity
+      && (hasIntegrityIdentity
+        ? Number.isSafeInteger(candidate.sizeBytes)
+          && Number(candidate.sizeBytes) > 0
+          && Number(candidate.sizeBytes) <= 100 * 1024 * 1024
+          && /^[a-f0-9]{64}$/.test(String(candidate.checksum))
+        : candidate.kind === 'profile_photo')
+    if (!safeIdentity) {
+      failed += 1
+      if (validUuid(candidate.id) && candidate.leaseOwner === leaseOwner) {
+        await defer(candidate, 'Cleanup withheld because the claimed storage identity was invalid.')
+      }
+      continue
+    }
+
+    let completionStarted = false
+    try {
+      if (hasIntegrityIdentity) {
+        const inspection = await inspectPrivateStorageObjectIntegrity(
+          config,
+          candidate.bucket,
+          candidate.objectKey,
+          Number(candidate.sizeBytes),
+          String(candidate.checksum),
+          scheduledSignal,
+        )
+        if (inspection === 'unknown' || inspection === 'mismatch') {
+          await defer(candidate, `Cleanup withheld because exact object verification returned ${inspection}.`)
+          deferred += 1
+          continue
+        }
+        if (inspection === 'match') {
+          await deletePrivateStorageObject(config, candidate.bucket, candidate.objectKey, scheduledSignal)
+        }
+      } else {
+        // Legacy/displaced profile objects may predate persisted checksums. The
+        // row-locked claim has already proved the exact key non-authoritative,
+        // and v2 operation-scoped keys can never be reactivated.
+        await deletePrivateStorageObject(config, candidate.bucket, candidate.objectKey, scheduledSignal)
+      }
+      completionStarted = true
+      await complete(candidate)
+      cleaned += 1
+    } catch (error) {
+      if (scheduledSignal?.aborted) {
+        throw new ScheduledSupabaseUnavailableError(
+          'protected_storage_cleanup',
+          504,
+          'Scheduled protected-storage cleanup exceeded the invocation budget.',
+        )
+      }
+      if (isScheduledContainmentError(error)) throw error
+      if (completionStarted) {
+        // Storage deletion may already be durable, and an RPC response may be
+        // missing after its commit. Do not convert that uncertainty into a
+        // false cleanup failure. The idempotent result retries above normally
+        // settle it; otherwise lease expiry safely reclaims the same identity.
+        failed += 1
+        continue
+      }
+      await defer(candidate, error instanceof Error ? error.message : 'Protected storage cleanup failed.')
+      deferred += 1
+    }
+  }
+
+  return { cleaned, deferred, failed, reconciled }
 }
 
 async function recoverStoredSygSphereFiles(
@@ -9262,6 +13248,23 @@ async function purgeExpiredSygSphereUploads(
     )
   }
   return { deleted: deleted.length, failed }
+}
+
+export async function recoverAdminMfaResetOperations(
+  environment: Environment,
+  rpc: RpcInvoker = callRpc,
+  limit = 10,
+  scheduledSignal?: AbortSignal,
+): Promise<{ recovered: number, failed: number }> {
+  // The factor-only reset is retired: current GoTrue behavior does not revoke
+  // existing sessions. Keep the durable schema/executor available for the
+  // future combined credential/session recovery design, but never resume a
+  // destructive legacy reset from the scheduler.
+  void environment
+  void rpc
+  void limit
+  void scheduledSignal
+  return { recovered: 0, failed: 0 }
 }
 
 export function secureResponse(request: Request, response: Response, requestId: string): Response {
@@ -9439,6 +13442,7 @@ async function runScheduledWorkerCycle(
   let alertLifecycle: Record<string, unknown>
   let offboardingDue: Record<string, unknown>
   let coverageNotifications: Record<string, unknown>
+  let mfaResetRecovery: { recovered: number, failed: number } | null = null
 
   try {
     if (recoveryProbe) {
@@ -9548,6 +13552,13 @@ async function runScheduledWorkerCycle(
       console.error(JSON.stringify({ event: 'operational_alert_lifecycle_reconciliation_failed', ...alertLifecycle }))
     }
 
+    if (availabilityRecoveryDue) {
+      mfaResetRecovery = await recoverAdminMfaResetOperations(environment, rpc, 10, scheduledAbortController.signal)
+      if (mfaResetRecovery.recovered > 0 || mfaResetRecovery.failed > 0) {
+        console.info(JSON.stringify({ event: 'admin_mfa_reset_recovery', ...mfaResetRecovery }))
+      }
+    }
+
     // Everything below is deliberately serial. Once any RPC reports transient
     // pool pressure, the per-invocation circuit opens and no new noncritical
     // Supabase work is started during this trigger.
@@ -9646,6 +13657,33 @@ async function runScheduledWorkerCycle(
         console.info(JSON.stringify({ event: 'hr_document_availability_recovery', ...hrRecovery }))
       }
 
+      const clientRecovery = await recoverClientDocumentAvailability(environment, rpc, 25, scheduledAbortController.signal)
+      if (clientRecovery.recovered > 0 || clientRecovery.failed > 0 || clientRecovery.deferred > 0) {
+        console.info(JSON.stringify({ event: 'client_document_availability_recovery', ...clientRecovery }))
+      }
+
+      const clientCleanup = await recoverClientDocumentCleanup(environment, rpc, 25, scheduledAbortController.signal)
+      if (clientCleanup.cleaned > 0 || clientCleanup.failed > 0 || clientCleanup.deferred > 0) {
+        console.info(JSON.stringify({ event: 'client_document_cleanup_recovery', ...clientCleanup }))
+      }
+
+      const licensingRecovery = await recoverLicensingDocumentAvailability(environment, rpc, 25, scheduledAbortController.signal)
+      if (licensingRecovery.recovered > 0 || licensingRecovery.cleaned > 0
+        || licensingRecovery.failed > 0 || licensingRecovery.deferred > 0) {
+        console.info(JSON.stringify({ event: 'licensing_document_availability_recovery', ...licensingRecovery }))
+      }
+
+      const licensingCleanup = await recoverLicensingDocumentCleanup(environment, rpc, 25, scheduledAbortController.signal)
+      if (licensingCleanup.cleaned > 0 || licensingCleanup.failed > 0 || licensingCleanup.deferred > 0) {
+        console.info(JSON.stringify({ event: 'licensing_document_cleanup_recovery', ...licensingCleanup }))
+      }
+
+      const protectedStorageCleanup = await recoverProtectedStorageCleanup(environment, rpc, 25, scheduledAbortController.signal)
+      if (protectedStorageCleanup.cleaned > 0 || protectedStorageCleanup.failed > 0
+        || protectedStorageCleanup.deferred > 0 || protectedStorageCleanup.reconciled > 0) {
+        console.info(JSON.stringify({ event: 'protected_storage_cleanup_recovery', ...protectedStorageCleanup }))
+      }
+
       const fileRecovery = await recoverStoredSygSphereFiles(environment, rpc, 25, scheduledAbortController.signal)
       if (fileRecovery.recovered > 0 || fileRecovery.failed > 0) {
         console.info(JSON.stringify({ event: 'sygsphere_file_availability_recovery', ...fileRecovery }))
@@ -9663,6 +13701,9 @@ async function runScheduledWorkerCycle(
       attendanceScheduleRefresh,
       automation,
       availabilityRecoveryDue,
+      clientDocumentAvailabilityRecovery: availabilityRecoveryDue ? 'processed' : 'not_due',
+      licensingDocumentAvailabilityRecovery: availabilityRecoveryDue ? 'processed' : 'not_due',
+      mfaResetRecovery,
       coverageNotifications,
       cron: controller.cron,
       fullReconciliation,
@@ -9684,11 +13725,45 @@ async function runScheduledWorkerCycle(
       throw new ScheduledSupabaseCircuitOpenError('scheduled_runtime_lease_renewal')
     }
     if (requiredLaneFailures.length > 0) {
+      const failedLanes = requiredLaneFailures.map(({ lane }) => lane)
       console.error(JSON.stringify({
         event: 'scheduled_runtime_full_success_withheld',
-        failedLanes: requiredLaneFailures.map(({ lane }) => lane),
+        failedLanes,
         scheduledTime: controller.scheduledTime,
       }))
+      try {
+        const failure = await scheduledRuntimeCoordinatorCallWithTimeout(
+          'record_required_lane_failure',
+          coordinator.recordFailure({
+            leaseId,
+            operation: 'required_lane_failure',
+            status: null,
+            timedOut: false,
+          }),
+        )
+        leaseFinalized = failure.applied
+        if (!failure.applied) {
+          console.error(JSON.stringify({
+            event: 'scheduled_runtime_required_lane_failure_ignored',
+            failedLanes,
+            reason: 'stale_or_expired_lease',
+            scheduledTime: controller.scheduledTime,
+          }))
+        }
+      } catch (coordinatorError) {
+        if (coordinatorError instanceof ScheduledRuntimeCoordinatorTimeoutError) {
+          // The state mutation may have committed before its response was
+          // lost. Retain the lease fence until expiry instead of racing a
+          // release against the unknown result.
+          leaseFinalized = true
+        }
+        console.error(JSON.stringify({
+          event: 'scheduled_runtime_required_lane_failure_record_failed',
+          failedLanes,
+          message: coordinatorError instanceof Error ? coordinatorError.message : 'Required-lane failure could not be persisted.',
+          scheduledTime: controller.scheduledTime,
+        }))
+      }
       return
     }
     const completion = await scheduledRuntimeCoordinatorCallWithTimeout(
@@ -9716,16 +13791,28 @@ async function runScheduledWorkerCycle(
     const effectiveError = heartbeatFailure && !isScheduledContainmentError(error)
       ? new ScheduledSupabaseCircuitOpenError('scheduled_runtime_lease_renewal')
       : error
-    if (isScheduledContainmentError(effectiveError)) {
+    const coordinatorMutationUnknown = effectiveError instanceof ScheduledRuntimeCoordinatorTimeoutError
+    if (!coordinatorMutationUnknown) {
       const containmentStatus = effectiveError instanceof ScheduledSupabaseUnavailableError ? effectiveError.status : null
+      const operation = isScheduledContainmentError(effectiveError)
+        ? circuit.failedOperation ?? effectiveError.operation
+        : effectiveError instanceof SupabaseRequestError
+          ? effectiveError.operation
+          : 'scheduled_cycle_unexpected'
+      const status = isScheduledContainmentError(effectiveError)
+        ? circuit.failedStatus ?? containmentStatus
+        : effectiveError instanceof SupabaseRequestError
+          ? effectiveError.status
+          : null
       try {
         const failure = await scheduledRuntimeCoordinatorCallWithTimeout(
           'record_failure',
           coordinator.recordFailure({
             leaseId,
-            operation: circuit.failedOperation ?? effectiveError.operation,
-            status: circuit.failedStatus ?? containmentStatus,
-            timedOut: circuit.timedOut || containmentStatus === 504,
+            operation,
+            status,
+            timedOut: isScheduledContainmentError(effectiveError)
+              && (circuit.timedOut || containmentStatus === 504),
           }),
         )
         leaseFinalized = failure.applied
@@ -9741,12 +13828,23 @@ async function runScheduledWorkerCycle(
           scheduledTime: controller.scheduledTime,
         }))
       }
+    }
+    if (isScheduledContainmentError(effectiveError)) {
+      const containmentStatus = effectiveError instanceof ScheduledSupabaseUnavailableError ? effectiveError.status : null
       console.error(JSON.stringify({
         event: 'scheduled_work_contained',
         failedOperation: circuit.failedOperation ?? effectiveError.operation,
         scheduledTime: controller.scheduledTime,
         status: circuit.failedStatus ?? containmentStatus,
         timedOut: circuit.timedOut || containmentStatus === 504,
+      }))
+      return
+    }
+    if (coordinatorMutationUnknown) {
+      console.error(JSON.stringify({
+        event: 'scheduled_runtime_mutation_unknown',
+        operation: effectiveError.operation,
+        scheduledTime: controller.scheduledTime,
       }))
       return
     }
@@ -9773,6 +13871,47 @@ async function runScheduledWorkerCycle(
     }
     clearTimeout(scheduledBudgetTimeout)
   }
+}
+
+const sharedIdentitySessionCookieName = '__Host-sygshift-shared-session'
+const sharedIdentityTransientCookieNames = [
+  sharedIdentitySessionCookieName,
+  '__Host-sygshift-shared-bootstrap',
+  '__Host-sygshift-shared-ticket',
+  '__Host-sygshift-shared-launch',
+] as const
+
+export function requestHasExactCookie(request: Request, name: string): boolean {
+  const expected = `${name}=`
+  return (request.headers.get('cookie') ?? '')
+    .split(';')
+    .some((part) => {
+      const item = part.trim()
+      return item.startsWith(expected) && item.length > expected.length
+    })
+}
+
+function nativeSharedIdentitySessionNoop(request: Request, pathname: string): Response | null {
+  if (request.method !== 'POST') return null
+  if (
+    pathname !== '/api/v1/auth/shared-identity/session'
+    && pathname !== '/api/v1/auth/shared-identity/session/logout'
+  ) return null
+  if (requestHasExactCookie(request, sharedIdentitySessionCookieName)) return null
+
+  // The bridge is optional for a native SygShift sign-in. Do not evaluate its
+  // secrets or upstream URLs when this request carries no exact protected
+  // bridge cookie. A present cookie still enters the full fail-closed handler.
+  const response = new Response(null, { headers: { 'cache-control': 'no-store' }, status: 204 })
+  if (pathname.endsWith('/logout')) {
+    for (const name of sharedIdentityTransientCookieNames) {
+      response.headers.append(
+        'set-cookie',
+        `${name}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax`,
+      )
+    }
+  }
+  return response
 }
 
 export default {
@@ -9820,7 +13959,8 @@ export default {
         response = json({ accepted: true }, 202)
       }
     } else if (url.pathname.startsWith('/api/v1/auth/shared-identity/')) {
-      response = await handleSharedIdentityRequest(request, environment, requestId)
+      response = nativeSharedIdentitySessionNoop(request, url.pathname)
+        ?? await handleSharedIdentityRequest(request, environment, requestId)
         ?? errorJson('not_found', requestId, 404)
     } else if (url.pathname === '/api/v1/apps/sygilant/launch' || url.pathname === '/api/v1/apps/sygilant/introspect') {
       response = await handleSygilantSharedIdentityRequest(request, environment, requestId)
@@ -9860,9 +14000,14 @@ export default {
           message: error instanceof Error ? error.message : 'Unknown canary failure',
           requestId,
         }))
-        response = error instanceof ApiError
-          ? errorJson(error.code, requestId, error.status, error.message)
-          : errorJson('document_pipeline_canary_failed', requestId, 503, 'The protected document release canary failed.')
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('document_pipeline_canary_failed', requestId, 503, 'The protected document release canary failed.')
+        }
       }
     } else if (url.pathname === '/api/v1/internal/hr-system-rollout/upload' || url.pathname === '/api/v1/internal/hr-system-rollout/register') {
       try {
@@ -9890,6 +14035,7 @@ export default {
       }
     } else if (
       url.pathname === '/api/v1/account/photo'
+      || url.pathname === '/api/v1/account/password'
       || url.pathname.startsWith('/api/v1/account/email-verification/')
     ) {
       try {

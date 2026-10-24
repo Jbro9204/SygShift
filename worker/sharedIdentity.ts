@@ -178,7 +178,11 @@ export async function handleSharedIdentityRequest(
     if (path === sessionPath && failure.responseSessionCookie && isRetryableSharedIdentityFailure(failure)) {
       response.headers.append('set-cookie', failure.responseSessionCookie)
     }
-    if (path === sessionLogoutPath) return clearAllSharedIdentityCookies(response)
+    if (path === sessionLogoutPath) {
+      return failure.code === 'shared_identity_revocation_unavailable'
+        ? clearTransientSharedIdentityCookies(response)
+        : clearAllSharedIdentityCookies(response)
+    }
     return path === sessionPath
       && (failure.status === 401 || failure.status === 403)
       ? clearAllSharedIdentityCookies(response)
@@ -486,19 +490,31 @@ async function clearSharedSession(request: Request, config: SharedIdentityConfig
         target_request_id: requestId,
         target_token_hash: await sha256Hex(shared.sessionToken),
       }, config)
-    } catch {
-      // Browser sign-out must still clear the protected cookie if revocation is temporarily unavailable.
+    } catch (error) {
+      // Keep the encrypted session cookie only long enough to retry the exact
+      // token revocation. The browser's persistent logout barrier blocks
+      // restoration while this retryable response is outstanding.
+      throw new SharedIdentityError(
+        'shared_identity_revocation_unavailable',
+        503,
+        'Shared sign-out is temporarily unavailable. Retry before leaving this device.',
+        unexpectedErrorCategory(error),
+      )
     }
   }
   const response = responseEmpty(204)
-  response.headers.append('set-cookie', clearCookie(sessionCookie))
-  response.headers.append('set-cookie', clearCookie(bootstrapCookie))
-  response.headers.append('set-cookie', clearCookie(ticketCookie))
-  return response
+  // Explicit sign-out must also invalidate any not-yet-finalized handoff in
+  // this browser. Preserving bootstrap/ticket cookies can otherwise allow a
+  // pending callback to recreate the session after the user signs out.
+  return clearAllSharedIdentityCookies(response)
 }
 
 function clearAllSharedIdentityCookies(response: Response): Response {
   response.headers.append('set-cookie', clearCookie(sessionCookie))
+  return clearTransientSharedIdentityCookies(response)
+}
+
+function clearTransientSharedIdentityCookies(response: Response): Response {
   response.headers.append('set-cookie', clearCookie(bootstrapCookie))
   response.headers.append('set-cookie', clearCookie(ticketCookie))
   response.headers.append('set-cookie', clearCookie(launchCookie))
@@ -801,6 +817,7 @@ function isRetryableUpstreamStatus(status: number): boolean {
 function isRetryableSharedIdentityFailure(error: SharedIdentityError): boolean {
   return error.code === 'shared_identity_upstream_unavailable'
     || error.code === 'shared_identity_unavailable'
+    || error.code === 'shared_identity_revocation_unavailable'
 }
 
 async function fetchWithProtectedRedirect(url: string, init: RequestInit): Promise<Response> {

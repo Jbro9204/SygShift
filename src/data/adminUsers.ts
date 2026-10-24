@@ -91,15 +91,18 @@ const provisioningResponseSchema = z.object({
 
 const loginEmailResponseSchema = z.object({
   requestId: z.string(),
+  operationId: z.string().uuid().optional(),
   sent: z.array(z.object({
     displayName: z.string(),
     email: z.string().nullable(),
     username: z.string(),
   })).optional(),
   failures: z.array(z.object({
+    code: z.string().optional(),
     displayName: z.string(),
     username: z.string(),
     error: z.string(),
+    status: z.number().int().min(400).max(599).optional(),
   })).optional(),
   displayName: z.string().optional(),
   email: z.string().nullable().optional(),
@@ -271,6 +274,18 @@ async function adminApiRequest(path: string, init: RequestInit = {}): Promise<Re
   }))
 }
 
+export class AdminApiRequestError extends Error {
+  readonly code: string | null
+  readonly status: number
+
+  constructor(message: string, status: number, code: string | null) {
+    super(message)
+    this.name = 'AdminApiRequestError'
+    this.code = code
+    this.status = status
+  }
+}
+
 async function parseApiResponse(response: Response): Promise<unknown> {
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
@@ -279,7 +294,11 @@ async function parseApiResponse(response: Response): Promise<unknown> {
       : typeof payload?.error === 'string'
         ? payload.error.replaceAll('_', ' ')
         : 'The account request failed.'
-    throw new Error(message)
+    throw new AdminApiRequestError(
+      message,
+      response.status,
+      typeof payload?.error === 'string' ? payload.error : null,
+    )
   }
   return payload
 }
@@ -358,9 +377,9 @@ export async function revokeEmployeeTrustedDevices(employeeId: string): Promise<
 
 export type EmployeeMfaResetResult = z.infer<typeof mfaResetResponseSchema>
 
-export async function resetEmployeeMfa(employeeId: string): Promise<EmployeeMfaResetResult> {
+export async function resetEmployeeMfa(employeeId: string, idempotencyKey: string): Promise<EmployeeMfaResetResult> {
   const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/mfa-reset`, {
-    body: JSON.stringify({}),
+    body: JSON.stringify({ idempotencyKey }),
     method: 'POST',
   })
   const payload = await parseApiResponse(response)
@@ -392,9 +411,9 @@ export async function revokeEmployeeSecurityKey(employeeId: string, keyId: strin
   }
 }
 
-export async function sendEmployeePasswordReset(employeeId: string): Promise<EmployeePasswordResetResult> {
+export async function sendEmployeePasswordReset(employeeId: string, idempotencyKey: string): Promise<EmployeePasswordResetResult> {
   const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/password-reset`, {
-    body: JSON.stringify({}),
+    body: JSON.stringify({ idempotencyKey }),
     method: 'POST',
   })
   return passwordResetResponseSchema.parse(await parseApiResponse(response))
@@ -464,55 +483,28 @@ export async function provisionMissingAccounts(): Promise<{
   }
 }
 
-export async function sendEmployeeLoginEmail(employeeId: string, temporaryPassword?: string): Promise<LoginEmailResult> {
+export async function sendEmployeeLoginEmail(employeeId: string, idempotencyKey: string): Promise<LoginEmailResult> {
   const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/login-email`, {
-    body: JSON.stringify({ temporaryPassword: cleanOptional(temporaryPassword) }),
+    body: JSON.stringify({ idempotencyKey }),
     method: 'POST',
   })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const message = typeof payload?.detail === 'string'
-      ? payload.detail
-      : typeof payload?.error === 'string'
-        ? payload.error.replaceAll('_', ' ')
-        : 'The login email could not be sent.'
-    throw new Error(message)
-  }
-  return loginEmailResponseSchema.parse(payload)
+  return loginEmailResponseSchema.parse(await parseApiResponse(response))
 }
 
-export async function sendEmployeeWelcomeEmail(employeeId: string): Promise<WelcomeEmailResult> {
+export async function sendEmployeeWelcomeEmail(employeeId: string, idempotencyKey: string): Promise<WelcomeEmailResult> {
   const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/welcome-email`, {
-    body: JSON.stringify({}),
+    body: JSON.stringify({ idempotencyKey }),
     method: 'POST',
   })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const message = typeof payload?.detail === 'string'
-      ? payload.detail
-      : typeof payload?.error === 'string'
-        ? payload.error.replaceAll('_', ' ')
-        : 'The welcome email could not be sent.'
-    throw new Error(message)
-  }
-  return welcomeEmailResponseSchema.parse(payload)
+  return welcomeEmailResponseSchema.parse(await parseApiResponse(response))
 }
 
-export async function sendAllEmployeeLoginEmails(): Promise<LoginEmailResult> {
+export async function sendAllEmployeeLoginEmails(idempotencyKey: string): Promise<LoginEmailResult> {
   const response = await adminApiRequest('/api/v1/admin/users/login-emails', {
-    body: JSON.stringify({}),
+    body: JSON.stringify({ idempotencyKey }),
     method: 'POST',
   })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const message = typeof payload?.detail === 'string'
-      ? payload.detail
-      : typeof payload?.error === 'string'
-        ? payload.error.replaceAll('_', ' ')
-        : 'The login email batch could not be sent.'
-    throw new Error(message)
-  }
-  return loginEmailResponseSchema.parse(payload)
+  return loginEmailResponseSchema.parse(await parseApiResponse(response))
 }
 
 export function credentialsToCsv(credentials: ProvisioningCredential[]): string {

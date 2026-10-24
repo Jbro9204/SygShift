@@ -42,7 +42,13 @@ describe('shared SygShift release guard', () => {
     const platformMfaDefinition = platformScope.match(/create or replace function public\.has_mfa\(\)[\s\S]*?\$\$;/)?.[0] ?? ''
     expect(platformMfaDefinition).toContain("has_scoped_shared_identity_session('platform')")
     expect(platformMfaDefinition).not.toContain("has_scoped_shared_identity_session('sygsphere')")
-    expect(browserSession).not.toContain('.setItem(')
+    // Bearer/session material remains memory-only. The only browser write is
+    // non-secret logout-barrier metadata used to stop a pending callback from
+    // recreating a session after explicit sign-out.
+    expect(browserSession).not.toContain('sessionStorage.setItem(')
+    expect(browserSession).toContain('localStorage.setItem(sharedIdentityLogoutBarrierKey')
+    expect([...browserSession.matchAll(/localStorage\.setItem\(([^,\n]+)/g)].map((match) => match[1]))
+      .toEqual(['sharedIdentityLogoutBarrierKey'])
     expect(browserSession).toContain('purgeLegacySharedIdentityStorage()')
     expect(supabase).toContain('storage: candidateStorage')
     expect(supabase).toContain("storageKey: 'sygshift-shared-identity-memory-session'")

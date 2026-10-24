@@ -149,30 +149,40 @@ function documentMimeType(file: File): string {
 
 export class ClientDocumentApiError extends Error {
   code: string | null
-  constructor(message: string, code: string | null = null) { super(message); this.name = 'ClientDocumentApiError'; this.code = code }
+  status: number | null
+  constructor(message: string, code: string | null = null, status: number | null = null) { super(message); this.name = 'ClientDocumentApiError'; this.code = code; this.status = status }
 }
 export function isClientIdentityVerificationRequired(error: unknown): boolean { return error instanceof ClientDocumentApiError && error.code === 'recent_document_mfa_required' }
+export function shouldReuseClientDocumentUploadRequest(error: unknown): boolean {
+  if (!(error instanceof ClientDocumentApiError)) return true
+  if (error.code === 'recent_document_mfa_required' || error.code === 'client_document_finalization_pending' || error.code === 'client_document_cleanup_pending') return true
+  if (error.status === 0 || error.status === 408 || error.status === 425 || error.status === 429) return true
+  return (error.status ?? 0) >= 500 && error.code !== 'client_document_storage_failed'
+}
 
 export async function uploadClientDocument(input: { clientId: string; file: File; idempotencyKey: string; category: ClientDocument['category']; title: string; description: string; accessClassification: ClientDocument['accessClassification']; portalState: ClientDocument['portalState']; effectiveOn: string | null; expiresOn: string | null }, onProgress: (percent: number) => void): Promise<void> {
   const mime = documentMimeType(input.file); const headers = await apiHeaders(mime)
   headers.set('x-sygshift-client-document-metadata', encodeMetadata({ ...input, file: undefined, declaredMimeType: mime, originalFilename: input.file.name }))
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest(); request.open('PUT', `/api/v1/clients/${encodeURIComponent(input.clientId)}/documents`)
+    request.timeout = 600_000
     headers.forEach((value, key) => request.setRequestHeader(key, value))
     request.upload.addEventListener('progress', (event) => { if (event.lengthComputable) onProgress(Math.round(event.loaded / event.total * 100)) })
     request.addEventListener('load', () => {
       let payload: { detail?: string; error?: string } | null = null; try { payload = JSON.parse(request.responseText) } catch { /* response handled below */ }
       if (request.status >= 200 && request.status < 300) { onProgress(100); resolve(); return }
-      reject(new ClientDocumentApiError(payload?.detail || 'The client document could not be uploaded.', payload?.error ?? null))
+      reject(new ClientDocumentApiError(payload?.detail || 'The client document could not be uploaded.', payload?.error ?? null, request.status))
     })
     request.addEventListener('error', () => reject(new Error('The upload connection was interrupted. You can retry safely.')))
+    request.addEventListener('timeout', () => reject(new Error('The upload response timed out. You can retry safely.')))
+    request.addEventListener('abort', () => reject(new Error('The upload was interrupted before its result was confirmed. You can retry safely.')))
     request.send(input.file)
   })
 }
 
 export async function getClientDocumentBlob(documentId: string, action: 'preview' | 'download', reason?: string): Promise<{ blob: Blob; filename: string }> {
   const response = await fetch(`/api/v1/clients/documents/${encodeURIComponent(documentId)}/content`, { body: JSON.stringify({ action, reason: reason?.trim() || undefined }), cache: 'no-store', headers: await apiHeaders('application/json'), method: 'POST' })
-  if (!response.ok) { const payload = await response.json().catch(() => null) as { detail?: string; error?: string } | null; throw new ClientDocumentApiError(payload?.detail || 'The protected client document could not be loaded.', payload?.error ?? null) }
+  if (!response.ok) { const payload = await response.json().catch(() => null) as { detail?: string; error?: string } | null; throw new ClientDocumentApiError(payload?.detail || 'The protected client document could not be loaded.', payload?.error ?? null, response.status) }
   const disposition = response.headers.get('content-disposition') ?? ''; const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
   return { blob: await response.blob(), filename: encoded ? decodeURIComponent(encoded) : 'SygShift-client-document' }
 }

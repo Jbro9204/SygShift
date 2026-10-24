@@ -59,4 +59,24 @@ describe('HRIS Stage 4 protected document workflows', () => {
     expect(employeePage).toContain('Complete legal name')
     expect(employeePage).toContain('mutation.isPending')
   })
+
+  it('does not offer request or assignment actions from unverified inventory data', () => {
+    expect(managerPage).toContain('const inventory = verifiedQueryData(inventoryQuery.data, inventoryQuery)')
+    expect(managerPage).toContain('const inventoryReady = Boolean(inventory)')
+    expect(managerPage).toContain('disabled={!inventoryReady}')
+    expect(managerPage).toContain('Document workflow options unavailable')
+    expect(managerPage).toContain('inventoryQuery.refetch()')
+    expect(managerPage).toContain('composer && inventory')
+    expect(managerPage).not.toContain('inventoryQuery.data?.employees ?? []')
+  })
+
+  it('withholds cached workflow rows and closes their actions after verification fails', () => {
+    expect(managerPage).toContain('const workflow = verifiedQueryData(workflowQuery.data, workflowQuery)')
+    expect(managerPage).toContain('if (!workflow)')
+    expect(managerPage).toContain('setReviewTarget(null)')
+    expect(managerPage).toContain('setCancelTarget(null)')
+    expect(managerPage).toContain('reviewTarget && workflow')
+    expect(managerPage).toContain('cancelTarget && workflow')
+    expect(managerPage).not.toContain('{workflowQuery.data ? <div className="hr-workflow-grid">')
+  })
 })

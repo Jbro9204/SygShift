@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClientFilesPage } from './ClientFilesPage'
 
 const authData = vi.hoisted(() => ({ getSessionContext: vi.fn() }))
-const clientData = vi.hoisted(() => ({ getClientFile: vi.fn(), getClientsWorkspace: vi.fn() }))
+const clientData = vi.hoisted(() => ({ getClientFile: vi.fn(), getClientsWorkspace: vi.fn(), shouldReuseClientDocumentUploadRequest: vi.fn(), uploadClientDocument: vi.fn() }))
 const communicationsData = vi.hoisted(() => ({ render: vi.fn() }))
 
 vi.mock('../data/auth', () => ({ getSessionContext: authData.getSessionContext }))
@@ -31,8 +31,9 @@ vi.mock('../data/clients', () => ({
   saveClient: vi.fn(),
   saveClientContact: vi.fn(),
   saveClientServiceRecord: vi.fn(),
+  shouldReuseClientDocumentUploadRequest: clientData.shouldReuseClientDocumentUploadRequest,
   updateClientSiteLocation: vi.fn(),
-  uploadClientDocument: vi.fn(),
+  uploadClientDocument: clientData.uploadClientDocument,
 }))
 
 function workspace(displayName: string) {
@@ -146,9 +147,14 @@ function renderPage(initialEntries = ['/clients']) {
 
 describe('Client Directory search', () => {
   beforeEach(() => {
+    window.sessionStorage.clear()
+    HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) { this.setAttribute('open', '') })
+    HTMLDialogElement.prototype.close = vi.fn(function close(this: HTMLDialogElement) { this.removeAttribute('open') })
     authData.getSessionContext.mockReset().mockResolvedValue(session(['clients.view', 'clients.communications.view']))
     clientData.getClientFile.mockReset()
     clientData.getClientsWorkspace.mockReset()
+    clientData.shouldReuseClientDocumentUploadRequest.mockReset().mockReturnValue(true)
+    clientData.uploadClientDocument.mockReset()
     communicationsData.render.mockReset()
   })
 
@@ -169,7 +175,8 @@ describe('Client Directory search', () => {
 
     expect(search).toHaveFocus()
     expect(search).toHaveValue('T.Client')
-    expect(screen.getByText('Existing Client')).toBeVisible()
+    expect(screen.queryByText('Existing Client')).not.toBeInTheDocument()
+    expect(screen.getByText('Updating Client Files')).toBeVisible()
     await waitFor(() => expect(pending.has('T.Client')).toBe(true))
     expect(document.querySelector('.client-directory-panel')).toHaveAttribute('aria-busy', 'true')
     expect(screen.getByRole('status')).toHaveTextContent('Updating client results…')
@@ -245,6 +252,188 @@ describe('Client Directory search', () => {
       clientId: '10000000-0000-4000-8000-000000000001',
       employeeId: '20000000-0000-4000-8000-000000000001',
     })
+    queryClient.clear()
+  })
+
+  it('uses a new upload request when document metadata changes after an ambiguous response', async () => {
+    const fileData = clientFile()
+    fileData.actor.canManageDocuments = true
+    clientData.getClientFile.mockResolvedValue(fileData)
+    clientData.uploadClientDocument
+      .mockRejectedValueOnce(new Error('The upload connection was interrupted. You can retry safely.'))
+      .mockResolvedValueOnce(undefined)
+    const queryClient = renderPage(['/clients/10000000-0000-4000-8000-000000000001'])
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^Documents/ }))
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+    await user.upload(screen.getByLabelText(/^File/), new File(['client record'], 'record.pdf', { type: 'application/pdf', lastModified: 1_797_000_000_000 }))
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Client record')
+    const uploadForm = screen.getByRole('dialog').querySelector('form')
+    expect(uploadForm).not.toBeNull()
+    fireEvent.submit(uploadForm!)
+
+    await waitFor(() => expect(clientData.uploadClientDocument).toHaveBeenCalledTimes(1))
+    const retryButton = screen.getByRole('button', { name: 'Upload securely' })
+    await waitFor(() => expect(retryButton).toBeEnabled())
+    await user.clear(screen.getByRole('textbox', { name: 'Title' }))
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Edited after lost response')
+    fireEvent.submit(uploadForm!)
+    await waitFor(() => expect(clientData.uploadClientDocument).toHaveBeenCalledTimes(2))
+
+    const firstRequest = clientData.uploadClientDocument.mock.calls[0]?.[0] as { idempotencyKey: string }
+    const retryRequest = clientData.uploadClientDocument.mock.calls[1]?.[0] as { idempotencyKey: string }
+    expect(retryRequest.idempotencyKey).not.toBe(firstRequest.idempotencyKey)
+    queryClient.clear()
+  })
+
+  it('keeps upload metadata out of session storage when Web Crypto is unavailable', async () => {
+    const fileData = clientFile()
+    fileData.actor.canManageDocuments = true
+    clientData.getClientFile.mockResolvedValue(fileData)
+    clientData.uploadClientDocument.mockRejectedValue(new Error('The upload response timed out. You can retry safely.'))
+    const digest = vi.spyOn(globalThis.crypto.subtle, 'digest').mockRejectedValue(new Error('Web Crypto unavailable'))
+    const queryClient = renderPage(['/clients/10000000-0000-4000-8000-000000000001'])
+    const user = userEvent.setup()
+
+    try {
+      await user.click(await screen.findByRole('button', { name: /^Documents/ }))
+      await user.click(screen.getByRole('button', { name: 'Upload document' }))
+      await user.upload(screen.getByLabelText(/^File/), new File(['private client record'], 'secret-client-record.pdf', {
+        lastModified: 1_797_000_000_000,
+        type: 'application/pdf',
+      }))
+      await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Private contract title')
+      await user.type(screen.getByRole('textbox', { name: 'Description' }), 'Sensitive client description')
+      const uploadForm = screen.getByRole('dialog').querySelector('form')
+      expect(uploadForm).not.toBeNull()
+      fireEvent.submit(uploadForm!)
+      await waitFor(() => expect(clientData.uploadClientDocument).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Upload securely' })).toBeEnabled())
+      fireEvent.submit(uploadForm!)
+      await waitFor(() => expect(clientData.uploadClientDocument).toHaveBeenCalledTimes(2))
+
+      const firstRequest = clientData.uploadClientDocument.mock.calls[0]?.[0] as { idempotencyKey: string }
+      const retryRequest = clientData.uploadClientDocument.mock.calls[1]?.[0] as { idempotencyKey: string }
+      expect(retryRequest.idempotencyKey).toBe(firstRequest.idempotencyKey)
+      expect(window.sessionStorage.length).toBe(0)
+    } finally {
+      digest.mockRestore()
+      queryClient.clear()
+    }
+  })
+
+  it('keeps the dialog mounted and disables both close controls while an upload is in flight', async () => {
+    const fileData = clientFile()
+    fileData.actor.canManageDocuments = true
+    clientData.getClientFile.mockResolvedValue(fileData)
+    let finishUpload: (() => void) | undefined
+    clientData.uploadClientDocument.mockImplementation(() => new Promise<void>((resolve) => { finishUpload = resolve }))
+    const queryClient = renderPage(['/clients/10000000-0000-4000-8000-000000000001'])
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^Documents/ }))
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+    await user.upload(screen.getByLabelText(/^File/), new File(['client record'], 'record.pdf', { type: 'application/pdf', lastModified: 1_797_000_000_000 }))
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Client record')
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
+
+    await waitFor(() => expect(clientData.uploadClientDocument).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Close dialog' })).toBeDisabled()
+    expect(screen.getByRole('dialog')).toBeVisible()
+
+    await act(async () => finishUpload?.())
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    queryClient.clear()
+  })
+
+  it('restores an ambiguous request key for the same file and metadata after reopening the upload dialog', async () => {
+    const fileData = clientFile()
+    fileData.actor.canManageDocuments = true
+    clientData.getClientFile.mockResolvedValue(fileData)
+    clientData.uploadClientDocument.mockRejectedValue(new Error('The upload response timed out. You can retry safely.'))
+    const queryClient = renderPage(['/clients/10000000-0000-4000-8000-000000000001'])
+    const user = userEvent.setup()
+    const selectSameFile = () => new File(['client record'], 'record.pdf', { type: 'application/pdf', lastModified: 1_797_000_000_000 })
+
+    await user.click(await screen.findByRole('button', { name: /^Documents/ }))
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+    await user.upload(screen.getByLabelText(/^File/), selectSameFile())
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Client record')
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
+    await waitFor(() => expect(clientData.uploadClientDocument).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+    await user.upload(screen.getByLabelText(/^File/), selectSameFile())
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Client record')
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
+    await waitFor(() => expect(clientData.uploadClientDocument).toHaveBeenCalledTimes(2))
+
+    const firstRequest = clientData.uploadClientDocument.mock.calls[0]?.[0] as { idempotencyKey: string }
+    const reopenedRequest = clientData.uploadClientDocument.mock.calls[1]?.[0] as { idempotencyKey: string }
+    expect(reopenedRequest.idempotencyKey).toBe(firstRequest.idempotencyKey)
+    queryClient.clear()
+  })
+
+  it('removes the saved request key after a deterministic failure', async () => {
+    const fileData = clientFile()
+    fileData.actor.canManageDocuments = true
+    clientData.getClientFile.mockResolvedValue(fileData)
+    clientData.shouldReuseClientDocumentUploadRequest.mockReturnValue(false)
+    clientData.uploadClientDocument.mockRejectedValue(new Error('The selected file is not accepted.'))
+    const queryClient = renderPage(['/clients/10000000-0000-4000-8000-000000000001'])
+    const user = userEvent.setup()
+    const selectSameFile = () => new File(['client record'], 'record.pdf', { type: 'application/pdf', lastModified: 1_797_000_000_000 })
+
+    await user.click(await screen.findByRole('button', { name: /^Documents/ }))
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+    await user.upload(screen.getByLabelText(/^File/), selectSameFile())
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Client record')
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
+    await waitFor(() => expect(clientData.uploadClientDocument).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+    await user.upload(screen.getByLabelText(/^File/), selectSameFile())
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Client record again')
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
+    await waitFor(() => expect(clientData.uploadClientDocument).toHaveBeenCalledTimes(2))
+
+    const firstRequest = clientData.uploadClientDocument.mock.calls[0]?.[0] as { idempotencyKey: string }
+    const nextRequest = clientData.uploadClientDocument.mock.calls[1]?.[0] as { idempotencyKey: string }
+    expect(nextRequest.idempotencyKey).not.toBe(firstRequest.idempotencyKey)
+    queryClient.clear()
+  })
+
+  it('removes the saved request key after a verified successful upload', async () => {
+    const fileData = clientFile()
+    fileData.actor.canManageDocuments = true
+    clientData.getClientFile.mockResolvedValue(fileData)
+    clientData.uploadClientDocument.mockResolvedValue(undefined)
+    const queryClient = renderPage(['/clients/10000000-0000-4000-8000-000000000001'])
+    const user = userEvent.setup()
+    const selectSameFile = () => new File(['client record'], 'record.pdf', { type: 'application/pdf', lastModified: 1_797_000_000_000 })
+
+    await user.click(await screen.findByRole('button', { name: /^Documents/ }))
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+    await user.upload(screen.getByLabelText(/^File/), selectSameFile())
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Client record')
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Upload document' }))
+    await user.upload(screen.getByLabelText(/^File/), selectSameFile())
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Client record again')
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
+    await waitFor(() => expect(clientData.uploadClientDocument).toHaveBeenCalledTimes(2))
+
+    const firstRequest = clientData.uploadClientDocument.mock.calls[0]?.[0] as { idempotencyKey: string }
+    const nextRequest = clientData.uploadClientDocument.mock.calls[1]?.[0] as { idempotencyKey: string }
+    expect(nextRequest.idempotencyKey).not.toBe(firstRequest.idempotencyKey)
     queryClient.clear()
   })
 })

@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BadgeCheck,
@@ -13,20 +13,16 @@ import {
   UserCog,
   UsersRound,
   Mail,
-  RotateCcw,
   Usb,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import {
   createEmployee,
-  credentialsToCsv,
   getEmployeeRemovalPreview,
   getEmployeeSecurityKeys,
   getAdminUserDirectory,
   getRecentlyDeletedEmployees,
-  provisionMissingAccounts,
-  resetEmployeeMfa,
   revokeEmployeeSecurityKey,
   revokeEmployeeTrustedDevices,
   removeSeparatedEmployee,
@@ -36,6 +32,7 @@ import {
   sendEmployeeWelcomeEmail,
   setEmployeeAccountState,
   updateEmployee,
+  AdminApiRequestError,
   type AdminUser,
   type AdminUserDirectory,
   type AppRole,
@@ -43,7 +40,6 @@ import {
   type EmployeeStatus,
   type EmploymentType,
   type EmployeeRemovalPreview,
-  type ProvisioningCredential,
 } from '../data/adminUsers'
 import { continentalUsTimeZones } from '../lib/usTimeZones'
 import type { SecurityKeySummary } from '../data/securityKeys'
@@ -69,6 +65,79 @@ import {
 import { workforceRoleLabels } from '../lib/workforceRoleAssignment'
 
 const roleLabels: Record<AppRole, string> = workforceRoleLabels
+
+type DurableAdminOperation = 'bulk-login-instructions' | 'login-instructions' | 'password-reset' | 'welcome-email'
+
+const inMemoryAdminOperationKeys = new Map<string, string>()
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function durableAdminOperationStorageKey(
+  actorEmployeeId: string | null,
+  employeeId: string,
+  operation: DurableAdminOperation,
+) {
+  return `sygshift:admin-operation:${actorEmployeeId ?? 'unknown'}:${employeeId}:${operation}`
+}
+
+function acquireDurableAdminOperationKey(
+  actorEmployeeId: string | null,
+  employeeId: string,
+  operation: DurableAdminOperation,
+): string {
+  const storageKey = durableAdminOperationStorageKey(actorEmployeeId, employeeId, operation)
+  const inMemory = inMemoryAdminOperationKeys.get(storageKey)
+  if (inMemory) return inMemory
+  try {
+    const stored = window.sessionStorage.getItem(storageKey)
+    if (stored && uuidPattern.test(stored)) {
+      inMemoryAdminOperationKeys.set(storageKey, stored)
+      return stored
+    }
+  } catch {
+    // In-memory retention still protects retries when browser storage is unavailable.
+  }
+  const created = crypto.randomUUID()
+  inMemoryAdminOperationKeys.set(storageKey, created)
+  try { window.sessionStorage.setItem(storageKey, created) } catch { /* best effort */ }
+  return created
+}
+
+function readDurableAdminOperationKey(
+  actorEmployeeId: string | null,
+  employeeId: string,
+  operation: DurableAdminOperation,
+): string | null {
+  const storageKey = durableAdminOperationStorageKey(actorEmployeeId, employeeId, operation)
+  const inMemory = inMemoryAdminOperationKeys.get(storageKey)
+  if (inMemory) return inMemory
+  try {
+    const stored = window.sessionStorage.getItem(storageKey)
+    if (stored && uuidPattern.test(stored)) {
+      inMemoryAdminOperationKeys.set(storageKey, stored)
+      return stored
+    }
+  } catch {
+    // The operation can still be acquired and retained in memory on demand.
+  }
+  return null
+}
+
+function clearDurableAdminOperationKey(
+  actorEmployeeId: string | null,
+  employeeId: string,
+  operation: DurableAdminOperation,
+) {
+  const storageKey = durableAdminOperationStorageKey(actorEmployeeId, employeeId, operation)
+  inMemoryAdminOperationKeys.delete(storageKey)
+  try { window.sessionStorage.removeItem(storageKey) } catch { /* best effort */ }
+}
+
+function isAmbiguousAdminOperationFailure(error: unknown): boolean {
+  return !(error instanceof AdminApiRequestError
+    && error.status >= 400
+    && error.status < 500
+    && !['email_delivery_unresolved', 'login_instruction_finalization_pending'].includes(error.code ?? ''))
+}
 
 const statusLabels: Record<EmployeeStatus, string> = {
   active: 'Active',
@@ -112,16 +181,6 @@ function replaceDirectoryUser(directory: AdminUserDirectory | undefined, updated
     ...directory,
     users,
   }
-}
-
-function downloadCredentialCsv(credentials: ProvisioningCredential[], filename = 'sygshift-temporary-logins.csv') {
-  const blob = new Blob([credentialsToCsv(credentials)], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
 }
 
 function employeeFormPayload(
@@ -473,9 +532,7 @@ function ManageUserModal({
   const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null)
   const [welcomeEmailMessage, setWelcomeEmailMessage] = useState<string | null>(null)
   const [trustedDeviceMessage, setTrustedDeviceMessage] = useState<string | null>(null)
-  const [mfaResetMessage, setMfaResetMessage] = useState<string | null>(null)
   const [securityKeyMessage, setSecurityKeyMessage] = useState<string | null>(null)
-  const [confirmingMfaReset, setConfirmingMfaReset] = useState(false)
   const [removingEmployee, setRemovingEmployee] = useState(false)
   const deliveryEmail = preferredEmployeeDeliveryEmail(employee.personalEmail, employee.companyEmail)
   const assignedRoleNames = [...new Set([
@@ -534,17 +591,6 @@ function ManageUserModal({
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
   })
-  const resetMfaMutation = useMutation({
-    mutationFn: () => resetEmployeeMfa(employee.id),
-    onSuccess: async (result) => {
-      setConfirmingMfaReset(false)
-      setMfaResetMessage(
-        `MFA reset for ${employee.displayName}. ${result.factorsRemoved} authenticator factor${result.factorsRemoved === 1 ? '' : 's'}, ${result.trustedDevicesRevoked} remembered device${result.trustedDevicesRevoked === 1 ? '' : 's'}, and ${result.securityKeysRevoked} security key${result.securityKeysRevoked === 1 ? '' : 's'} revoked.`,
-      )
-      await queryClient.invalidateQueries({ queryKey: ['employee-security-keys', employee.id], refetchType: 'active' })
-      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
-    },
-  })
   const revokeSecurityKeyMutation = useMutation({
     mutationFn: (key: SecurityKeySummary) => revokeEmployeeSecurityKey(employee.id, key.id),
     onSuccess: async (result, key) => {
@@ -553,22 +599,40 @@ function ManageUserModal({
     },
   })
   const loginEmailMutation = useMutation({
-    mutationFn: () => sendEmployeeLoginEmail(employee.id),
+    mutationFn: (idempotencyKey: string) => sendEmployeeLoginEmail(employee.id, idempotencyKey),
+    onError: (error) => {
+      if (!isAmbiguousAdminOperationFailure(error)) {
+        clearDurableAdminOperationKey(actorEmployeeId, employee.id, 'login-instructions')
+      }
+    },
     onSuccess: async (result) => {
+      clearDurableAdminOperationKey(actorEmployeeId, employee.id, 'login-instructions')
       setLoginEmailMessage(`Login instructions sent to ${result.email ?? deliveryEmail ?? 'the approved email address'}.`)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
   })
   const passwordResetMutation = useMutation({
-    mutationFn: () => sendEmployeePasswordReset(employee.id),
+    mutationFn: (idempotencyKey: string) => sendEmployeePasswordReset(employee.id, idempotencyKey),
+    onError: (error) => {
+      if (!isAmbiguousAdminOperationFailure(error)) {
+        clearDurableAdminOperationKey(actorEmployeeId, employee.id, 'password-reset')
+      }
+    },
     onSuccess: async (result) => {
+      clearDurableAdminOperationKey(actorEmployeeId, employee.id, 'password-reset')
       setPasswordResetMessage(`Secure password reset sent to ${result.email}.`)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
     },
   })
   const welcomeEmailMutation = useMutation({
-    mutationFn: () => sendEmployeeWelcomeEmail(employee.id),
+    mutationFn: (idempotencyKey: string) => sendEmployeeWelcomeEmail(employee.id, idempotencyKey),
+    onError: (error) => {
+      if (!isAmbiguousAdminOperationFailure(error)) {
+        clearDurableAdminOperationKey(actorEmployeeId, employee.id, 'welcome-email')
+      }
+    },
     onSuccess: async (result) => {
+      clearDurableAdminOperationKey(actorEmployeeId, employee.id, 'welcome-email')
       setWelcomeEmailMessage(
         `Welcome email accepted for ${result.email ?? deliveryEmail ?? 'the approved email address'}. Request ${result.requestId}.`,
       )
@@ -578,7 +642,6 @@ function ManageUserModal({
   const modalBusy = updateMutation.isPending
     || accountStateMutation.isPending
     || revokeTrustedDevicesMutation.isPending
-    || resetMfaMutation.isPending
     || revokeSecurityKeyMutation.isPending
     || passwordResetMutation.isPending
     || loginEmailMutation.isPending
@@ -771,14 +834,9 @@ function ManageUserModal({
                         <KeyRound aria-hidden="true" size={18} /> Open onboarding
                       </button>
                     ) : null}
-                    {canResetPassword && employee.accountStatus === 'active' && employee.account?.activatedAt ? (
-                      <button className="primary-action" disabled={passwordResetMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => { setPasswordResetMessage(null); passwordResetMutation.mutate() }} type="button">
+                    {canResetPassword && employee.accountStatus === 'active' ? (
+                      <button className="primary-action" disabled={passwordResetMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => { setPasswordResetMessage(null); passwordResetMutation.mutate(acquireDurableAdminOperationKey(actorEmployeeId, employee.id, 'password-reset')) }} type="button">
                         <Mail aria-hidden="true" size={18} /> {passwordResetMutation.isPending ? 'Sending reset…' : 'Send password reset'}
-                      </button>
-                    ) : null}
-                    {canSendNewUserInvites && employee.accountStatus === 'active' && !employee.account?.activatedAt ? (
-                      <button className="primary-action" disabled={employee.status !== 'active'} onClick={() => setActiveTab('onboarding')} type="button">
-                        <Mail aria-hidden="true" size={18} /> Open login instructions
                       </button>
                     ) : null}
                     {canManageLogin && employee.accountStatus === 'disabled' && employee.account ? (
@@ -786,9 +844,9 @@ function ManageUserModal({
                         <LockKeyhole aria-hidden="true" size={18} /> {accountStateMutation.isPending ? 'Enabling…' : 'Enable login'}
                       </button>
                     ) : null}
-                    {canManageLogin && employee.accountStatus === 'active' && employee.account && !confirmingMfaReset ? (
-                      <button className="secondary-button" disabled={resetMfaMutation.isPending} onClick={() => { setMfaResetMessage(null); setConfirmingMfaReset(true) }} type="button">
-                        <RotateCcw aria-hidden="true" size={18} /> Reset MFA setup
+                    {canManageLogin && employee.accountStatus === 'active' && employee.account ? (
+                      <button className="secondary-button" disabled title="A session-safe combined account recovery flow is required." type="button">
+                        <ShieldAlert aria-hidden="true" size={18} /> MFA reset unavailable
                       </button>
                     ) : null}
                     {canManageLogin && employee.accountStatus === 'active' && employee.account && (employee.account.trustedDeviceCount ?? 0) > 0 ? (
@@ -797,15 +855,8 @@ function ManageUserModal({
                       </button>
                     ) : null}
                   </div>
-                  {confirmingMfaReset ? (
-                    <div className="mfa-reset-confirmation" role="alert">
-                      <strong>Reset MFA for {employee.displayName}?</strong>
-                      <p>Their authenticator enrollment, recovery codes, remembered devices, and registered security keys will be removed. Their password, employee record, and history will not change.</p>
-                      <div className="mfa-reset-confirmation__actions">
-                        <button className="secondary-button" disabled={resetMfaMutation.isPending} onClick={() => setConfirmingMfaReset(false)} type="button">Cancel</button>
-                        <button className="secondary-button danger-button" disabled={resetMfaMutation.isPending} onClick={() => resetMfaMutation.mutate()} type="button"><RotateCcw aria-hidden="true" size={18} /> {resetMfaMutation.isPending ? 'Resetting MFA…' : 'Confirm MFA reset'}</button>
-                      </div>
-                    </div>
+                  {canManageLogin && employee.accountStatus === 'active' && employee.account ? (
+                    <small>MFA reset is paused until it can also invalidate every active session and establish a replacement login credential. Use password recovery or disable login access and contact support.</small>
                   ) : null}
                   {employee.status !== 'active' ? <small>Only active employees can receive login accounts.</small> : null}
                   {!deliveryEmail && employee.accountStatus === 'active' ? <small>Add an approved personal email before sending a password reset.</small> : null}
@@ -865,11 +916,9 @@ function ManageUserModal({
             {accountStateMutation.isError ? <div className="inline-alert" role="alert">{accountStateMutation.error.message}</div> : null}
             {passwordResetMessage ? <div className="form-feedback form-feedback--success" role="status">{passwordResetMessage}</div> : null}
             {trustedDeviceMessage ? <div className="form-feedback form-feedback--success" role="status">{trustedDeviceMessage}</div> : null}
-            {mfaResetMessage ? <div className="form-feedback form-feedback--success" role="status">{mfaResetMessage}</div> : null}
             {securityKeyMessage ? <div className="form-feedback form-feedback--success" role="status">{securityKeyMessage}</div> : null}
             {passwordResetMutation.isError ? <div className="inline-alert" role="alert">{passwordResetMutation.error.message}</div> : null}
             {revokeTrustedDevicesMutation.isError ? <div className="inline-alert" role="alert">{revokeTrustedDevicesMutation.error.message}</div> : null}
-            {resetMfaMutation.isError ? <div className="inline-alert" role="alert">{resetMfaMutation.error.message}</div> : null}
             {revokeSecurityKeyMutation.isError ? <div className="inline-alert" role="alert">{revokeSecurityKeyMutation.error.message}</div> : null}
           </section>
         ) : null}
@@ -892,20 +941,33 @@ function ManageUserModal({
               <article>
                 <Mail aria-hidden="true" size={22} />
                 <div><h4>Welcome email</h4><p>Introduces SygShift and the employee experience without including login credentials.</p></div>
-                <button className="secondary-button" disabled={!canSendNewUserInvites || welcomeEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => welcomeEmailMutation.mutate()} type="button">{welcomeEmailMutation.isPending ? 'Sending welcome…' : 'Send welcome email'}</button>
+                <button className="secondary-button" disabled={!canSendNewUserInvites || welcomeEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => welcomeEmailMutation.mutate(acquireDurableAdminOperationKey(actorEmployeeId, employee.id, 'welcome-email'))} type="button">{welcomeEmailMutation.isPending ? 'Sending welcome…' : 'Send welcome email'}</button>
               </article>
               <article>
                 <KeyRound aria-hidden="true" size={22} />
-                <div><h4>Login instructions</h4><p>Prepares access, delivers a one-time temporary password, and explains authenticator setup only when MFA is required.</p></div>
-                <button className="secondary-button" disabled={!canSendNewUserInvites || loginEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => loginEmailMutation.mutate()} type="button">{loginEmailMutation.isPending ? 'Sending instructions…' : 'Email login instructions'}</button>
+                <div>
+                  <h4>{employee.accountStatus === 'not_created' ? 'Login instructions' : 'Account recovery'}</h4>
+                  <p>{employee.accountStatus === 'not_created'
+                    ? 'Creates access, delivers a one-time temporary password, and explains authenticator setup only when MFA is required.'
+                    : 'This employee already has a login. Send a secure password-reset link without replacing their password with temporary credentials.'}</p>
+                </div>
+                {employee.accountStatus === 'not_created' ? (
+                  <button className="secondary-button" disabled={!canSendNewUserInvites || loginEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => loginEmailMutation.mutate(acquireDurableAdminOperationKey(actorEmployeeId, employee.id, 'login-instructions'))} type="button">{loginEmailMutation.isPending ? 'Sending instructions…' : 'Email login instructions'}</button>
+                ) : employee.accountStatus === 'active' ? (
+                  <button className="secondary-button" disabled={!canResetPassword || passwordResetMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => { setPasswordResetMessage(null); passwordResetMutation.mutate(acquireDurableAdminOperationKey(actorEmployeeId, employee.id, 'password-reset')) }} type="button">{passwordResetMutation.isPending ? 'Sending reset…' : 'Send password reset'}</button>
+                ) : (
+                  <button className="secondary-button" disabled type="button">Enable login before recovery</button>
+                )}
               </article>
             </div>
             {!canSendNewUserInvites ? <p className="form-note">New User Invites permission is required to send onboarding emails.</p> : null}
             {employee.status !== 'active' ? <p className="form-note">Only active employees can receive onboarding emails.</p> : null}
             {!deliveryEmail ? <p className="form-note">Add a personal email before sending. SygShift is not sending to @guardianshipsecurity.net while company delivery is blocked.</p> : null}
             {loginEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{loginEmailMessage}</div> : null}
+            {passwordResetMessage ? <div className="form-feedback form-feedback--success" role="status">{passwordResetMessage}</div> : null}
             {welcomeEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{welcomeEmailMessage}</div> : null}
             {loginEmailMutation.isError ? <div className="inline-alert" role="alert">{loginEmailMutation.error.message}</div> : null}
+            {passwordResetMutation.isError ? <div className="inline-alert" role="alert">{passwordResetMutation.error.message}</div> : null}
             {welcomeEmailMutation.isError ? <div className="inline-alert" role="alert">{welcomeEmailMutation.error.message}</div> : null}
           </section>
         ) : null}
@@ -1029,8 +1091,8 @@ export function UserAdminPage() {
   const [presence, setPresence] = useState<PresenceFilter>('all')
   const [creating, setCreating] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
-  const [bulkCredentials, setBulkCredentials] = useState<ProvisioningCredential[]>([])
   const [bulkEmailMessage, setBulkEmailMessage] = useState<string | null>(null)
+  const [bulkLoginRetryKey, setBulkLoginRetryKey] = useState<string | null>(null)
 
   const sessionQuery = useQuery({
     queryFn: getSessionContext,
@@ -1055,6 +1117,13 @@ export function UserAdminPage() {
   )
 
   const sessionContext = sessionQuery.data
+  useEffect(() => {
+    setBulkLoginRetryKey(readDurableAdminOperationKey(
+      sessionContext?.employeeId ?? null,
+      'bulk',
+      'bulk-login-instructions',
+    ))
+  }, [sessionContext?.employeeId])
   const hasPermission = (permission: string) => Boolean(sessionContext?.permissions.includes(permission))
   const canEditBasic = hasPermission('admin.users.basic') || hasPermission('admin.users.manage')
   const canManageLogin = hasPermission('admin.users.manage')
@@ -1097,25 +1166,25 @@ export function UserAdminPage() {
     },
   })
 
-  const bulkProvisionMutation = useMutation({
-    mutationFn: provisionMissingAccounts,
-    onSuccess: async (result) => {
-      const credentials = result.provisioned.map((credential) => ({
-        ...credential,
-        displayName: users.find((user) => user.username === credential.username)?.displayName ?? credential.displayName,
-      }))
-      setBulkCredentials(credentials)
-      if (credentials.length > 0) {
-        downloadCredentialCsv(credentials, 'sygshift-new-temporary-logins.csv')
-      }
-      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
-    },
-  })
   const bulkLoginEmailMutation = useMutation({
-    mutationFn: sendAllEmployeeLoginEmails,
+    mutationFn: (idempotencyKey: string) => sendAllEmployeeLoginEmails(idempotencyKey),
+    onError: (error) => {
+      if (!isAmbiguousAdminOperationFailure(error)) {
+        clearDurableAdminOperationKey(sessionContext?.employeeId ?? null, 'bulk', 'bulk-login-instructions')
+        setBulkLoginRetryKey(null)
+      }
+    },
     onSuccess: async (result) => {
       const sentCount = result.sent?.length ?? 0
       const failureCount = result.failures?.length ?? 0
+      const hasUnresolvedFailure = result.failures?.some((failure) =>
+        failure.code === 'email_delivery_unresolved'
+        || failure.code === 'login_instruction_finalization_pending'
+        || (failure.status ?? 0) >= 500) ?? false
+      if (!hasUnresolvedFailure) {
+        clearDurableAdminOperationKey(sessionContext?.employeeId ?? null, 'bulk', 'bulk-login-instructions')
+        setBulkLoginRetryKey(null)
+      }
       setBulkEmailMessage(`${sentCount} new-login email${sentCount === 1 ? '' : 's'} sent${failureCount ? `; ${failureCount} need attention.` : '.'}`)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
@@ -1240,13 +1309,12 @@ export function UserAdminPage() {
             <div className="user-admin-toolbar__actions" aria-label="Bulk account actions">
               <span>{filteredUsers.length} account{filteredUsers.length === 1 ? '' : 's'} shown</span>
               <div>
-              {canManageLogin ? (
-                <button className="primary-action" disabled={bulkProvisionMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkProvisionMutation.mutate()} type="button">
-                  <KeyRound aria-hidden="true" size={18} /> Create missing logins
-                </button>
-              ) : null}
               {canSendNewUserInvites ? (
-                <button className="secondary-button" disabled={bulkLoginEmailMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkLoginEmailMutation.mutate()} type="button">
+                <button className="secondary-button" disabled={bulkLoginEmailMutation.isPending || (metrics.missingLogins === 0 && !bulkLoginRetryKey)} onClick={() => {
+                  const operationKey = acquireDurableAdminOperationKey(sessionContext?.employeeId ?? null, 'bulk', 'bulk-login-instructions')
+                  setBulkLoginRetryKey(operationKey)
+                  bulkLoginEmailMutation.mutate(operationKey)
+                }} type="button">
                   <Mail aria-hidden="true" size={18} /> Send new user invites
                 </button>
               ) : null}
@@ -1254,15 +1322,8 @@ export function UserAdminPage() {
             </div>
           </section>
 
-          {bulkProvisionMutation.isError ? <div className="inline-alert" role="alert">{bulkProvisionMutation.error.message}</div> : null}
           {bulkLoginEmailMutation.isError ? <div className="inline-alert" role="alert">{bulkLoginEmailMutation.error.message}</div> : null}
           {bulkEmailMessage ? <div className="user-admin-success" role="status"><BadgeCheck aria-hidden="true" size={18} /><span>{bulkEmailMessage}</span></div> : null}
-          {bulkCredentials.length > 0 ? (
-            <div className="user-admin-success" role="status">
-              <BadgeCheck aria-hidden="true" size={18} />
-              <span>{bulkCredentials.length} temporary login{bulkCredentials.length === 1 ? '' : 's'} created. The CSV downloaded automatically; store it securely.</span>
-            </div>
-          ) : null}
 
           <section className="user-admin-panel" aria-label="User account records">
             {filteredUsers.length === 0 ? (

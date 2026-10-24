@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   clearSharedIdentitySession,
+  clearSharedIdentityServerSession,
   getSharedIdentitySessionExpiresAt,
   getSharedIdentitySessionScope,
   getSharedIdentitySessionToken,
@@ -13,9 +14,13 @@ import {
 
 const sharedToken = 'shared-token'.repeat(5)
 
-afterEach(() => {
-  clearSharedIdentitySession()
+afterEach(async () => {
   vi.useRealTimers()
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
+  await clearSharedIdentityServerSession().catch(() => undefined)
+  clearSharedIdentitySession()
+  window.localStorage.clear()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -29,6 +34,88 @@ describe('shared identity browser session', () => {
     expect(getSharedIdentitySessionScope()).toBe('sygsphere')
     expect(window.localStorage.length).toBe(0)
     expect(window.sessionStorage.length).toBe(0)
+  })
+
+  it('clears local shared credentials immediately and bounds remote logout', async () => {
+    vi.useFakeTimers()
+    setSharedIdentitySession(sharedToken, new Date(Date.now() + 60_000).toISOString(), true)
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const logout = clearSharedIdentityServerSession('access-token')
+
+    expect(getSharedIdentitySessionToken()).toBeNull()
+    expect(getSharedIdentitySessionScope()).toBeNull()
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/auth/shared-identity/session/logout',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+
+    const rejectedLogout = expect(logout).rejects.toThrow('could not be cleared')
+    await vi.advanceTimersByTimeAsync(3_000)
+    await rejectedLogout
+  })
+
+  it('keeps the logout barrier in memory when browser storage is unavailable', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Storage unavailable', 'SecurityError') })
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const logout = clearSharedIdentityServerSession('access-token')
+    const rejectedLogout = expect(logout).rejects.toThrow('could not be cleared')
+    await vi.advanceTimersByTimeAsync(3_000)
+    await rejectedLogout
+
+    const replacementToken = 'replacement-shared-token'.repeat(4)
+    expect(setSharedIdentitySession(replacementToken, new Date(Date.now() + 120_000).toISOString(), false, 'platform')).toBe(false)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
+    await clearSharedIdentityServerSession()
+    expect(setSharedIdentitySession(replacementToken, new Date(Date.now() + 120_000).toISOString(), false, 'platform')).toBe(true)
+  })
+
+  it('keeps shared-session restoration blocked after an HTTP logout failure and retries cleanup first', async () => {
+    setSharedIdentitySession(sharedToken, new Date(Date.now() + 60_000).toISOString(), true)
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ error: 'upstream_unavailable' }, { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(clearSharedIdentityServerSession()).rejects.toMatchObject({ status: 503, transient: true })
+    expect(setSharedIdentitySession('replacement-shared-token'.repeat(4), new Date(Date.now() + 60_000).toISOString(), false)).toBe(false)
+
+    await expect(hydrateSharedIdentitySession()).resolves.toBeNull()
+    expect(fetchMock).toHaveBeenNthCalledWith(2,
+      '/api/v1/auth/shared-identity/session/logout',
+      expect.objectContaining({ credentials: 'same-origin', method: 'POST' }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(3,
+      '/api/v1/auth/shared-identity/session',
+      expect.objectContaining({ credentials: 'same-origin', method: 'POST' }),
+    )
+  })
+
+  it('serializes a replacement session behind an older remote logout', async () => {
+    setSharedIdentitySession(sharedToken, new Date(Date.now() + 60_000).toISOString(), true)
+    let finishLogout: ((response: Response) => void) | undefined
+    const fetchMock = vi.fn(() => new Promise<Response>((resolve) => { finishLogout = resolve }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const logout = clearSharedIdentityServerSession('old-access-token')
+    const replacementToken = 'replacement-shared-token'.repeat(4)
+    expect(setSharedIdentitySession(replacementToken, new Date(Date.now() + 120_000).toISOString(), false, 'platform')).toBe(false)
+    expect(getSharedIdentitySessionToken()).toBeNull()
+
+    finishLogout?.(new Response(null, { status: 204 }))
+    await expect(logout).resolves.toBeUndefined()
+    expect(setSharedIdentitySession(replacementToken, new Date(Date.now() + 120_000).toISOString(), false, 'platform')).toBe(true)
+    expect(getSharedIdentitySessionToken()).toBe(replacementToken)
+    expect(getSharedIdentitySessionScope()).toBe('platform')
   })
 
   it('purges bearer material left by the released storage implementation', () => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Hash, Info, MessageCircle, Paperclip, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
@@ -158,6 +158,12 @@ export function SphereWorkspace({ employeeId, providerSmokeEnabled = false }: { 
       <button type="button" aria-label={inbox.data?.soundEnabled ? 'Mute SygSphere sounds' : 'Enable SygSphere sounds'} title="Messaging sounds only" disabled={preferences.isPending} onClick={() => preferences.mutate(!inbox.data?.soundEnabled)}>{inbox.data?.soundEnabled ? <Bell size={19} /> : <BellOff size={19} />}</button>
       {providerSmokeEnabled ? <ProviderSmokeControl /> : null}<button aria-label="New message" className="sphere-primary sphere-new-message" title="Start a new conversation" type="button" onClick={() => setNewOpen(true)}><Plus size={19} /><span className="sphere-new-message__label sphere-new-message__label--full">New message</span><span aria-hidden="true" className="sphere-new-message__label sphere-new-message__label--short">New</span></button></div></header>
     <ErrorNotice error={preferences.error || updateTextSize.error} />
+    {inbox.data?.mentionStatus === 'unavailable' ? (
+      <div className="sphere-error" role="alert">
+        Mention alerts could not be verified. Conversations remain available, but do not rely on an empty mention list until this check succeeds.
+        <button type="button" disabled={inbox.isFetching} onClick={() => void inbox.refetch()}>{inbox.isFetching ? 'Checking…' : 'Try again'}</button>
+      </div>
+    ) : null}
     <div className="sphere-layout">
       <nav className="sphere-conversations" aria-label="SygSphere conversations">
         <div className="sphere-tabs"><button type="button" aria-pressed={view === 'chats'} onClick={() => { setView('chats'); navigate('/sygsphere') }}><MessageCircle size={16} /> Chats</button><button type="button" aria-pressed={view === 'saved'} onClick={() => setView('saved')}><Bookmark size={16} /> Saved</button><button type="button" aria-pressed={view === 'search'} onClick={() => setView('search')}><Search size={16} /> Search</button></div>
@@ -207,10 +213,13 @@ function NewConversation({ employeeId, onClose, onCreated }: { employeeId: strin
   </ModalDialog>
 }
 
-function ConversationMessages({ employeeId, conversation, parentId = null, focusId, onThread, allowRead = true }: { employeeId: string; conversation: SphereConversation; parentId?: string | null; focusId: string | null; onThread: (message: SphereMessage) => void; allowRead?: boolean }) {
+export function ConversationMessages({ employeeId, conversation, parentId = null, focusId, onThread, allowRead = true }: { employeeId: string; conversation: SphereConversation; parentId?: string | null; focusId: string | null; onThread: (message: SphereMessage) => void; allowRead?: boolean }) {
   const queryClient = useQueryClient()
   const listRef = useRef<HTMLDivElement>(null)
   const tailRef = useRef<HTMLDivElement>(null)
+  const submittedUnreadIds = useRef('')
+  const failedUnreadIds = useRef('')
+  const lastReadBatch = useRef<string[]>([])
   const [atBottom, setAtBottom] = useState(true)
   const [visible, setVisible] = useState(document.visibilityState === 'visible')
   const messages = useInfiniteQuery({ queryKey: ['sygsphere', employeeId, 'messages', conversation.id, parentId], queryFn: ({ pageParam }) => sphereMessages(conversation.id, parentId, pageParam), initialPageParam: undefined as number | undefined, getNextPageParam: (last) => last.length === 50 ? last[0]?.sequence : undefined, refetchInterval: 30000 })
@@ -222,24 +231,76 @@ function ConversationMessages({ employeeId, conversation, parentId = null, focus
   const displayed = [...(root.data ? [root.data] : []), ...items, ...(focus.data ? [focus.data] : [])]
   const author = (message: SphereMessage) => context.data?.members.find((person) => person.id === message.authorId)
   const unreadIds = displayed.filter((item) => !item.read).map((item) => item.id).slice(0, 100).sort().join(',')
-  useEffect(() => { const change = () => setVisible(document.visibilityState === 'visible'); document.addEventListener('visibilitychange', change); return () => document.removeEventListener('visibilitychange', change) }, [])
+  const {
+    isError: markReadIsError,
+    isPending: markReadIsPending,
+    mutate: markMessagesRead,
+    reset: resetMarkRead,
+  } = useMutation({
+    mutationFn: (messageIds: string[]) => sphereRequest('read', { conversationId: conversation.id, messageIds }),
+    onSuccess: (_result, messageIds) => {
+      failedUnreadIds.current = ''
+      // The read RPC is the authoritative write receipt. Reflect only those
+      // exact messages locally, then refresh the related surfaces in the
+      // background. An unrelated SygSphere query failure must not turn an
+      // already-saved receipt into a false save failure or duplicate retry.
+      const savedIds = new Set(messageIds)
+      queryClient.setQueryData<InfiniteData<SphereMessage[]>>(
+        ['sygsphere', employeeId, 'messages', conversation.id, parentId],
+        (current) => current ? {
+          ...current,
+          pages: current.pages.map((page) => page.map((message) => (
+            savedIds.has(message.id) ? { ...message, read: true } : message
+          ))),
+        } : current,
+      )
+      for (const messageId of [parentId, focusId]) {
+        if (!messageId || !savedIds.has(messageId)) continue
+        queryClient.setQueryData<SphereMessage>(
+          ['sygsphere', employeeId, 'message', conversation.id, messageId],
+          (current) => current ? { ...current, read: true } : current,
+        )
+      }
+      void Promise.allSettled([
+        queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId, 'messages', conversation.id, parentId] }),
+        queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId, 'inbox'] }),
+      ])
+    },
+    // Keep a terminal-failure latch for this exact unread set. Clearing the
+    // submission token here causes the observer to immediately create another
+    // three-attempt cycle during an outage, even though the UI already offers
+    // an explicit retry.
+    onError: () => { failedUnreadIds.current = submittedUnreadIds.current },
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1_000 * (2 ** attempt), 4_000),
+  })
+  useEffect(() => { const change = () => { const nextVisible = document.visibilityState === 'visible'; if (nextVisible) failedUnreadIds.current = ''; setVisible(nextVisible) }; document.addEventListener('visibilitychange', change); return () => document.removeEventListener('visibilitychange', change) }, [])
   useEffect(() => {
-    if (!visible || !allowRead || !unreadIds || !listRef.current || typeof IntersectionObserver === 'undefined') return
+    submittedUnreadIds.current = ''
+    failedUnreadIds.current = ''
+    lastReadBatch.current = []
+    resetMarkRead()
+  }, [conversation.id, resetMarkRead])
+  useEffect(() => {
+    if (!visible || !allowRead || !unreadIds || markReadIsPending || failedUnreadIds.current === unreadIds || !listRef.current || typeof IntersectionObserver === 'undefined') return
     const unread = new Set(unreadIds.split(',')); const seen = new Set<string>()
     let timer: ReturnType<typeof setTimeout> | undefined
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) { const id = entry.target.id.replace('sphere-message-', ''); if (entry.isIntersecting && unread.has(id)) seen.add(id) }
       if (!timer && seen.size) timer = setTimeout(() => {
         timer = undefined; const messageIds = [...seen]; seen.clear()
-        void sphereRequest('read', { conversationId: conversation.id, messageIds }).then(() => queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] })).catch(() => undefined)
+        if (submittedUnreadIds.current === unreadIds) return
+        submittedUnreadIds.current = unreadIds
+        lastReadBatch.current = messageIds
+        markMessagesRead(messageIds)
       }, 450)
     }, { root: listRef.current, threshold: 0.25 })
     listRef.current.querySelectorAll('article[id^="sphere-message-"]').forEach((node) => observer.observe(node))
     return () => { observer.disconnect(); if (timer) clearTimeout(timer) }
-  }, [unreadIds, visible, allowRead, conversation.id, employeeId, queryClient])
+  }, [unreadIds, visible, allowRead, markMessagesRead, markReadIsPending])
   useEffect(() => { if (atBottom && !focusId) tailRef.current?.scrollIntoView({ block: 'nearest' }) }, [newestId, atBottom, focusId])
   const typing = context.data?.members.filter((person) => person.id !== employeeId && person.typing).map((person) => person.name)
-  if (messages.isError || context.isError) return <div className="sphere-form"><ErrorNotice error={messages.error || context.error} /><button type="button" onClick={() => { void messages.refetch(); void context.refetch() }}>Try again</button></div>
+  if ((messages.isError && !messages.data) || (context.isError && !context.data)) return <div className="sphere-form"><ErrorNotice error={messages.error || context.error} /><button type="button" onClick={() => { void messages.refetch(); void context.refetch() }}>Try again</button></div>
   return <>
     <div className="sphere-message-list" ref={listRef} onScroll={() => { const node = listRef.current; if (node) setAtBottom(node.scrollHeight - node.scrollTop - node.clientHeight < 100) }}>
       {messages.hasNextPage ? <button className="sphere-load" type="button" disabled={messages.isFetchingNextPage} onClick={() => void messages.fetchNextPage()}>{messages.isFetchingNextPage ? 'Loading…' : 'Load earlier messages'}</button> : null}
@@ -250,6 +311,7 @@ function ConversationMessages({ employeeId, conversation, parentId = null, focus
       {items.map((message) => <MessageCard key={message.id} employeeId={employeeId} conversationKind={conversation.kind} message={message} author={author(message)} onThread={onThread} hideReply={Boolean(parentId)} focused={message.id === focusId} />)}<div ref={tailRef} />
     </div>
     {!atBottom ? <button className="sphere-jump" type="button" onClick={() => { setAtBottom(true); tailRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }}><ChevronDown size={16} /> Latest messages</button> : null}
+    {markReadIsError ? <div className="sphere-error" role="alert">SygSphere could not confirm your read status. The unread badge may remain until this succeeds.<button type="button" disabled={markReadIsPending || !lastReadBatch.current.length} onClick={() => { failedUnreadIds.current = ''; resetMarkRead(); markMessagesRead(lastReadBatch.current) }}>{markReadIsPending ? 'Saving…' : 'Try again'}</button></div> : null}
     <div className="sphere-typing" aria-live="polite">{typing?.length ? `${typing.join(', ')} ${typing.length === 1 ? 'is' : 'are'} typing…` : ''}</div>
     {conversation.archived || root.data?.deleted ? <p className="sphere-nav-note">{conversation.archived ? 'This conversation is archived. An owner can reopen it.' : 'This message was deleted. Start a new conversation message instead.'}</p> : <SphereComposer key={`${conversation.id}:${parentId}`} employeeId={employeeId} conversationId={conversation.id} parentId={parentId} members={context.data?.members ?? []} />}
   </>

@@ -58,7 +58,7 @@ describe('purpose-limited Employee Conversations workspace', () => {
     expect(people).toContain('/employee-conversations?employeeId=')
     expect(people).toContain("sessionHasPermission(sessionQuery.data, 'hr.conversations.view')")
     expect(employeeFile).toContain('Employee Conversations')
-    expect(employeeFile).toContain("canAccessRoute('/employee-conversations', sessionQuery.data)")
+    expect(employeeFile).toContain("Boolean(session) && canAccessRoute('/employee-conversations', session)")
     expect(styles).toContain('.hr-file-tabs')
     expect(styles).toContain('.directory-actions')
   })

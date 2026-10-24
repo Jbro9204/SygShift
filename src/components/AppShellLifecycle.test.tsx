@@ -5,9 +5,12 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { isOperationalAlertLive } from '../data/timeOperations'
+import { advanceServerTimestamp } from '../lib/operationalAlertClock'
 import { AppShell } from './AppShell'
 
 const employeeId = 'a25a5f5f-45b6-4e43-87a6-79298ed9347f'
+const authUserId = 'b25a5f5f-45b6-4e43-87a6-79298ed9347f'
 const accessToken = 'header.eyJleHAiOjQxMDI0NDQ4MDAsInNlc3Npb25faWQiOiI3YzIxNzAxYS01NmVkLTRjNjQtOGM0Ny1jOWRjNTE2ZTQzOTgifQ.signature'
 
 type OperationalWorkspaceFixture = {
@@ -34,20 +37,23 @@ const shared = vi.hoisted(() => ({
   activationError: null as Error | null,
   activationFailureKind: 'transient' as 'invalid' | 'terminal' | 'transient',
   authGetSessionPromise: null as Promise<{
-    data: { session: { access_token: string } | null }
+    data: { session: { access_token: string; user: { id: string } } | null }
     error?: Error | null
   }> | null,
+  authUserId: 'b25a5f5f-45b6-4e43-87a6-79298ed9347f',
   authSourceActive: true,
-  authListener: null as null | ((event: string, session: { access_token: string } | null) => void),
+  authListener: null as null | ((event: string, session: { access_token: string; user: { id: string } } | null) => void),
   browserListener: null as ((action: 'cleared' | 'updated') => void) | null,
   hydrateError: null as Error | null,
   hydrateTransient: true,
   hydrateResult: null as null | { accessToken: string; expiresAt: number; refreshToken: string; scope: 'platform' | 'sygsphere' },
+  operationalWorkspaceError: null as Error | null,
   operationalWorkspace: { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' } as OperationalWorkspaceFixture,
   requiredActionBlocking: false,
   requiredActionError: null as Error | null,
   scope: null as null | 'platform' | 'sygsphere',
   sessionContextError: null as Error | null,
+  sessionContextTransient: true,
 }))
 
 vi.mock('../lib/sharedIdentitySession', () => ({
@@ -92,11 +98,13 @@ vi.mock('../lib/supabase', () => ({
     auth: {
       getSession: vi.fn(async () => shared.authGetSessionPromise ?? {
         data: {
-          session: shared.activeAccessToken ? { access_token: shared.activeAccessToken } : null,
+          session: shared.activeAccessToken
+            ? { access_token: shared.activeAccessToken, user: { id: shared.authUserId } }
+            : null,
         },
         error: null,
       }),
-      onAuthStateChange: vi.fn((listener: (event: string, session: { access_token: string } | null) => void) => {
+      onAuthStateChange: vi.fn((listener: (event: string, session: { access_token: string; user: { id: string } } | null) => void) => {
         shared.authListener = listener
         return { data: { subscription: { unsubscribe: vi.fn() } } }
       }),
@@ -113,8 +121,15 @@ vi.mock('../lib/supabase', () => ({
 }))
 
 vi.mock('../data/auth', () => ({
+  LOCAL_SIGN_OUT_BARRIER_EVENT: 'sygshift:local-sign-out-barrier-change',
+  LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY: 'sygshift:local-sign-out-barrier:v1',
   SESSION_CONTEXT_REFRESH_EVENT: 'sygshift:session-context-refresh',
   authSessionIdFromAccessToken: vi.fn(() => '7c21701a-56ed-4c64-8c47-c9dc516e4398'),
+  beginLocalSignOutBarrier: vi.fn(() => {
+    window.localStorage.setItem('sygshift:local-sign-out-barrier:v1', 'blocked')
+    window.dispatchEvent(new Event('sygshift:local-sign-out-barrier-change'))
+  }),
+  clearPendingTotpEnrollment: vi.fn(() => window.sessionStorage.removeItem('sygshift:totp-setup')),
   getSessionContext: vi.fn(async () => {
     if (shared.sessionContextError) throw shared.sessionContextError
     return {
@@ -147,15 +162,24 @@ vi.mock('../data/auth', () => ({
       username: 'shareduser',
     }
   }),
-  isTransientSessionContextError: vi.fn((error: unknown) => error === shared.sessionContextError),
+  hasLocalSignOutBarrier: vi.fn(() => window.localStorage.getItem('sygshift:local-sign-out-barrier:v1') === 'blocked'),
+  isTransientSessionContextError: vi.fn((error: unknown) => (
+    shared.sessionContextTransient && error === shared.sessionContextError
+  )),
   recordCompletedSignInWithRetry: vi.fn(async () => undefined),
-  signOut: vi.fn(async () => undefined),
+  signOut: vi.fn(async (_options?: { sharedIdentityServerSessionCleared?: boolean }) => {
+    window.localStorage.removeItem('sygshift:local-sign-out-barrier:v1')
+    window.dispatchEvent(new Event('sygshift:local-sign-out-barrier-change'))
+  }),
 }))
 
 vi.mock('../data/announcements', () => ({ getActiveAnnouncementBanners: vi.fn(async () => []) }))
 vi.mock('../data/timeOperations', async (loadOriginal) => ({
   ...await loadOriginal<typeof import('../data/timeOperations')>(),
-  getTimekeepingOperationsWorkspace: vi.fn(async () => shared.operationalWorkspace),
+  getTimekeepingOperationsWorkspace: vi.fn(async () => {
+    if (shared.operationalWorkspaceError) throw shared.operationalWorkspaceError
+    return shared.operationalWorkspace
+  }),
 }))
 vi.mock('../data/actionCenter', () => ({
   getRequiredActionCheckpoint: vi.fn(async () => {
@@ -185,7 +209,10 @@ vi.mock('../data/myAccount', () => ({
 }))
 vi.mock('../data/pushNotifications', () => ({ clearPushSession: vi.fn(async () => undefined) }))
 vi.mock('../lib/payrollReminder', () => ({ shouldShowPayrollExportReminder: vi.fn(() => false) }))
-vi.mock('../lib/time', () => ({ lastCompletedPayrollWeek: vi.fn(() => ({ fromLabel: '09/01/2026', throughLabel: '09/07/2026' })) }))
+vi.mock('../lib/time', async (loadOriginal) => ({
+  ...await loadOriginal<typeof import('../lib/time')>(),
+  lastCompletedPayrollWeek: vi.fn(() => ({ fromLabel: '09/01/2026', throughLabel: '09/07/2026' })),
+}))
 vi.mock('../lib/theme', () => ({
   applyTheme: vi.fn(),
   getCurrentTheme: vi.fn(() => 'light'),
@@ -200,7 +227,9 @@ vi.mock('./SygSphereLauncher', () => ({ SygSphereLauncher: () => null }))
 vi.mock('./SygilantLauncher', () => ({ SygilantLauncher: () => null }))
 vi.mock('./SygTasksLauncher', () => ({ SygTasksLauncher: () => null }))
 vi.mock('./SygTasksAlarmHost', () => ({ SygTasksAlarmHost: () => null }))
-vi.mock('./OperationalTimeHeader', () => ({ OperationalTimeHeader: () => <header>Header</header> }))
+vi.mock('./OperationalTimeHeader', () => ({
+  OperationalTimeHeader: ({ accountControls }: { accountControls?: React.ReactNode }) => <header>Header{accountControls}</header>,
+}))
 vi.mock('./HeaderNotificationButton', () => ({ HeaderNotificationButton: () => null }))
 vi.mock('./LiveNotifications', () => ({ LiveNotifications: () => null }))
 
@@ -209,17 +238,20 @@ beforeEach(() => {
   shared.activationError = null
   shared.activationFailureKind = 'transient'
   shared.authGetSessionPromise = null
+  shared.authUserId = authUserId
   shared.authListener = null
   shared.authSourceActive = true
   shared.browserListener = null
   shared.hydrateError = null
   shared.hydrateTransient = true
   shared.hydrateResult = null
+  shared.operationalWorkspaceError = null
   shared.operationalWorkspace = { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' }
   shared.requiredActionBlocking = false
   shared.requiredActionError = null
   shared.scope = null
   shared.sessionContextError = null
+  shared.sessionContextTransient = true
   localStorage.clear()
   sessionStorage.clear()
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
@@ -230,6 +262,7 @@ afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.clearAllMocks()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -269,6 +302,64 @@ describe('AppShell shared-session lifecycle', () => {
 
     expect(await screen.findByText('Platform home')).toBeInTheDocument()
     expect(screen.queryByText('Account security')).not.toBeInTheDocument()
+  })
+
+  it('realigns attendance alert queries to verified server time when the device date is wrong', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-04T12:00:00.000Z'))
+    shared.operationalWorkspace = { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' }
+    const timeOperations = await import('../data/timeOperations')
+    const getWorkspace = vi.mocked(timeOperations.getTimekeepingOperationsWorkspace)
+    prepareSharedSession('platform')
+    renderShell('/')
+
+    await screen.findByText('Platform home')
+    await waitFor(() => {
+      expect(getWorkspace).toHaveBeenCalledWith('2026-10-04', '2026-10-04')
+      expect(getWorkspace).toHaveBeenCalledWith('2026-10-05', '2026-10-05')
+    })
+  })
+
+  it('locks the workspace instead of claiming success when local sign out fails', async () => {
+    const user = userEvent.setup()
+    const auth = await import('../data/auth')
+    vi.mocked(auth.signOut).mockRejectedValueOnce(new Error('Your local browser session could not be cleared.'))
+    prepareSharedSession('platform')
+    renderShell('/')
+
+    await screen.findByText('Platform home')
+    await user.click(screen.getByRole('button', { name: 'Sign Out' }))
+
+    expect(await screen.findByRole('heading', { name: 'Sign out could not be completed' })).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+    expect(screen.queryByText('Native login')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try sign out again' })).toBeEnabled()
+  })
+
+  it('keeps a failed local sign-out locked after reload and propagates the lock across tabs', async () => {
+    const auth = await import('../data/auth')
+    localStorage.setItem('sygshift:local-sign-out-barrier:v1', 'blocked')
+    prepareSharedSession('platform')
+    const firstView = renderShell('/')
+
+    expect(await screen.findByRole('heading', { name: 'Sign out could not be completed' })).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+    expect(vi.mocked(auth.getSessionContextWithSignal)).not.toHaveBeenCalled()
+
+    firstView.unmount()
+    cleanup()
+    localStorage.removeItem('sygshift:local-sign-out-barrier:v1')
+    prepareSharedSession('platform')
+    renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+
+    localStorage.setItem('sygshift:local-sign-out-barrier:v1', 'blocked')
+    fireEvent(window, new StorageEvent('storage', {
+      key: 'sygshift:local-sign-out-barrier:v1',
+      newValue: 'blocked',
+    }))
+
+    expect(await screen.findByRole('heading', { name: 'Sign out could not be completed' })).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
   })
 
   it('keeps the verified workspace open when required-action details are temporarily unavailable', async () => {
@@ -646,7 +737,7 @@ describe('AppShell shared-session lifecycle', () => {
     const view = renderShell('/')
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(100)
     })
     expect(screen.getByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
 
@@ -679,11 +770,70 @@ describe('AppShell shared-session lifecycle', () => {
     prepareSharedSession('platform')
     renderShell('/')
 
-    expect(await screen.findByText('Current urgent alert')).toBeVisible()
+    await waitFor(() => expect(screen.getByText('Current urgent alert')).toBeVisible())
     expect(screen.getByLabelText('Alert 1 of 2')).toBeVisible()
     expect(screen.queryByText('Expired alert')).not.toBeInTheDocument()
     expect(screen.queryByText('Inactive alert')).not.toBeInTheDocument()
     expect(screen.queryByText('Resolved alert')).not.toBeInTheDocument()
+  })
+
+  it('advances a successful server timestamp using elapsed client time', () => {
+    const advancedTimestamp = advanceServerTimestamp(
+      '2026-10-05T12:00:00.000Z',
+      Date.parse('2026-10-05T12:00:05.000Z'),
+      Date.parse('2026-10-05T12:00:35.000Z'),
+    )
+    const alert = operationalAlert('Brief urgent alert', { liveUntil: '2026-10-05T12:00:10.000Z' })
+
+    expect(advancedTimestamp).toBe('2026-10-05T12:00:30.000Z')
+    expect(isOperationalAlertLive(alert, '2026-10-05T12:00:00.000Z')).toBe(true)
+    expect(isOperationalAlertLive(alert, advancedTimestamp)).toBe(false)
+  })
+
+  it('derives elapsed server time from a monotonic clock instead of a corrected device clock', () => {
+    const deviceClock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2036-10-05T12:00:35.000Z'))
+
+    expect(advanceServerTimestamp('2026-10-05T12:00:00.000Z', 5_000, 35_000))
+      .toBe('2026-10-05T12:00:30.000Z')
+    expect(deviceClock).not.toHaveBeenCalled()
+  })
+
+  it('uses the operational date and refreshes it after operational midnight', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime('2026-10-05T05:59:55.000Z')
+    prepareSharedSession('platform')
+    const view = renderShell('/')
+    const { getTimekeepingOperationsWorkspace } = await import('../data/timeOperations')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100)
+    })
+    expect(getTimekeepingOperationsWorkspace).toHaveBeenCalledWith('2026-10-04', '2026-10-04')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000)
+    })
+    expect(getTimekeepingOperationsWorkspace).toHaveBeenCalledWith('2026-10-05', '2026-10-05')
+    view.unmount()
+  })
+
+  it('hides previously loaded attendance facts when alert verification fails', async () => {
+    shared.operationalWorkspace = {
+      serverTimestamp: '2026-10-05T12:00:00.000Z',
+      alerts: [operationalAlert('Previously verified urgent alert', { liveUntil: '2026-10-05T13:00:00.000Z' })],
+    }
+    prepareSharedSession('platform')
+    const { queryClient } = renderShell('/')
+
+    await waitFor(() => expect(screen.getByText('Previously verified urgent alert')).toBeVisible())
+    shared.operationalWorkspaceError = new Error('attendance service unavailable')
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['time-operations-shell-alerts'] })
+    })
+
+    expect(await screen.findByText(/Attendance alerts could not be verified/)).toBeVisible()
+    expect(screen.queryByText('Previously verified urgent alert')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Retry alerts' })).toHaveLength(1)
   })
 
   it('switches scaled laptop viewports to the full-width navigation drawer without losing the saved desktop preference', async () => {
@@ -853,10 +1003,103 @@ describe('AppShell shared-session lifecycle', () => {
     expect(deactivateSharedIdentitySupabaseSession).not.toHaveBeenCalled()
   })
 
-  it('purges Client Communications and session context caches when the authenticated session ends', async () => {
+  it('locks and purges a previously verified workspace when terminal account verification and local sign out both fail', async () => {
+    const auth = await import('../data/auth')
+    vi.mocked(auth.getSessionContextWithSignal).mockResolvedValueOnce({
+      displayName: 'Native User',
+      employeeId,
+      hasMfa: true,
+      mfaEnrolledAt: '2026-01-01T00:00:00.000Z',
+      mfaRequired: true,
+      mustChangePassword: false,
+      passwordChangedAt: '2026-01-01T00:00:00.000Z',
+      permissions: ['actions.self.view', 'operations.view', 'time.view'],
+      role: 'guard',
+      timeZone: 'America/Denver',
+      username: 'nativeuser',
+    })
+    shared.activeAccessToken = accessToken
+    const { queryClient } = renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    queryClient.setQueryData(['employee-private-record'], { employeeId, note: 'private' })
+
+    vi.mocked(auth.signOut).mockRejectedValueOnce(new Error('local browser credential cleanup failed'))
+    shared.sessionContextError = new Error('employee link removed')
+    shared.sessionContextTransient = false
+
+    await act(async () => {
+      window.dispatchEvent(new Event('sygshift:session-context-refresh'))
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Sign out could not be completed' })).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+    expect(screen.queryByText('Native login')).not.toBeInTheDocument()
+    expect(queryClient.getQueryData(['employee-private-record'])).toBeUndefined()
+    expect(screen.getByText(/account is no longer authorized/)).toBeInTheDocument()
+  })
+
+  it('sets the browser-wide sign-out barrier before shared revocation and keeps reloads and sibling tabs locked when revocation fails', async () => {
+    prepareSharedSession('platform')
+    const firstView = renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+
+    const auth = await import('../data/auth')
+    const sharedSession = await import('../lib/sharedIdentitySession')
+    const { deactivateSharedIdentitySupabaseSession } = await import('../lib/supabase')
+    const clearQueries = vi.spyOn(firstView.queryClient, 'clear')
+    sessionStorage.setItem('sygshift:totp-setup', JSON.stringify({ secret: 'pending-enrollment' }))
+    vi.mocked(sharedSession.clearSharedIdentityServerSession).mockRejectedValueOnce(new Error('shared revocation unavailable'))
+    shared.sessionContextError = new Error('employee link removed')
+    shared.sessionContextTransient = false
+
+    await act(async () => {
+      window.dispatchEvent(new Event('sygshift:session-context-refresh'))
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Sign out could not be completed' })).toBeInTheDocument()
+    expect(localStorage.getItem('sygshift:local-sign-out-barrier:v1')).toBe('blocked')
+    expect(vi.mocked(auth.beginLocalSignOutBarrier).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(sharedSession.clearSharedIdentityServerSession).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    )
+    expect(sharedSession.clearSharedIdentityServerSession).toHaveBeenCalledWith(accessToken)
+    expect(auth.signOut).not.toHaveBeenCalled()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+    expect(deactivateSharedIdentitySupabaseSession).toHaveBeenCalled()
+    expect(sharedSession.clearSharedIdentitySession).toHaveBeenCalled()
+    expect(shared.activeAccessToken).toBeNull()
+    expect(shared.scope).toBeNull()
+    expect(sessionStorage.getItem('sygshift:totp-setup')).toBeNull()
+    expect(vi.mocked(deactivateSharedIdentitySupabaseSession).mock.invocationCallOrder[0]).toBeLessThan(
+      clearQueries.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    )
+    expect(vi.mocked(sharedSession.clearSharedIdentitySession).mock.invocationCallOrder[0]).toBeLessThan(
+      clearQueries.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    )
+
+    firstView.unmount()
+    cleanup()
+    vi.clearAllMocks()
+    shared.sessionContextError = null
+    prepareSharedSession('platform')
+    renderShell('/')
+    expect(await screen.findByRole('heading', { name: 'Sign out could not be completed' })).toBeInTheDocument()
+    expect(auth.getSessionContextWithSignal).not.toHaveBeenCalled()
+    expect(shared.activeAccessToken).toBeNull()
+    expect(shared.scope).toBeNull()
+
+    fireEvent(window, new StorageEvent('storage', {
+      key: 'sygshift:local-sign-out-barrier:v1',
+      newValue: 'blocked',
+    }))
+    expect(await screen.findByRole('heading', { name: 'Sign out could not be completed' })).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+  })
+
+  it('purges every cached query and pending enrollment secret when the authenticated session ends', async () => {
     shared.activeAccessToken = accessToken
     const { queryClient } = renderShell('/')
     await waitFor(() => expect(shared.authListener).not.toBeNull())
+    const { getSecurityKeySessionToken, setSecurityKeySession } = await import('../lib/securityKeySession')
 
     const communicationsKey = ['client-communications', employeeId, 'workspace', 'all', '', 1, 20]
     const requiredActionKey = ['required-action-checkpoint', employeeId]
@@ -864,13 +1107,92 @@ describe('AppShell shared-session lifecycle', () => {
     queryClient.setQueryData(requiredActionKey, { blocking: true, items: [{ title: 'Private employee action' }] })
     queryClient.setQueryData(['session-context'], { employeeId })
     queryClient.setQueryData(['unrelated-cache'], { retained: true })
+    queryClient.getMutationCache().build(queryClient, {
+      mutationFn: async () => ({ privateResult: employeeId }),
+      mutationKey: ['employee-private-mutation'],
+    })
+    sessionStorage.setItem('sygshift:totp-setup', JSON.stringify({ secret: 'private-enrollment-secret' }))
+    setSecurityKeySession('employee-a-security-key', '2099-01-01T00:00:00.000Z')
 
     act(() => shared.authListener?.('SIGNED_OUT', null))
 
     expect(queryClient.getQueryData(communicationsKey)).toBeUndefined()
     expect(queryClient.getQueryData(requiredActionKey)).toBeUndefined()
     expect(queryClient.getQueryData(['session-context'])).toBeUndefined()
-    expect(queryClient.getQueryData(['unrelated-cache'])).toEqual({ retained: true })
+    expect(queryClient.getQueryData(['unrelated-cache'])).toBeUndefined()
+    expect(queryClient.getMutationCache().getAll()).toHaveLength(0)
+    expect(sessionStorage.getItem('sygshift:totp-setup')).toBeNull()
+    expect(getSecurityKeySessionToken()).toBeNull()
+  })
+
+  it('refreshes a repeated same-user SIGNED_IN event without clearing cache or remounting the workspace', async () => {
+    const auth = await import('../data/auth')
+    const getContext = vi.mocked(auth.getSessionContextWithSignal)
+    getContext.mockResolvedValue({
+      displayName: 'Native User',
+      employeeId,
+      hasMfa: true,
+      mfaEnrolledAt: '2026-01-01T00:00:00.000Z',
+      mfaRequired: true,
+      mustChangePassword: false,
+      passwordChangedAt: '2026-01-01T00:00:00.000Z',
+      permissions: ['actions.self.view', 'operations.view', 'time.view'],
+      role: 'guard',
+      timeZone: 'America/Denver',
+      username: 'nativeuser',
+    })
+    shared.activeAccessToken = accessToken
+    const { queryClient } = renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    await waitFor(() => expect(shared.authListener).not.toBeNull())
+    const callsBeforeRefresh = getContext.mock.calls.length
+    queryClient.setQueryData(['employee-private-cache'], { retainedForSameUser: true })
+
+    act(() => shared.authListener?.('SIGNED_IN', {
+      access_token: accessToken,
+      user: { id: authUserId },
+    }))
+
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+    expect(screen.queryByText('Checking secure access…')).not.toBeInTheDocument()
+    expect(queryClient.getQueryData(['employee-private-cache'])).toEqual({ retainedForSameUser: true })
+    await waitFor(() => expect(getContext.mock.calls.length).toBeGreaterThan(callsBeforeRefresh))
+  })
+
+  it('purges all cached employee state and TOTP setup when SIGNED_IN changes accounts', async () => {
+    const auth = await import('../data/auth')
+    const pushNotifications = await import('../data/pushNotifications')
+    const { getSecurityKeySessionToken, setSecurityKeySession } = await import('../lib/securityKeySession')
+    vi.mocked(auth.getSessionContextWithSignal).mockResolvedValue({
+      displayName: 'Native User',
+      employeeId,
+      hasMfa: true,
+      mfaEnrolledAt: '2026-01-01T00:00:00.000Z',
+      mfaRequired: true,
+      mustChangePassword: false,
+      passwordChangedAt: '2026-01-01T00:00:00.000Z',
+      permissions: ['actions.self.view', 'operations.view', 'time.view'],
+      role: 'guard',
+      timeZone: 'America/Denver',
+      username: 'nativeuser',
+    })
+    shared.activeAccessToken = accessToken
+    const { queryClient } = renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    await waitFor(() => expect(shared.authListener).not.toBeNull())
+    queryClient.setQueryData(['employee-private-cache'], { employeeId })
+    sessionStorage.setItem('sygshift:totp-setup', JSON.stringify({ secret: 'employee-a-secret' }))
+    setSecurityKeySession('employee-a-security-key', '2099-01-01T00:00:00.000Z')
+
+    act(() => shared.authListener?.('SIGNED_IN', {
+      access_token: 'employee-b-access-token',
+      user: { id: 'c25a5f5f-45b6-4e43-87a6-79298ed9347f' },
+    }))
+
+    expect(queryClient.getQueryData(['employee-private-cache'])).toBeUndefined()
+    expect(sessionStorage.getItem('sygshift:totp-setup')).toBeNull()
+    expect(getSecurityKeySessionToken()).toBeNull()
+    expect(pushNotifications.clearPushSession).toHaveBeenCalledOnce()
   })
 })
 

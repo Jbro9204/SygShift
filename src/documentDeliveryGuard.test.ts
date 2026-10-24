@@ -53,7 +53,8 @@ describe('employee write-up and signature delivery', () => {
     expect(migration).not.toContain("outbox.message_type <> 'document_signature_required'")
     expect(migration).toContain("interval '20 minutes'")
     expect(worker).toContain("const isRequiredDocumentDelivery = job.messageType === 'document_signature_required'")
-    expect(worker).toContain('respectEmployeePreferences && !isRequiredDocumentDelivery')
+    expect(worker).toContain('const recipientManifestFrozen = job.recipientManifestFrozen === true || existingManifest !== null')
+    expect(worker).toMatch(/options\.respectEmployeePreferences\s*&&\s*!isRequiredDocumentDelivery\s*&&\s*!recipientManifestFrozen/)
     expect(worker).toContain("'service_mark_notification_result'")
   })
 

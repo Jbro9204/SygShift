@@ -17,8 +17,13 @@ import { getTimekeepingOperationsWorkspace, isOperationalAlertLive } from '../da
 import { getRequiredActionCheckpoint } from '../data/actionCenter'
 import {
   authSessionIdFromAccessToken,
+  beginLocalSignOutBarrier,
+  clearPendingTotpEnrollment,
   getSessionContextWithSignal,
+  hasLocalSignOutBarrier,
   isTransientSessionContextError,
+  LOCAL_SIGN_OUT_BARRIER_EVENT,
+  LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY,
   recordCompletedSignInWithRetry,
   SESSION_CONTEXT_REFRESH_EVENT,
   signOut,
@@ -34,7 +39,7 @@ import {
   isSupabaseConfigured,
   isTransientSharedIdentitySupabaseSessionError,
 } from '../lib/supabase'
-import { lastCompletedPayrollWeek } from '../lib/time'
+import { dateKeyInTimeZone, lastCompletedPayrollWeek } from '../lib/time'
 import { bindViewDateSelectionOwner, clearViewDateSelections } from '../lib/sessionViewDateSelection'
 import { MaintenanceNotice, MaintenanceUnavailablePanel } from './MaintenanceNotice'
 import { getMaintenanceStatus, maintenanceFeatureForPath } from '../data/maintenance'
@@ -55,6 +60,8 @@ import { RequiredActionsCheckpointNotice } from './RequiredActionsCheckpointNoti
 import { SygSphereCommunicationsRuntimeProvider } from './communications/SygSphereCommunicationsRuntime'
 import { clearPushSession } from '../data/pushNotifications'
 import { completedSignInRecordKind, isSygSpherePath, requiresSecurityCheckpoint, sharedIdentityScopeAllowsPath } from '../lib/securityCheckpoint'
+import { advanceServerTimestamp } from '../lib/operationalAlertClock'
+import { clearSecurityKeySession } from '../lib/securityKeySession'
 import {
   publishSharedIdentityBrowserEvent,
   subscribeToSharedIdentityBrowserEvents,
@@ -79,6 +86,7 @@ const SESSION_ACTIVITY_THROTTLE_MS = 5_000
 const SECURE_ACCESS_REQUEST_TIMEOUT_MS = 12_000
 const REQUIRED_ACTION_CHECKPOINT_TIMEOUT_MS = 8_000
 const WORKSPACE_ALERT_ROTATE_MS = 9_000
+const OPERATIONAL_ALERT_CLOCK_TICK_MS = 15_000
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sygshift.sidebar.collapsed'
 const SIDEBAR_GROUP_STORAGE_KEY = 'sygshift.sidebar.open-group'
 
@@ -103,19 +111,22 @@ class RequiredActionCheckpointTimeoutError extends Error {
   }
 }
 const COMPACT_NAVIGATION_QUERY = '(max-width: 1280px), (max-width: 1366px) and (max-height: 800px)'
-const SESSION_SCOPED_QUERY_ROOTS = [
-  'support',
-  'my-notifications',
-  'notification-device-session',
-  'notification-device-push',
-  'required-action-checkpoint',
-  'sygsphere',
-  'client-communications',
-  'session-context',
-] as const
+const authenticatedClientOwners = new WeakMap<QueryClient, string>()
 
-function clearSessionScopedQueryCaches(queryClient: QueryClient) {
-  for (const key of SESSION_SCOPED_QUERY_ROOTS) queryClient.removeQueries({ queryKey: [key] })
+function clearAuthenticatedBrowserState(queryClient: QueryClient) {
+  // Query keys are not uniformly employee-prefixed. Clearing the complete
+  // client is the only safe account boundary; public data can be fetched again
+  // after the next account is verified.
+  queryClient.clear()
+  authenticatedClientOwners.delete(queryClient)
+  clearPendingTotpEnrollment()
+  clearSecurityKeySession()
+}
+
+function bindAuthenticatedClientOwner(queryClient: QueryClient, employeeId: string) {
+  const previousOwner = authenticatedClientOwners.get(queryClient)
+  if (previousOwner && previousOwner !== employeeId) clearAuthenticatedBrowserState(queryClient)
+  authenticatedClientOwners.set(queryClient, employeeId)
 }
 
 function compactNavigationMatches(): boolean {
@@ -246,15 +257,18 @@ export function AppShell() {
   const [openNavigationGroup, setOpenNavigationGroup] = useState(() => window.localStorage.getItem(SIDEBAR_GROUP_STORAGE_KEY) ?? 'Operations')
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null)
   const [authSessionId, setAuthSessionId] = useState<string | null>(null)
-  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
+  const [authLoading, setAuthLoading] = useState(() => isSupabaseConfigured && !hasLocalSignOutBarrier())
   const [authMessage, setAuthMessage] = useState<string | null>(null)
   const [authRecoveryRequired, setAuthRecoveryRequired] = useState(false)
   const [authRecoveryRetrying, setAuthRecoveryRetrying] = useState(false)
+  const [signOutIncomplete, setSignOutIncomplete] = useState(hasLocalSignOutBarrier)
+  const [signOutPending, setSignOutPending] = useState(false)
   const [logoutWarningRemaining, setLogoutWarningRemaining] = useState<number | null>(null)
   const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(null)
   const [accountSummary, setAccountSummary] = useState<MyAccount | null>(null)
   const [accountRefreshVersion, setAccountRefreshVersion] = useState(0)
   const [theme, setTheme] = useState<SygShiftTheme>(getCurrentTheme)
+  const [operationalAlertClock, setOperationalAlertClock] = useState(() => Date.now())
   const activeMutationCount = useIsMutating()
   const location = useLocation()
   const internalHistoryRef = useRef<InternalNavigationEntry[]>(parseInternalHistory(window.sessionStorage.getItem(INTERNAL_NAVIGATION_STORAGE_KEY)))
@@ -265,6 +279,22 @@ export function AppShell() {
   const payrollReminderWeek = lastCompletedPayrollWeek()
   const showPayrollReminder = shouldShowPayrollExportReminder(sessionContext)
   const canViewOperationalAlerts = canAccessRoute('/time/operations', sessionContext)
+  const deviceOperationalAlertDate = dateKeyInTimeZone(new Date(operationalAlertClock))
+  const [operationalAlertDate, setOperationalAlertDate] = useState(deviceOperationalAlertDate)
+  const verifiedOperationalDateRef = useRef<string | null>(null)
+  const [operationalAlertServerAnchor, setOperationalAlertServerAnchor] = useState<{
+    dataUpdatedAt: number
+    observedAt: number
+    serverTimestamp: string
+  } | null>(null)
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setOperationalAlertClock(Date.now())
+    }, OPERATIONAL_ALERT_CLOCK_TICK_MS)
+    return () => window.clearInterval(interval)
+  }, [])
+
   const activeBannerQuery = useQuery({
     enabled: isSupabaseConfigured && Boolean(sessionContext),
     queryFn: getActiveAnnouncementBanners,
@@ -273,11 +303,8 @@ export function AppShell() {
   })
   const operationalAlertQuery = useQuery({
     enabled: isSupabaseConfigured && canViewOperationalAlerts,
-    queryFn: () => {
-      const today = new Date().toISOString().slice(0, 10)
-      return getTimekeepingOperationsWorkspace(today, today)
-    },
-    queryKey: ['time-operations-shell-alerts'],
+    queryFn: () => getTimekeepingOperationsWorkspace(operationalAlertDate, operationalAlertDate),
+    queryKey: ['time-operations-shell-alerts', operationalAlertDate],
     refetchInterval: 30_000,
   })
   const maintenanceStatusQuery = useQuery({
@@ -302,6 +329,49 @@ export function AppShell() {
   })
   const requiredActionCheckpoint = requiredActionQuery.data ?? null
   const requiredActionCheckpointActive = Boolean(requiredActionCheckpoint?.blocking)
+  const operationalAlertServerTimestamp = operationalAlertQuery.data?.serverTimestamp
+  const matchingOperationalAlertServerAnchor = operationalAlertServerAnchor
+    && operationalAlertServerAnchor.dataUpdatedAt === operationalAlertQuery.dataUpdatedAt
+    && operationalAlertServerAnchor.serverTimestamp === operationalAlertServerTimestamp
+      ? operationalAlertServerAnchor
+      : null
+  const operationalAlertReferenceTimestamp = advanceServerTimestamp(
+    operationalAlertServerTimestamp,
+    matchingOperationalAlertServerAnchor?.observedAt ?? performance.now(),
+    performance.now(),
+  )
+  const operationalResultDate = operationalAlertReferenceTimestamp
+    ? dateKeyInTimeZone(new Date(operationalAlertReferenceTimestamp))
+    : null
+  const operationalAlertVerificationFailed = operationalAlertQuery.isError || operationalAlertQuery.isRefetchError
+  const operationalAlertsVerified = (
+    !operationalAlertVerificationFailed
+    && Boolean(operationalAlertQuery.data)
+    && operationalResultDate === operationalAlertDate
+  )
+
+  useEffect(() => {
+    if (!operationalAlertServerTimestamp || operationalAlertQuery.dataUpdatedAt <= 0) {
+      setOperationalAlertServerAnchor(null)
+      return
+    }
+    setOperationalAlertServerAnchor({
+      dataUpdatedAt: operationalAlertQuery.dataUpdatedAt,
+      observedAt: performance.now(),
+      serverTimestamp: operationalAlertServerTimestamp,
+    })
+  }, [operationalAlertQuery.dataUpdatedAt, operationalAlertServerTimestamp])
+
+  useEffect(() => {
+    if (operationalResultDate) {
+      verifiedOperationalDateRef.current = operationalResultDate
+      setOperationalAlertDate((current) => current === operationalResultDate ? current : operationalResultDate)
+      return
+    }
+    if (!verifiedOperationalDateRef.current) {
+      setOperationalAlertDate((current) => current === deviceOperationalAlertDate ? current : deviceOperationalAlertDate)
+    }
+  }, [deviceOperationalAlertDate, operationalResultDate])
   const workspaceAlerts = useMemo<WorkspaceAlertEntry[]>(() => {
     const announcementAlerts = (activeBannerQuery.data ?? [])
       .filter((banner) => banner.tone === 'urgent')
@@ -322,9 +392,9 @@ export function AppShell() {
         }
       })
 
-    const attendanceAlerts = (operationalAlertQuery.data?.alerts ?? [])
+    const attendanceAlerts = (operationalAlertsVerified ? (operationalAlertQuery.data?.alerts ?? []) : [])
       .filter((alert) => (
-        isOperationalAlertLive(alert, operationalAlertQuery.data?.serverTimestamp)
+        isOperationalAlertLive(alert, operationalAlertReferenceTimestamp)
         && !alert.acknowledgedAt
         && (alert.priority === 'urgent' || alert.priority === 'high')
       ))
@@ -357,7 +427,7 @@ export function AppShell() {
         ctaLabel: 'Open Time & Attendance',
       },
     ]
-  }, [activeBannerQuery.data, operationalAlertQuery.data?.alerts, operationalAlertQuery.data?.serverTimestamp, payrollReminderWeek.fromLabel, payrollReminderWeek.throughLabel, sessionContext, showPayrollReminder])
+  }, [activeBannerQuery.data, operationalAlertQuery.data?.alerts, operationalAlertReferenceTimestamp, operationalAlertsVerified, payrollReminderWeek.fromLabel, payrollReminderWeek.throughLabel, sessionContext, showPayrollReminder])
 
   const visibleNavigationGroups = navigationGroups
     .map((group) => ({
@@ -562,6 +632,7 @@ export function AppShell() {
     let sessionRecoveryAttempt = 0
     let sessionRecoveryTimer: number | undefined
     let unsubscribeSharedBrowserEvents: () => void = () => undefined
+    let activeAuthUserId: string | null = null
 
     if (!isSupabaseConfigured) {
       setAuthLoading(false)
@@ -597,6 +668,25 @@ export function AppShell() {
       setAuthRecoveryRetrying(false)
     }
 
+    function enforceLocalSignOutBarrier() {
+      invalidateSessionLoads()
+      // The barrier event can arrive in a sibling tab while a shared bearer is
+      // still mounted in memory. Tear down both credential sources and pending
+      // enrollment material synchronously before clearing cached workspace
+      // state; removing the storage marker later must never revive that bearer.
+      deactivateSharedIdentitySupabaseSession()
+      clearSharedIdentitySession()
+      clearPendingTotpEnrollment()
+      clearSecurityKeySession()
+      clearAuthenticatedBrowserState(queryClient)
+      setAuthSessionId(null)
+      setSessionContext(null)
+      setAuthRecoveryRequired(false)
+      setAuthLoading(false)
+      setSignOutIncomplete(true)
+      setAuthMessage('Your browser sign-out could not be fully confirmed. The workspace remains locked on this device; try sign out again and do not leave this device unattended.')
+    }
+
     authSessionInvalidationRef.current = invalidateSessionLoads
 
     async function runSecureAccessRequest<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -624,7 +714,7 @@ export function AppShell() {
       invalidateSessionLoads()
       clearSharedIdentityRefreshTimer()
       clearSessionRecoveryTimer(true)
-      clearSessionScopedQueryCaches(queryClient)
+      clearAuthenticatedBrowserState(queryClient)
       deactivateSharedIdentitySupabaseSession()
       clearSharedIdentitySession()
       clearViewDateSelections()
@@ -699,7 +789,7 @@ export function AppShell() {
         return 'missing'
       }
       if (restored.scope === 'sygsphere' && !isSygSpherePath(window.location.pathname)) {
-        void clearSharedIdentityServerSession(restored.accessToken)
+        void clearSharedIdentityServerSession(restored.accessToken).catch(() => undefined)
         tearDownSharedIdentitySession(null, notifyOtherTabs)
         return 'missing'
       }
@@ -722,7 +812,7 @@ export function AppShell() {
           return 'retrying'
         }
         if (isConfirmedInvalidSharedIdentitySupabaseSessionError(error)) {
-          void clearSharedIdentityServerSession(restored.accessToken)
+          void clearSharedIdentityServerSession(restored.accessToken).catch(() => undefined)
           tearDownSharedIdentitySession(
             'Your secure shared session is no longer valid. Open SygShift from Sygilant again or sign in directly.',
             notifyOtherTabs,
@@ -748,6 +838,10 @@ export function AppShell() {
       notifyOtherTabs = false,
     ) {
       if (!isCurrentSessionGeneration(generation)) return
+      if (hasLocalSignOutBarrier()) {
+        enforceLocalSignOutBarrier()
+        return
+      }
       if (showLoading) setAuthLoading(true)
       setAuthMessage(null)
 
@@ -769,7 +863,7 @@ export function AppShell() {
           || sharedRestoreOutcome === 'restored'
           || sharedRestoreOutcome === 'retrying'
         if (sharedSessionExpected && isConfirmedInvalidSharedIdentitySupabaseSessionError(error)) {
-          void clearSharedIdentityServerSession()
+          void clearSharedIdentityServerSession().catch(() => undefined)
           tearDownSharedIdentitySession(
             'Your secure shared session is no longer valid. Open SygShift from Sygilant again or sign in directly.',
             notifyOtherTabs,
@@ -792,6 +886,7 @@ export function AppShell() {
         return
       }
       if (!isCurrentSessionGeneration(generation)) return
+      activeAuthUserId = data.session?.user?.id ?? null
       setAuthSessionId(data.session ? authSessionIdFromAccessToken(data.session.access_token) : null)
 
       if (!data.session) {
@@ -800,7 +895,7 @@ export function AppShell() {
           setAuthLoading(false)
           return
         }
-        clearSessionScopedQueryCaches(queryClient)
+        clearAuthenticatedBrowserState(queryClient)
         deactivateSharedIdentitySupabaseSession()
         clearSharedIdentitySession()
         clearViewDateSelections()
@@ -814,6 +909,7 @@ export function AppShell() {
         const context = await runSecureAccessRequest((signal) => getSessionContextWithSignal(signal))
         if (!isCurrentSessionGeneration(generation)) return
         if (sharedRestoreOutcome !== 'retrying') clearSessionRecoveryTimer(true)
+        bindAuthenticatedClientOwner(queryClient, context.employeeId)
         queryClient.setQueryData(['session-context'], context)
         bindViewDateSelectionOwner(context.employeeId)
         setSessionContext(context)
@@ -829,17 +925,30 @@ export function AppShell() {
           return
         }
         const wasShared = getSharedIdentitySessionScope() !== null
-        if (wasShared) {
-          void clearSharedIdentityServerSession(data.session.access_token)
-          tearDownSharedIdentitySession(null, true)
-        } else {
-          await signOut()
-          clearSessionScopedQueryCaches(queryClient)
-        }
-        if (isCurrentSessionGeneration(generation)) {
-          setSessionContext(null)
-          setAuthRecoveryRequired(false)
-          setAuthMessage('Your account is not linked to an active SygShift employee record.')
+        let localSignOutFailed = false
+        try {
+          if (wasShared) {
+            beginLocalSignOutBarrier()
+            await clearSharedIdentityServerSession(data.session.access_token)
+            await signOut({ sharedIdentityServerSessionCleared: true })
+          } else {
+            await signOut()
+          }
+        } catch {
+          localSignOutFailed = true
+        } finally {
+          // A terminal account-verification result is authoritative. Never
+          // leave a previously verified workspace or its cached facts visible
+          // merely because local credential cleanup also failed.
+          clearAuthenticatedBrowserState(queryClient)
+          if (isCurrentSessionGeneration(generation)) {
+            setSessionContext(null)
+            setAuthRecoveryRequired(false)
+            setSignOutIncomplete(localSignOutFailed)
+            setAuthMessage(localSignOutFailed
+              ? 'Your account is no longer authorized, and the local browser session could not be cleared. The workspace remains locked on this device; retry sign out and do not leave this device unattended.'
+              : 'Your account is not linked to an active SygShift employee record.')
+          }
         }
       } finally {
         if (isCurrentSessionGeneration(generation)) setAuthLoading(false)
@@ -934,9 +1043,14 @@ export function AppShell() {
       const authClient = getSupabaseClient()
       const { data: { subscription } } = authClient.auth.onAuthStateChange((_event, session) => {
         if (!isActiveSupabaseClient(authClient)) return
+        if (hasLocalSignOutBarrier()) {
+          enforceLocalSignOutBarrier()
+          return
+        }
         if (!session) {
+          activeAuthUserId = null
           invalidateSessionLoads()
-          clearSessionScopedQueryCaches(queryClient)
+          clearAuthenticatedBrowserState(queryClient)
           void clearPushSession()
           if (!getSharedIdentitySessionScope()) clearSharedIdentitySession()
           deactivateSharedIdentitySupabaseSession()
@@ -949,11 +1063,23 @@ export function AppShell() {
         }
 
         if (getSharedIdentitySessionScope()) return
+        const nextAuthUserId = session.user.id
+        const sameAuthUser = activeAuthUserId === nextAuthUserId
+        activeAuthUserId = nextAuthUserId
         setAuthSessionId(authSessionIdFromAccessToken(session.access_token))
 
         if (_event === 'SIGNED_IN') {
+          if (sameAuthUser) {
+            // Supabase can emit SIGNED_IN again while refreshing or restoring
+            // an already verified browser session. Refresh permissions without
+            // tearing down the employee's active workspace.
+            void loadSessionContext(false)
+            return
+          }
           invalidateSessionLoads()
-          clearSessionScopedQueryCaches(queryClient)
+          clearAuthenticatedBrowserState(queryClient)
+          void clearPushSession()
+          setSessionContext(null)
           void loadSessionContext(true)
           return
         }
@@ -973,16 +1099,31 @@ export function AppShell() {
           invalidateSessionLoads()
           clearSharedIdentityRefreshTimer()
           clearSessionRecoveryTimer(true)
-          clearSessionScopedQueryCaches(queryClient)
+          clearAuthenticatedBrowserState(queryClient)
           setAuthRecoveryRequired(false)
           void loadSessionContext(true)
         }
         return
       }
       invalidateSessionLoads()
-      clearSessionScopedQueryCaches(queryClient)
+      clearAuthenticatedBrowserState(queryClient)
       void loadSessionContext(true, true)
     })
+
+    const synchronizeLocalSignOutBarrier = () => {
+      if (hasLocalSignOutBarrier()) {
+        enforceLocalSignOutBarrier()
+        return
+      }
+      setSignOutIncomplete(false)
+      setAuthMessage(null)
+      void loadSessionContext(true)
+    }
+    const handleLocalSignOutBarrierStorage = (event: StorageEvent) => {
+      if (event.key === LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY) synchronizeLocalSignOutBarrier()
+    }
+    window.addEventListener(LOCAL_SIGN_OUT_BARRIER_EVENT, synchronizeLocalSignOutBarrier)
+    window.addEventListener('storage', handleLocalSignOutBarrierStorage)
 
     const restoreVisibleSharedSession = () => {
       if (document.visibilityState === 'visible' && getSharedIdentitySessionScope()) {
@@ -1008,6 +1149,8 @@ export function AppShell() {
       unsubscribeSharedBrowserEvents()
       document.removeEventListener('visibilitychange', restoreVisibleSharedSession)
       window.removeEventListener(SESSION_CONTEXT_REFRESH_EVENT, refreshSecurityContext)
+      window.removeEventListener(LOCAL_SIGN_OUT_BARRIER_EVENT, synchronizeLocalSignOutBarrier)
+      window.removeEventListener('storage', handleLocalSignOutBarrierStorage)
     }
   }, [queryClient])
 
@@ -1038,17 +1181,24 @@ export function AppShell() {
   }, [accountRefreshVersion, sessionContext?.employeeId])
 
   async function handleSignOut() {
+    if (signOutPending) return
     authSessionInvalidationRef.current?.()
     setAuthMessage(null)
+    setSignOutIncomplete(hasLocalSignOutBarrier())
+    setSignOutPending(true)
 
     try {
       await signOut()
-      clearSessionScopedQueryCaches(queryClient)
-      setSessionContext(null)
-      navigate('/login', { replace: true })
     } catch (error) {
       setAuthMessage(error instanceof Error ? error.message : 'Sign out failed.')
+      setSignOutIncomplete(true)
+      setSignOutPending(false)
+      return
     }
+    setSignOutPending(false)
+    clearAuthenticatedBrowserState(queryClient)
+    setSessionContext(null)
+    navigate('/login', { replace: true })
   }
 
   useEffect(() => {
@@ -1077,11 +1227,14 @@ export function AppShell() {
       authSessionInvalidationRef.current?.()
       try {
         await signOut()
-      } finally {
-        clearSessionScopedQueryCaches(queryClient)
-        setSessionContext(null)
-        navigate('/login', { replace: true, state: { reason: 'inactive' } })
+      } catch (error) {
+        setAuthMessage(error instanceof Error ? error.message : 'Automatic sign out failed.')
+        setSignOutIncomplete(true)
+        return
       }
+      clearAuthenticatedBrowserState(queryClient)
+      setSessionContext(null)
+      navigate('/login', { replace: true, state: { reason: 'inactive' } })
     }
 
     const startTimers = (activityAt: number) => {
@@ -1160,6 +1313,24 @@ export function AppShell() {
           <div className="security-card__actions">
             <button className="primary-action" disabled={authRecoveryRetrying} onClick={retrySecureAccess} type="button">
               {authRecoveryRetrying ? 'Retrying secure access…' : 'Retry secure access'}
+            </button>
+          </div>
+        </section>
+      </main>
+    )
+  }
+
+  if (isSupabaseConfigured && signOutIncomplete) {
+    return (
+      <main className="security-page">
+        <section className="security-card" role="alert">
+          <ShieldAlert aria-hidden="true" size={36} />
+          <h1>Sign out could not be completed</h1>
+          <p>{authMessage ?? 'Your local browser session could not be cleared.'}</p>
+          <p>The workspace is locked across SygShift tabs on this device. Try again before leaving it unattended. If retry continues to fail, contact an administrator from another device.</p>
+          <div className="security-card__actions">
+            <button className="primary-action" disabled={signOutPending} onClick={() => void handleSignOut()} type="button">
+              {signOutPending ? 'Trying sign out again…' : 'Try sign out again'}
             </button>
           </div>
         </section>
@@ -1393,6 +1564,13 @@ export function AppShell() {
           <div className="shell-alert shell-alert--warning" role="alert">
             Required actions could not be refreshed. Your verified workspace remains available, protected access is unchanged, and SygShift will retry automatically.
             <button className="secondary-button secondary-button--small" onClick={() => void requiredActionQuery.refetch()} type="button">Retry check</button>
+          </div>
+        ) : null}
+
+        {canViewOperationalAlerts && operationalAlertVerificationFailed ? (
+          <div className="shell-alert shell-alert--warning" role="alert">
+            Attendance alerts could not be verified. Unverified alert details are hidden while SygShift retries automatically.
+            <button className="secondary-button secondary-button--small" onClick={() => void operationalAlertQuery.refetch()} type="button">Retry alerts</button>
           </div>
         ) : null}
 

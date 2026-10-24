@@ -12,15 +12,18 @@ const accountSecurityPage = readFileSync(join(root, 'src', 'pages', 'AccountSecu
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
 
 describe('employee security and action-center guardrails', () => {
-  it('provides a complete mobile authenticator and one-use recovery path', () => {
+  it('provides mobile authenticator setup while recovery issuance and consumption fail closed', () => {
     expect(accountSecurityPage).toContain('Open authenticator app')
     expect(accountSecurityPage).toContain('copy this setup key and add it manually')
-    expect(accountSecurityPage).toContain('Recovery code')
-    expect(accountSecurityPage).toContain('Download')
+    expect(accountSecurityPage).toContain('One-time recovery-code generation is paused')
+    expect(accountSecurityPage).toContain('Existing protected code records are preserved.')
+    expect(accountSecurityPage).not.toContain('Regenerate recovery codes')
+    expect(accountSecurityPage).not.toContain('Each code works once')
     expect(worker).toContain("url.pathname === '/api/v1/account/mfa-recovery-codes'")
     expect(worker).toContain("url.pathname === '/api/v1/account/mfa-recovery'")
-    expect(worker).toContain("accessTokenAssuranceLevel(session.token) !== 'aal2'")
-    expect(worker).toContain('target_code_hash: await sha256Hex(suppliedCode)')
+    expect(worker).toContain("'mfa_recovery_code_issuance_paused'")
+    expect(worker).toContain("'mfa_recovery_combined_reset_required'")
+    expect(worker).not.toContain('target_code_hash: await sha256Hex(suppliedCode)')
     expect(recoveryMigration).toContain('used_at is null')
     expect(recoveryMigration).toContain('revoked_at is null')
     expect(recoveryMigration).toContain('used_at = clock_timestamp()')

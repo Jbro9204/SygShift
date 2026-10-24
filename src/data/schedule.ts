@@ -203,11 +203,16 @@ const staffingSuggestionSchema = z.object({
 })
 
 const scheduleNotificationResultSchema = z.object({
+  operationId: z.string().uuid(),
   notificationId: z.string().uuid(),
   scheduleId: z.string().uuid(),
   weekStartsOn: z.string(),
   weekEndsOn: z.string(),
   revision: z.number().int().positive(),
+  deliveryState: z.enum(['pending', 'delivered', 'failed', 'suppressed', 'unresolved']),
+  attemptCount: z.number().int().nonnegative(),
+  deliveredAt: z.string().nullable(),
+  failedAt: z.string().nullable(),
 })
 
 const scheduledOvertimePreviewSchema = z.object({
@@ -453,6 +458,7 @@ export interface EmployeeScheduleRow {
 }
 
 const payrollCategoryLoadError = 'Shift payroll classifications could not be loaded. The schedule was not displayed to prevent incorrect payroll labels.'
+const supplementalScheduleLoadError = 'Weekly schedule details could not be verified. The schedule was not displayed to prevent incorrect assignment, work-type, or coverage information.'
 
 function applyShiftPayrollCategories(
   schedule: WeeklySchedule,
@@ -490,13 +496,16 @@ export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySch
   if (!data) return null
 
   const schedule = scheduleSchema.parse(data)
-  const workTypes = workTypeResult.error ? [] : shiftWorkTypeMapSchema.parse(workTypeResult.data ?? [])
+  if (workTypeResult.error || assignmentTypeResult.error || coverageResult.error) {
+    throw new Error(supplementalScheduleLoadError)
+  }
+  const workTypes = shiftWorkTypeMapSchema.parse(workTypeResult.data ?? [])
   const workTypeByShift = new Map(workTypes.map((item) => [item.shiftId, item.workType]))
-  const assignmentTypes = assignmentTypeResult.error ? [] : shiftAssignmentTypeMapSchema.parse(assignmentTypeResult.data ?? [])
+  const assignmentTypes = shiftAssignmentTypeMapSchema.parse(assignmentTypeResult.data ?? [])
   const assignmentTypeByShift = new Map(assignmentTypes.map((item) => [item.shiftId, item.assignmentType]))
   if (payrollCategoryResult.error) throw new Error(payrollCategoryLoadError)
   const payrollCategories = shiftPayrollCategoryMapSchema.parse(payrollCategoryResult.data ?? [])
-  const coverageItems = coverageResult.error ? [] : z.array(shiftCoverageStatusSchema).parse(coverageResult.data ?? [])
+  const coverageItems = z.array(shiftCoverageStatusSchema).parse(coverageResult.data ?? [])
   const coverageByShift = new Map(coverageItems.map((item) => [item.shiftId, item]))
   return applyShiftPayrollCategories({
     ...schedule,
@@ -790,9 +799,14 @@ export async function publishEmployeeScheduleSlice(scheduleId: string, employeeI
   return hydrateShiftPayrollCategories(scheduleSchema.parse(data))
 }
 
-export async function queueSchedulePublishedNotification(scheduleId: string, note?: string | null): Promise<ScheduleNotificationResult> {
+export async function queueSchedulePublishedNotification(
+  scheduleId: string,
+  operationId: string,
+  note?: string | null,
+): Promise<ScheduleNotificationResult> {
   const { data, error } = await getSupabaseClient().rpc('queue_schedule_published_notification', {
     target_schedule_id: scheduleId,
+    target_operation_id: operationId,
     notification_note: note?.trim() || null,
   })
 

@@ -112,7 +112,7 @@ describe('permission surface guardrails', () => {
     expect(schedulePage).toContain('openShiftEmployeeSearch')
     expect(schedulePage).toContain('filterBuilderEmployees(employees, manualEmployeeSearch, manualEmployeeId)')
     expect(schedulePage).toContain("placeholder=\"Search name, role, employment, or armed status\"")
-    expect(schedulePage).toContain('filterBuilderEmployees(builderOptionsQuery.data?.employees ?? [], openShiftEmployeeSearch, openShiftForm.employeeId)')
+    expect(schedulePage).toContain('filterBuilderEmployees(verifiedBuilderOptions?.employees ?? [], openShiftEmployeeSearch, openShiftForm.employeeId)')
     expect(schedulePage).toContain('No active guards match that search.')
   })
 
@@ -129,10 +129,10 @@ describe('permission surface guardrails', () => {
     expect(schedulePage).toContain('const canManageSchedule =')
     expect(schedulePage).toContain('const canUseScheduler = canBuildSchedule && isSchedulerHome')
     expect(schedulePage).toContain('const canEditScheduler = canManageSchedule && isSchedulerHome')
-    expect(schedulePage).toContain('{canUseScheduler ? (')
-    expect(schedulePage).toContain('{canEditScheduler && builderOpen ?')
-    expect(schedulePage).toContain('canEdit={canEditScheduler && !isHistoricalSchedulerWeek}')
-    expect(schedulePage).toContain('canResolve={canEditScheduler && !isHistoricalSchedulerWeek}')
+    expect(schedulePage).toContain('{canUseScheduler && !scheduleQuery.isError ? (')
+    expect(schedulePage).toContain('{canEditScheduler && builderOptionsReady && builderOpen ?')
+    expect(schedulePage).toContain('canEdit={canEditScheduler && builderOptionsReady && !isHistoricalSchedulerWeek}')
+    expect(schedulePage).toContain('canResolve={canEditScheduler && builderOptionsReady && !isHistoricalSchedulerWeek}')
   })
 
   it('keeps route RPCs permission-aware beyond hard-coded app roles', () => {

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
-import { HrisOnboardingPage } from './HrisOnboardingPage'
+import { HrisOnboardingPage, onboardingRefreshError, verifyOnboardingCaseRefresh } from './HrisOnboardingPage'
 
 const getSessionContext = vi.hoisted(() => vi.fn())
 const getHrOnboardingWorkspace = vi.hoisted(() => vi.fn())
@@ -138,5 +138,27 @@ describe('HR onboarding wizard', () => {
     const review = screen.getByRole('group', { name: 'Review and create' })
     expect(within(review).getByText('Recruiting & Licensing')).toBeInTheDocument()
     expect(within(review).queryByText('Recruiting Licensing')).not.toBeInTheDocument()
+  })
+})
+
+describe('onboarding refresh truthfulness', () => {
+  it('does not treat a resolved refetch result containing an error as success', () => {
+    const error = new Error('Refresh timed out.')
+
+    expect(onboardingRefreshError({ error, isError: true })).toBe(error)
+    expect(onboardingRefreshError({ error: null, isError: false })).toBeNull()
+  })
+
+  it('verifies the exact newly created case instead of relying on the previous selection', async () => {
+    const loadCase = vi.fn().mockResolvedValue({ id: 'new-case' })
+
+    await expect(verifyOnboardingCaseRefresh('new-case', loadCase)).resolves.toBeNull()
+    expect(loadCase).toHaveBeenCalledWith('new-case')
+  })
+
+  it('returns a failed newly-created-case verification to the caller', async () => {
+    const error = new Error('The new case could not be loaded.')
+
+    await expect(verifyOnboardingCaseRefresh('new-case', vi.fn().mockRejectedValue(error))).resolves.toBe(error)
   })
 })
