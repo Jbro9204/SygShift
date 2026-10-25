@@ -60,6 +60,26 @@ SygShift does not activate maintenance merely because code was deployed. The sav
 9. Test the changed workflow using the intended role.
 10. Complete maintenance and record the release in `docs/changelogs/`.
 
+### Coordinated database and Worker cutovers
+
+Use the explicit coordinated mode when a migration retires an interface used by the currently deployed Worker and
+the database and Worker therefore cannot be activated independently.
+
+1. Commit and review the exact expected post-activation migration baseline before production changes.
+2. Schedule one read-only window whose release version exactly matches the release tag. Select every coordinated
+   feature required by the release and keep **Employee Time Clock** outside the window.
+3. Activate and verify the window before applying the atomic migration bundle.
+4. Run the normal guarded deploy with `--maintenance-coordinated` and the exact
+   `--maintenance-window-id=<uuid>`. Do not use raw Wrangler promotion commands.
+5. The deploy guard requires a successful candidate Version URL probe, observes the exact active window after
+   promotion, and waits for the window to close or expire before requiring a newer natural scheduled-runtime
+   success from the promoted source commit.
+
+The coordinated guard may restore the prior Worker only while a fresh database read proves that exact read-only
+window remains active. After the window closes or its state cannot be proven, the database-compatible candidate is
+left active and the command returns `manual_intervention`; it never restores a stale Worker against the activated
+database. Keep the release under direct observation until the command reports the final exact-source runtime proof.
+
 ## Recovery
 
 - If the release fails but SygShift remains safe, leave the window active while rolling back or correcting the release.

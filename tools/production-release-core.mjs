@@ -6,6 +6,23 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 const gitShaPattern = /^[0-9a-f]{40}$/i
 const safeTagPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/i
 const sourceTagPattern = /^source-([0-9a-f]{40})$/i
+const productionProject = 'eqkdfrbwtioiqtjsyglg'
+const coordinatedMaintenanceFeatures = Object.freeze([
+  'availability',
+  'communications',
+  'directory',
+  'events_openings',
+  'licensing',
+  'patrol',
+  'payroll',
+  'requests',
+  'roles_permissions',
+  'schedule',
+  'sites_posts',
+  'time_attendance',
+  'training',
+  'user_accounts',
+])
 const readinessConfigurationChecks = Object.freeze([
   'assetsBinding',
   'scheduledRuntimeCoordinator',
@@ -24,6 +41,7 @@ export const releaseOutcomes = Object.freeze({
   badCandidate: 'bad_candidate',
   badRelease: 'bad_release',
   dryRun: 'dry_run',
+  manualIntervention: 'manual_intervention',
   providerOutage: 'provider_outage',
   promotionNotApplied: 'promotion_not_applied',
   released: 'released',
@@ -310,6 +328,7 @@ export async function probeWorker(origin, dependencies = {}, timeoutMs = 8_000, 
   const lastFullSuccessSourceCommit = typeof readinessPayload?.scheduledRuntime?.lastFullSuccessSourceCommit === 'string'
     ? readinessPayload.scheduledRuntime.lastFullSuccessSourceCommit.toLowerCase()
     : null
+  const consecutiveFailures = readinessPayload?.scheduledRuntime?.consecutiveFailures
   const lastFullSuccessAtMs = lastFullSuccessAt ? Date.parse(lastFullSuccessAt) : Number.NaN
   const requiresFullSuccessProof = Object.hasOwn(requirements, 'requiredFullSuccessAfter')
     || Object.hasOwn(requirements, 'requiredSourceCommit')
@@ -327,7 +346,20 @@ export async function probeWorker(origin, dependencies = {}, timeoutMs = 8_000, 
         : lastFullSuccessAt !== requiredFullSuccessAfter)
       && lastFullSuccessSourceCommit === requiredSourceCommit
       && readinessPayload?.checks?.scheduledRuntimeFresh === true)
-  const validReadiness = readiness.ok && readinessPayload?.ready === true && fullSuccessProven
+  const zeroFailuresProven = requirements.requireZeroConsecutiveFailures !== true
+    || consecutiveFailures === 0
+  const strictReadinessProven = requirements.requireStrictReadiness !== true
+    || (readinessPayload?.status === 'ready'
+      && readinessPayload?.scheduledRuntime?.mode === 'closed'
+      && readinessPayload?.checks?.scheduledRuntimeFresh === true
+      && readinessPayload?.checks?.scheduledRuntimeNoFailures === true
+      && readinessConfigurationChecks.every((name) => readinessPayload?.checks?.[name] === true)
+      && Object.values(readinessPayload?.checks ?? {}).every((value) => value === true))
+  const validReadiness = readiness.ok
+    && readinessPayload?.ready === true
+    && fullSuccessProven
+    && zeroFailuresProven
+    && strictReadinessProven
   const deliveryOk = validHealth && root.ok
   return {
     delivery: { ok: deliveryOk },
@@ -346,7 +378,12 @@ export async function probeWorker(origin, dependencies = {}, timeoutMs = 8_000, 
   }
 }
 
-function candidateReadinessIsConfigured(payload, expectedSourceCommit) {
+function candidateReadinessIsConfigured(
+  payload,
+  expectedSourceCommit,
+  allowMaintenanceDegradation = false,
+  expectedPriorSourceCommit = null,
+) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
   const checks = payload.checks
   const scheduledRuntime = payload.scheduledRuntime
@@ -354,34 +391,60 @@ function candidateReadinessIsConfigured(payload, expectedSourceCommit) {
   if (!scheduledRuntime || typeof scheduledRuntime !== 'object' || Array.isArray(scheduledRuntime)) return false
   if (!['closed', 'open', 'recovering'].includes(scheduledRuntime.mode)) return false
   if (typeof checks.scheduledRuntimeFresh !== 'boolean') return false
+  if (allowMaintenanceDegradation && typeof checks.scheduledRuntimeNoFailures !== 'boolean') return false
+  if (allowMaintenanceDegradation
+    && (!Number.isInteger(scheduledRuntime.consecutiveFailures)
+      || scheduledRuntime.consecutiveFailures < 0
+      || checks.scheduledRuntimeNoFailures !== (scheduledRuntime.consecutiveFailures === 0))) return false
   if (!readinessConfigurationChecks.every((name) => checks[name] === true)) return false
-  if (Object.entries(checks).some(([name, value]) => name !== 'scheduledRuntimeFresh' && value !== true)) return false
+  const allowedFalseChecks = allowMaintenanceDegradation
+    ? new Set(['scheduledRuntimeFresh', 'scheduledRuntimeNoFailures'])
+    : new Set(['scheduledRuntimeFresh'])
+  if (Object.entries(checks).some(([name, value]) => !allowedFalseChecks.has(name) && value !== true)) return false
+  if (allowMaintenanceDegradation
+    && (typeof scheduledRuntime.lastFullSuccessAt !== 'string'
+      || !Number.isFinite(Date.parse(scheduledRuntime.lastFullSuccessAt)))) return false
   const recordedSourceCommit = scheduledRuntime.lastFullSuccessSourceCommit
   if (recordedSourceCommit !== null
     && (typeof recordedSourceCommit !== 'string' || !gitShaPattern.test(recordedSourceCommit))) return false
   const normalizedRecordedSourceCommit = typeof recordedSourceCommit === 'string'
     ? recordedSourceCommit.toLowerCase()
     : null
-
   if (payload.ready === true) {
     return payload.status === 'ready'
       && checks.scheduledRuntimeFresh === true
+      && (!allowMaintenanceDegradation || checks.scheduledRuntimeNoFailures === true)
       && scheduledRuntime.mode === 'closed'
       && normalizedRecordedSourceCommit === expectedSourceCommit
   }
   return payload.ready === false
     && payload.status === 'degraded'
     && checks.scheduledRuntimeFresh === false
-    && scheduledRuntime.mode === 'closed'
-    && normalizedRecordedSourceCommit !== expectedSourceCommit
+    && (allowMaintenanceDegradation || scheduledRuntime.mode === 'closed')
+    && (allowMaintenanceDegradation
+      ? normalizedRecordedSourceCommit === expectedPriorSourceCommit
+      : normalizedRecordedSourceCommit !== expectedSourceCommit)
 }
 
-export async function probeCandidateWorker(origin, expectedSourceCommit, dependencies = {}, timeoutMs = 8_000) {
+export async function probeCandidateWorker(
+  origin,
+  expectedSourceCommit,
+  dependencies = {},
+  timeoutMs = 8_000,
+  allowMaintenanceDegradation = false,
+  expectedPriorSourceCommit = null,
+) {
   const normalizedExpectedSourceCommit = typeof expectedSourceCommit === 'string'
     ? expectedSourceCommit.toLowerCase()
     : ''
   if (!gitShaPattern.test(normalizedExpectedSourceCommit)) {
     throw new Error('Candidate preview requires the exact candidate source commit.')
+  }
+  const normalizedExpectedPriorSourceCommit = typeof expectedPriorSourceCommit === 'string'
+    ? expectedPriorSourceCommit.toLowerCase()
+    : null
+  if (allowMaintenanceDegradation && !gitShaPattern.test(normalizedExpectedPriorSourceCommit ?? '')) {
+    throw new Error('Coordinated candidate preview requires the exact prior source commit.')
   }
   const fetchImplementation = dependencies.fetch ?? globalThis.fetch
   const workerOrigin = normalizedOrigin(origin, 'Worker origin')
@@ -406,7 +469,12 @@ export async function probeCandidateWorker(origin, expectedSourceCommit, depende
   const readinessPayload = readiness.value && typeof readiness.value === 'object' ? readiness.value : null
   const validHealth = health.ok && healthPayload?.status === 'ok'
   const validReadiness = readiness.ok
-    && candidateReadinessIsConfigured(readinessPayload, normalizedExpectedSourceCommit)
+    && candidateReadinessIsConfigured(
+      readinessPayload,
+      normalizedExpectedSourceCommit,
+      allowMaintenanceDegradation,
+      normalizedExpectedPriorSourceCommit,
+    )
   const deliveryOk = validHealth && root.ok
   return {
     delivery: { ok: deliveryOk },
@@ -421,12 +489,171 @@ export async function probeCandidateWorker(origin, expectedSourceCommit, depende
   }
 }
 
+function maintenanceReadinessIsSafe(payload, allowedSourceCommits = []) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
+  const checks = payload.checks
+  const scheduledRuntime = payload.scheduledRuntime
+  if (!checks || typeof checks !== 'object' || Array.isArray(checks)) return false
+  if (!scheduledRuntime || typeof scheduledRuntime !== 'object' || Array.isArray(scheduledRuntime)) return false
+  if (!['closed', 'open', 'recovering'].includes(scheduledRuntime.mode)) return false
+  if (!Number.isInteger(scheduledRuntime.consecutiveFailures) || scheduledRuntime.consecutiveFailures < 0) return false
+  if (!readinessConfigurationChecks.every((name) => checks[name] === true)) return false
+  if (Object.entries(checks).some(([name, value]) => (
+    name !== 'scheduledRuntimeFresh'
+    && name !== 'scheduledRuntimeNoFailures'
+    && value !== true
+  ))) return false
+  if (typeof checks.scheduledRuntimeFresh !== 'boolean'
+    || typeof checks.scheduledRuntimeNoFailures !== 'boolean') return false
+  if (checks.scheduledRuntimeNoFailures !== (scheduledRuntime.consecutiveFailures === 0)) return false
+  const recordedSourceCommit = scheduledRuntime.lastFullSuccessSourceCommit
+  if (typeof recordedSourceCommit !== 'string' || !gitShaPattern.test(recordedSourceCommit)) return false
+  if (typeof scheduledRuntime.lastFullSuccessAt !== 'string'
+    || !Number.isFinite(Date.parse(scheduledRuntime.lastFullSuccessAt))) return false
+  const normalizedSourceCommit = recordedSourceCommit.toLowerCase()
+  if (allowedSourceCommits.some((commit) => !gitShaPattern.test(commit))) return false
+  if (allowedSourceCommits.length > 0 && !allowedSourceCommits.includes(normalizedSourceCommit)) return false
+  if (payload.ready === true) {
+    return payload.status === 'ready'
+      && checks.scheduledRuntimeFresh === true
+      && checks.scheduledRuntimeNoFailures === true
+      && scheduledRuntime.mode === 'closed'
+      && scheduledRuntime.consecutiveFailures === 0
+  }
+  return payload.ready === false
+    && payload.status === 'degraded'
+    && checks.scheduledRuntimeFresh === false
+}
+
+export async function probeWorkerDuringMaintenance(
+  origin,
+  dependencies = {},
+  timeoutMs = 8_000,
+  requirements = {},
+) {
+  const fetchImplementation = dependencies.fetch ?? globalThis.fetch
+  const workerOrigin = normalizedOrigin(origin, 'Worker origin')
+  const [health, readiness, root] = await Promise.all([
+    requestJson(fetchImplementation, `${workerOrigin}/api/v1/health`, { method: 'GET' }, [200], timeoutMs),
+    requestJson(fetchImplementation, `${workerOrigin}/api/v1/ready`, { method: 'GET' }, [200, 503], timeoutMs),
+    requestHtml(fetchImplementation, `${workerOrigin}/`, timeoutMs),
+  ])
+  const healthPayload = health.value && typeof health.value === 'object' ? health.value : null
+  const readinessPayload = readiness.value && typeof readiness.value === 'object' ? readiness.value : null
+  const validHealth = health.ok && healthPayload?.status === 'ok'
+  const allowedSourceCommits = Array.isArray(requirements.allowedSourceCommits)
+    ? requirements.allowedSourceCommits.map((commit) => String(commit).toLowerCase())
+    : []
+  const validReadiness = readiness.ok
+    && maintenanceReadinessIsSafe(readinessPayload, allowedSourceCommits)
+  const lastFullSuccessAt = typeof readinessPayload?.scheduledRuntime?.lastFullSuccessAt === 'string'
+    ? readinessPayload.scheduledRuntime.lastFullSuccessAt
+    : null
+  const lastFullSuccessSourceCommit = typeof readinessPayload?.scheduledRuntime?.lastFullSuccessSourceCommit === 'string'
+    ? readinessPayload.scheduledRuntime.lastFullSuccessSourceCommit.toLowerCase()
+    : null
+  const deliveryOk = validHealth && root.ok
+  return {
+    delivery: { ok: deliveryOk },
+    health: { error: health.error, ok: validHealth, status: health.status },
+    ok: deliveryOk && validReadiness,
+    readiness: {
+      error: readiness.error,
+      lastFullSuccessAt,
+      lastFullSuccessSourceCommit,
+      ok: validReadiness,
+      status: readiness.status,
+    },
+    root,
+  }
+}
+
 export async function probeProduction(config, dependencies = {}, workerRequirements = {}) {
   const [worker, upstream] = await Promise.all([
     probeWorker(config.productionOrigin, dependencies, config.timeoutMs, workerRequirements),
     probeUpstream(config, dependencies),
   ])
   return { ok: worker.ok && upstream.ok, upstream, worker }
+}
+
+async function probeProductionDuringMaintenance(config, dependencies = {}) {
+  const [worker, upstream] = await Promise.all([
+    probeWorkerDuringMaintenance(config.productionOrigin, dependencies, config.timeoutMs),
+    probeUpstream(config, dependencies),
+  ])
+  return { ok: worker.ok && upstream.ok, upstream, worker }
+}
+
+export function parseCoordinatedMaintenanceWindow(stdout, expectedId, expectedReleaseVersion) {
+  let payload
+  try {
+    payload = JSON.parse(stdout)
+  } catch {
+    throw new Error('The coordinated maintenance query returned invalid JSON.')
+  }
+  if (!Array.isArray(payload?.rows) || payload.rows.length !== 1) {
+    throw new Error('The exact coordinated maintenance window could not be verified.')
+  }
+  const row = payload.rows[0]
+  if (!row || typeof row !== 'object' || Array.isArray(row)
+    || row.id !== expectedId
+    || row.release_version !== expectedReleaseVersion
+    || row.access_mode !== 'read_only'
+    || !['scheduled', 'completed', 'canceled'].includes(row.status)
+    || !Array.isArray(row.feature_codes)) {
+    throw new Error('The coordinated maintenance window does not match this release.')
+  }
+  const features = [...new Set(row.feature_codes)].sort()
+  if (features.length !== coordinatedMaintenanceFeatures.length
+    || features.some((feature, index) => feature !== coordinatedMaintenanceFeatures[index])) {
+    throw new Error('The coordinated maintenance window does not protect the exact required feature set.')
+  }
+  const startsAtMs = Date.parse(row.starts_at)
+  const endsAtMs = Date.parse(row.ends_at)
+  const serverTimeMs = Date.parse(row.server_time)
+  if (![startsAtMs, endsAtMs, serverTimeMs].every(Number.isFinite) || endsAtMs <= startsAtMs) {
+    throw new Error('The coordinated maintenance window has invalid server timestamps.')
+  }
+  return {
+    active: row.status === 'scheduled' && startsAtMs <= serverTimeMs && serverTimeMs < endsAtMs,
+    endsAt: row.ends_at,
+    remainingMs: Math.max(0, endsAtMs - serverTimeMs),
+    status: row.status,
+  }
+}
+
+function coordinatedMaintenanceQuery(windowId) {
+  return `select id::text, release_version, access_mode, status, feature_codes, starts_at, ends_at, now() as server_time from public.maintenance_windows where id = '${windowId}'::uuid`
+}
+
+async function readCoordinatedMaintenanceWindow(
+  dependencies,
+  commandOptions,
+  options,
+  timeoutMs = 45_000,
+) {
+  let result
+  try {
+    result = await dependencies.run([
+      'dlx', 'supabase@2.121.0', 'db', 'query', '--linked', '--project-ref', productionProject,
+      coordinatedMaintenanceQuery(options.maintenanceWindowId), '-o', 'json',
+    ], { ...commandOptions, timeoutMs: Math.max(1, Math.min(45_000, timeoutMs)) })
+  } catch (error) {
+    if (isCommandTerminationUnconfirmedError(error)) throw error
+    throw new Error('The exact coordinated maintenance window could not be read; release state was not assumed.')
+  }
+  return parseCoordinatedMaintenanceWindow(result.stdout, options.maintenanceWindowId, options.tag)
+}
+
+async function requireActiveCoordinatedMaintenance(dependencies, commandOptions, options) {
+  const maintenance = await readCoordinatedMaintenanceWindow(dependencies, commandOptions, options)
+  if (!maintenance.active) {
+    throw new Error('The exact coordinated maintenance window is not active; the release cannot cross the version boundary.')
+  }
+  if (maintenance.remainingMs < options.maintenanceMinimumRemainingMs) {
+    throw new Error('The coordinated maintenance window does not have enough remaining time for a safe release.')
+  }
+  return maintenance
 }
 
 export function parseCurrentDeployment(stdout) {
@@ -557,6 +784,34 @@ async function runConsecutiveProbes(
     upstreamHealthyWorkerFailures,
     upstreamProbeCount,
   }
+}
+
+async function runConsecutiveMaintenanceProbes(
+  config,
+  dependencies,
+  requiredPasses,
+  maximumAttempts,
+  delayMs,
+  workerRequirements = {},
+) {
+  let consecutive = 0
+  let last = null
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    const [worker, upstream] = await Promise.all([
+      probeWorkerDuringMaintenance(
+        config.productionOrigin,
+        dependencies,
+        config.timeoutMs,
+        workerRequirements,
+      ),
+      probeUpstream(config, dependencies),
+    ])
+    last = { ok: worker.ok && upstream.ok, upstream, worker }
+    consecutive = last.ok ? consecutive + 1 : 0
+    if (consecutive >= requiredPasses) return { attempts: attempt, last, ok: true }
+    if (attempt < maximumAttempts) await dependencies.sleep(delayMs)
+  }
+  return { attempts: maximumAttempts, last, ok: false }
 }
 
 function requirementsDoNotNeedOperationalProof(workerRequirements) {
@@ -697,6 +952,17 @@ function validatedOptions(options) {
   if (!hasCanaryEmail && options.allowBoundaryProbe !== true) {
     throw new Error('Configure a release canary or explicitly allow the weaker anonymous boundary probe.')
   }
+  const maintenanceCoordinated = options.maintenanceCoordinated === true
+  const maintenanceWindowId = options.maintenanceWindowId ?? null
+  if (maintenanceCoordinated && options.dryRun) {
+    throw new Error('Coordinated maintenance mode is available only for a live release.')
+  }
+  if (maintenanceCoordinated !== Boolean(maintenanceWindowId)) {
+    throw new Error('Coordinated maintenance mode requires one exact maintenance window ID.')
+  }
+  if (maintenanceWindowId && !uuidPattern.test(maintenanceWindowId)) {
+    throw new Error('The coordinated maintenance window ID must be a UUID.')
+  }
   const commandTimeoutMs = options.commandTimeoutMs ?? 20 * 60_000
   if (!Number.isFinite(commandTimeoutMs) || commandTimeoutMs <= 0) {
     throw new Error('The release command timeout must be a positive number.')
@@ -727,6 +993,28 @@ function validatedOptions(options) {
   if (!Number.isFinite(probeDelayMs) || probeDelayMs < 0) {
     throw new Error('The production probe delay must be zero or a positive number.')
   }
+  const maintenanceMaximumWaitMs = options.maintenanceMaximumWaitMs ?? 90 * 60_000
+  const maintenanceMinimumRemainingMs = options.maintenanceMinimumRemainingMs ?? 5 * 60_000
+  const maintenancePollDelayMs = options.maintenancePollDelayMs ?? 5_000
+  const maintenanceRecoveryProbeAttempts = options.maintenanceRecoveryProbeAttempts
+    ?? Math.max(maximumProbeAttempts, 180)
+  if (maintenanceCoordinated) {
+    if (!Number.isFinite(maintenanceMaximumWaitMs) || maintenanceMaximumWaitMs <= 0
+      || maintenanceMaximumWaitMs > 24 * 60 * 60_000) {
+      throw new Error('The coordinated maintenance wait must be positive and no more than 24 hours.')
+    }
+    if (!Number.isFinite(maintenancePollDelayMs) || maintenancePollDelayMs <= 0) {
+      throw new Error('The coordinated maintenance poll delay must be positive.')
+    }
+    if (!Number.isFinite(maintenanceMinimumRemainingMs) || maintenanceMinimumRemainingMs <= 0
+      || maintenanceMinimumRemainingMs > 24 * 60 * 60_000) {
+      throw new Error('The coordinated maintenance minimum remaining time must be positive and no more than 24 hours.')
+    }
+    if (!Number.isInteger(maintenanceRecoveryProbeAttempts)
+      || maintenanceRecoveryProbeAttempts < postPromotionPasses) {
+      throw new Error('The maintenance recovery probes must cover the required confirmation passes.')
+    }
+  }
   return {
     ...options,
     candidateAlias: options.candidateAlias ?? null,
@@ -734,6 +1022,12 @@ function validatedOptions(options) {
     // The first release that establishes the scheduler coordinator may need to
     // wait for the next minute trigger before readiness becomes verified.
     maximumProbeAttempts,
+    maintenanceCoordinated,
+    maintenanceMaximumWaitMs,
+    maintenanceMinimumRemainingMs,
+    maintenancePollDelayMs,
+    maintenanceRecoveryProbeAttempts,
+    maintenanceWindowId,
     postPromotionPasses,
     probeDelayMs,
     reconciliationAttempts,
@@ -912,20 +1206,31 @@ async function restoreExactPriorVersion(context) {
     candidateVersionId,
     commandOptions,
     dependencies,
+    maintenanceActive = false,
     options,
+    priorSourceCommit,
     priorVersionId,
   } = context
   const activeVersionId = await readActiveProductionVersion(dependencies, commandOptions, options)
   if (activeVersionId === priorVersionId) {
-    const rollbackVerification = await runConsecutiveProbes(
-      options,
-      dependencies,
-      2,
-      4,
-      options.probeDelayMs,
-      {},
-      options.upstreamProbeIntervalMs,
-    )
+    const rollbackVerification = maintenanceActive
+      ? await runConsecutiveMaintenanceProbes(
+        options,
+        dependencies,
+        2,
+        4,
+        options.probeDelayMs,
+        { allowedSourceCommits: [priorSourceCommit] },
+      )
+      : await runConsecutiveProbes(
+        options,
+        dependencies,
+        2,
+        4,
+        options.probeDelayMs,
+        {},
+        options.upstreamProbeIntervalMs,
+      )
     return {
       productionAlreadyRestored: true,
       rollbackCommandFailed: false,
@@ -961,20 +1266,177 @@ async function restoreExactPriorVersion(context) {
   if (rollbackState.state !== 'prior') {
     throw new Error('Automatic rollback did not restore the exact prior Worker version; manual intervention is required.')
   }
-  const rollbackVerification = await runConsecutiveProbes(
-    options,
-    dependencies,
-    2,
-    4,
-    options.probeDelayMs,
-    {},
-    options.upstreamProbeIntervalMs,
-  )
+  const rollbackVerification = maintenanceActive
+    ? await runConsecutiveMaintenanceProbes(
+      options,
+      dependencies,
+      2,
+      4,
+      options.probeDelayMs,
+      { allowedSourceCommits: [priorSourceCommit] },
+    )
+    : await runConsecutiveProbes(
+      options,
+      dependencies,
+      2,
+      4,
+      options.probeDelayMs,
+      {},
+      options.upstreamProbeIntervalMs,
+    )
   return {
     rollbackCommandFailed,
     rollbackReconciliationAttempts: rollbackState.attempts,
     rollbackStatusReadErrors: rollbackState.hadReadErrors,
     rollbackVerified: rollbackVerification.ok,
+  }
+}
+
+async function waitForCoordinatedMaintenanceToEnd(context) {
+  const {
+    commandOptions,
+    dependencies,
+    options,
+    priorSourceCommit,
+    sourceCommit,
+  } = context
+  const maximumAttempts = Math.max(
+    1,
+    Math.ceil(options.maintenanceMaximumWaitMs / options.maintenancePollDelayMs),
+  )
+  const deadlineAt = dependencies.now() + options.maintenanceMaximumWaitMs
+  let consecutiveDeliveryFailures = 0
+  let consecutiveUnsafeWorkerFailures = 0
+  let observedActiveMaintenance = false
+  let upstreamProbeCount = 0
+  const timedOutResult = (attempts) => ({
+    attempts,
+    cleared: false,
+    maintenanceActiveProven: false,
+    observedActiveMaintenance,
+    releaseLocalFailureObserved: false,
+    timedOut: true,
+    upstreamProbeCount,
+  })
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    const remainingBeforeReadMs = deadlineAt - dependencies.now()
+    if (remainingBeforeReadMs <= 0) return timedOutResult(attempt - 1)
+    let maintenance
+    try {
+      maintenance = await readCoordinatedMaintenanceWindow(
+        dependencies,
+        commandOptions,
+        options,
+        remainingBeforeReadMs,
+      )
+    } catch {
+      return {
+        attempts: attempt,
+        cleared: false,
+        maintenanceReadFailed: true,
+        maintenanceActiveProven: false,
+        observedActiveMaintenance,
+        releaseLocalFailureObserved: true,
+        timedOut: false,
+        upstreamProbeCount,
+      }
+    }
+    if (!maintenance.active) {
+      if (!observedActiveMaintenance) {
+        return {
+          attempts: attempt,
+          cleared: false,
+          cutoverProofLost: true,
+          endedAt: maintenance.endsAt,
+          maintenanceActiveProven: false,
+          observedActiveMaintenance: false,
+          releaseLocalFailureObserved: false,
+          timedOut: false,
+          upstreamProbeCount,
+        }
+      }
+      return {
+        attempts: attempt,
+        cleared: true,
+        endedAt: maintenance.endsAt,
+        maintenanceActiveProven: false,
+        observedActiveMaintenance: true,
+        releaseLocalFailureObserved: false,
+        timedOut: false,
+        upstreamProbeCount,
+      }
+    }
+    observedActiveMaintenance = true
+
+    const remainingBeforeProbeMs = deadlineAt - dependencies.now()
+    // An authenticated upstream sample can perform six sequential requests;
+    // reserve one additional share for event-loop and response parsing time.
+    const probeDeadlineSlices = 7
+    if (remainingBeforeProbeMs < probeDeadlineSlices) return timedOutResult(attempt)
+    const boundedProbeOptions = {
+      ...options,
+      timeoutMs: Math.max(
+        1,
+        Math.min(options.timeoutMs, Math.floor(remainingBeforeProbeMs / probeDeadlineSlices)),
+      ),
+    }
+
+    const [worker] = await Promise.all([
+      probeWorkerDuringMaintenance(
+        options.productionOrigin,
+        dependencies,
+        boundedProbeOptions.timeoutMs,
+        { allowedSourceCommits: [priorSourceCommit, sourceCommit] },
+      ),
+      probeUpstream(boundedProbeOptions, dependencies),
+    ])
+    upstreamProbeCount += 1
+    consecutiveDeliveryFailures = worker.delivery.ok ? 0 : consecutiveDeliveryFailures + 1
+    consecutiveUnsafeWorkerFailures = !worker.ok
+      ? consecutiveUnsafeWorkerFailures + 1
+      : 0
+    if (consecutiveDeliveryFailures >= 2 || consecutiveUnsafeWorkerFailures >= 2) {
+      return {
+        attempts: attempt,
+        cleared: false,
+        maintenanceActiveProven: true,
+        observedActiveMaintenance: true,
+        releaseLocalFailureObserved: true,
+        timedOut: false,
+        upstreamProbeCount,
+      }
+    }
+    const remainingAfterProbeMs = deadlineAt - dependencies.now()
+    if (remainingAfterProbeMs <= 0) return timedOutResult(attempt)
+    if (attempt < maximumAttempts) {
+      await dependencies.sleep(Math.min(options.maintenancePollDelayMs, remainingAfterProbeMs))
+    }
+  }
+  return timedOutResult(maximumAttempts)
+}
+
+async function reconcileExactCandidateForManualIntervention(context) {
+  const {
+    candidateVersionId,
+    commandOptions,
+    dependencies,
+    options,
+    priorVersionId,
+  } = context
+  const candidateState = await reconcileProductionState(
+    dependencies,
+    commandOptions,
+    options,
+    priorVersionId,
+    candidateVersionId,
+    'candidate',
+  )
+  if (candidateState.state !== 'candidate') {
+    throw new Error('The exact candidate is no longer active; manual release reconciliation is required.')
+  }
+  return {
+    manualCandidateReconciliationAttempts: candidateState.attempts,
+    manualCandidateStatusReadErrors: candidateState.hadReadErrors,
   }
 }
 
@@ -1022,15 +1484,94 @@ async function finalizePromotion(context) {
     }
   }
 
+  let coordinatedMaintenance = null
+  if (options.maintenanceCoordinated) {
+    dependencies.log('The exact candidate is active under coordinated maintenance; waiting for the audited window to close or expire.')
+    coordinatedMaintenance = await waitForCoordinatedMaintenanceToEnd({
+      commandOptions,
+      dependencies,
+      options,
+      priorSourceCommit,
+      sourceCommit,
+    })
+    if (!coordinatedMaintenance.cleared) {
+      const rollbackMayBeSafe = !coordinatedMaintenance.maintenanceReadFailed
+        && !coordinatedMaintenance.cutoverProofLost
+        && (coordinatedMaintenance.releaseLocalFailureObserved || coordinatedMaintenance.timedOut)
+      let freshMaintenanceProof = null
+      if (rollbackMayBeSafe) {
+        try {
+          freshMaintenanceProof = await requireActiveCoordinatedMaintenance(
+            dependencies,
+            commandOptions,
+            options,
+          )
+        } catch {
+          freshMaintenanceProof = null
+        }
+      }
+      if (freshMaintenanceProof) {
+        dependencies.log('The candidate failed while the exact maintenance window remained active; restoring the exact prior Worker version.')
+        const rollback = await restoreExactPriorVersion({
+          candidateVersionId,
+          commandOptions,
+          dependencies,
+          maintenanceActive: true,
+          options,
+          priorSourceCommit,
+          priorVersionId,
+        })
+        return {
+          ...common,
+          ...rollback,
+          coordinatedMaintenance: {
+            ...coordinatedMaintenance,
+            maintenanceActiveProven: true,
+            observedActiveMaintenance: true,
+            rollbackMaintenanceEndsAt: freshMaintenanceProof.endsAt,
+            rollbackMaintenanceProof: 'fresh_exact_reread',
+          },
+          outcome: releaseOutcomes.badRelease,
+          promoted: true,
+          rolledBack: true,
+          upstreamProbeCount: coordinatedMaintenance.upstreamProbeCount,
+        }
+      }
+
+      dependencies.log('Coordinated cutover proof is incomplete; leaving the exact candidate active for manual intervention.')
+      const manualReconciliation = await reconcileExactCandidateForManualIntervention({
+        candidateVersionId,
+        commandOptions,
+        dependencies,
+        options,
+        priorVersionId,
+      })
+      return {
+        ...common,
+        ...manualReconciliation,
+        coordinatedMaintenance,
+        manualInterventionRequired: true,
+        outcome: releaseOutcomes.manualIntervention,
+        promoted: true,
+        rolledBack: false,
+        upstreamProbeCount: coordinatedMaintenance.upstreamProbeCount,
+      }
+    }
+  }
+
   const verification = await runConsecutiveProbes(
     options,
     dependencies,
     options.postPromotionPasses,
-    options.maximumProbeAttempts,
+    options.maintenanceCoordinated
+      ? options.maintenanceRecoveryProbeAttempts
+      : options.maximumProbeAttempts,
     options.probeDelayMs,
     {
       requiredFullSuccessAfter: promotionWatermark,
       requiredSourceCommit: sourceCommit,
+      requireStrictReadiness: options.maintenanceCoordinated,
+      requireZeroConsecutiveFailures: options.maintenanceCoordinated,
     },
     options.upstreamProbeIntervalMs,
     2,
@@ -1042,6 +1583,7 @@ async function finalizePromotion(context) {
     }
     return {
       ...common,
+      ...(coordinatedMaintenance ? { coordinatedMaintenance } : {}),
       outcome: releaseOutcomes.released,
       probeAttempts: verification.attempts,
       promoted: true,
@@ -1049,7 +1591,31 @@ async function finalizePromotion(context) {
       scheduledRuntimeFullSuccessAdvancedFrom: promotionWatermark,
       scheduledRuntimeFullSuccessAt: verification.last.worker.readiness.lastFullSuccessAt,
       scheduledRuntimeFullSuccessSourceCommit: verification.last.worker.readiness.lastFullSuccessSourceCommit,
-      upstreamProbeCount: verification.upstreamProbeCount,
+      upstreamProbeCount: verification.upstreamProbeCount
+        + (coordinatedMaintenance?.upstreamProbeCount ?? 0),
+    }
+  }
+
+  if (options.maintenanceCoordinated) {
+    dependencies.log('Post-maintenance proof did not complete; leaving the exact database-compatible candidate active for manual intervention.')
+    const manualReconciliation = await reconcileExactCandidateForManualIntervention({
+      candidateVersionId,
+      commandOptions,
+      dependencies,
+      options,
+      priorVersionId,
+    })
+    return {
+      ...common,
+      ...manualReconciliation,
+      coordinatedMaintenance,
+      manualInterventionRequired: true,
+      outcome: releaseOutcomes.manualIntervention,
+      probeAttempts: verification.attempts,
+      promoted: true,
+      rolledBack: false,
+      upstreamProbeCount: verification.upstreamProbeCount
+        + (coordinatedMaintenance?.upstreamProbeCount ?? 0),
     }
   }
 
@@ -1063,11 +1629,13 @@ async function finalizePromotion(context) {
     }
     return {
       ...common,
+      ...(coordinatedMaintenance ? { coordinatedMaintenance } : {}),
       outcome: releaseOutcomes.providerOutage,
       probeAttempts: verification.attempts,
       promoted: true,
       rolledBack: false,
-      upstreamProbeCount: verification.upstreamProbeCount,
+      upstreamProbeCount: verification.upstreamProbeCount
+        + (coordinatedMaintenance?.upstreamProbeCount ?? 0),
     }
   }
 
@@ -1077,16 +1645,19 @@ async function finalizePromotion(context) {
     commandOptions,
     dependencies,
     options,
+    priorSourceCommit,
     priorVersionId,
   })
   return {
     ...common,
     ...rollback,
+    ...(coordinatedMaintenance ? { coordinatedMaintenance } : {}),
     outcome: releaseOutcomes.badRelease,
     probeAttempts: verification.attempts,
     promoted: true,
     rolledBack: true,
-    upstreamProbeCount: verification.upstreamProbeCount,
+    upstreamProbeCount: verification.upstreamProbeCount
+      + (coordinatedMaintenance?.upstreamProbeCount ?? 0),
   }
 }
 
@@ -1095,6 +1666,7 @@ export async function runProductionRelease(inputOptions, injected = {}) {
   const dependencies = {
     fetch: injected.fetch ?? globalThis.fetch,
     log: injected.log ?? (() => undefined),
+    now: injected.now ?? Date.now,
     run: injected.run ?? createCommandRunner(),
     sleep: injected.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))),
   }
@@ -1104,7 +1676,12 @@ export async function runProductionRelease(inputOptions, injected = {}) {
     timeoutMs: options.commandTimeoutMs,
   }
   dependencies.log('Checking the existing production release and upstream services.')
-  const baseline = await probeProduction(options, dependencies)
+  if (options.maintenanceCoordinated) {
+    await requireActiveCoordinatedMaintenance(dependencies, commandOptions, options)
+  }
+  const baseline = options.maintenanceCoordinated
+    ? await probeProductionDuringMaintenance(options, dependencies)
+    : await probeProduction(options, dependencies)
   if (!baseline.upstream.ok) {
     return { baseline: summarizeProbe(baseline), outcome: releaseOutcomes.providerOutage, promoted: false, rolledBack: false }
   }
@@ -1187,7 +1764,14 @@ export async function runProductionRelease(inputOptions, injected = {}) {
 
   if (versionUrl) {
     dependencies.log('Running read-only checks against the uploaded candidate Version URL.')
-    const candidateProbe = await probeCandidateWorker(versionUrl, sourceCommit, dependencies, options.timeoutMs)
+    const candidateProbe = await probeCandidateWorker(
+      versionUrl,
+      sourceCommit,
+      dependencies,
+      options.timeoutMs,
+      options.maintenanceCoordinated,
+      options.maintenanceCoordinated ? priorSourceCommit : null,
+    )
     candidatePreview = { available: true, checked: true }
     if (!candidateProbe.ok) {
       return {
@@ -1204,6 +1788,22 @@ export async function runProductionRelease(inputOptions, injected = {}) {
     }
   } else {
     dependencies.log('Wrangler did not provide a candidate Version URL; candidate-only smoke checks were not available.')
+    if (options.maintenanceCoordinated) {
+      return {
+        candidatePreview: {
+          ...candidatePreview,
+          reason: 'required_for_coordinated_release',
+        },
+        candidateVersionId,
+        outcome: releaseOutcomes.badCandidate,
+        priorSourceCommit,
+        priorVersionId,
+        promoted: false,
+        rolledBack: false,
+        sourceCommit,
+        versionUrlAvailable: false,
+      }
+    }
   }
 
   const statusBeforePromotion = await dependencies.run(
@@ -1213,7 +1813,17 @@ export async function runProductionRelease(inputOptions, injected = {}) {
   if (parseCurrentDeployment(statusBeforePromotion.stdout) !== priorVersionId) {
     throw new Error('Production changed during the release; the candidate was not promoted.')
   }
-  const prePromotionWorker = await probeWorker(options.productionOrigin, dependencies, options.timeoutMs)
+  if (options.maintenanceCoordinated) {
+    await requireActiveCoordinatedMaintenance(dependencies, commandOptions, options)
+  }
+  const prePromotionWorker = options.maintenanceCoordinated
+    ? await probeWorkerDuringMaintenance(
+      options.productionOrigin,
+      dependencies,
+      options.timeoutMs,
+      { allowedSourceCommits: [priorSourceCommit] },
+    )
+    : await probeWorker(options.productionOrigin, dependencies, options.timeoutMs)
   if (!prePromotionWorker.ok) {
     throw new Error('Production became unhealthy before promotion; the candidate was not promoted.')
   }

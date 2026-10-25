@@ -42,3 +42,24 @@ evidence, scrubs release-only environment values from the CLI process, withholds
 writes only after parsing and validating the complete ledger.
 
 Focused capture, ownership, and release-gate tests passed: 25 tests, 0 failures.
+
+## Reviewed expected post-activation baseline
+
+`migration-ownership-expected-post-activation-v2.json` is a fail-closed expected ledger manifest for this one
+release. It preserves all 386 reviewed production entries byte-for-byte at the manifest level and appends only the
+21 ordered candidate identities and exact statement-array fingerprints produced by the release bundler. The
+candidate statement arrays are the migration bodies that the generated release SQL records in
+`supabase_migrations.schema_migrations`; they are not inferred from a later database dump.
+
+- Expected baseline file SHA-256: `1ff85e053d116036eb922b4058435b063173e839e2a59c380d92a2b1b62af0ca`
+- Exact generated release bundle SHA-256: `e77edeffada18f7b1d186ad64fbb32cdbc4aab7cfbf3d82b2d5e2bf84ad7b00b`
+- Expected applied migrations after activation: 407
+- Expected new applied identities: 21
+- Expected missing applied sources: 0
+- Expected ownership reviews unresolved: 0
+
+This expected manifest does not claim that production has already changed and does not authorize `db push`,
+history rewriting, or replay. Before Worker promotion, the release gate must capture the fresh production ledger
+and compare every version, name, statement-array fingerprint, source owner, and owning-source fingerprint against
+this committed file. Any missing candidate row, extra row, changed checksum, or source drift stops the release.
+After activation, a separate immutable production capture will be retained as the installed-state receipt.

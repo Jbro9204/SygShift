@@ -19,7 +19,9 @@ export function parseProductionReleaseArguments(commandLine) {
     else if (argument === '--dry-run') options.dryRun = true
     else if (argument === '--rollback-safe') options.rollbackSafe = true
     else if (argument === '--allow-boundary-probe') options.allowBoundaryProbe = true
+    else if (argument === '--maintenance-coordinated') options.maintenanceCoordinated = true
     else if (argument.startsWith('--candidate-alias=')) options.candidateAlias = argument.slice('--candidate-alias='.length)
+    else if (argument.startsWith('--maintenance-window-id=')) options.maintenanceWindowId = argument.slice('--maintenance-window-id='.length)
     else if (argument.startsWith('--tag=')) options.tag = argument.slice('--tag='.length)
     else if (argument.startsWith('--message=')) options.message = argument.slice('--message='.length)
     else throw new Error('Unsupported release argument.')
