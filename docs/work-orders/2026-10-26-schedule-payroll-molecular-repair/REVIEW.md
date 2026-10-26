@@ -1,7 +1,7 @@
 # SygShift Schedule and Payroll Molecular Repair
 
 Date: 10/26/2026  
-Status: clean preview and local release verification complete; production release pending  
+Status: released and verified in production
 Application boundary: SygShift only
 
 ## Incident scope
@@ -115,12 +115,36 @@ All new regressions passed, together with event classification, payroll-week ela
 ## Local release gates
 
 - Independent security and migration audit: no release-blocking finding.
-- `pnpm check`: pass; 2,501 tests passed and one skipped, 207 release tests passed, typecheck/lint/build/static-asset validation passed.
-- `pnpm release:verify`: pass; repeated full check passed, 42/42 desktop/mobile Time Clock browser tests passed, final production build passed.
+- Exact release candidate: `ccd31ed2a9bf15eaf06af668e494f91ea92aef95`.
+- `pnpm check`: pass; 384 test files passed and one skipped, 2,260 tests passed and one skipped, 180 release tests passed, and typecheck/lint/build/static-asset validation passed.
+- `pnpm release:verify`: pass; repeated full check passed, 42/42 desktop/mobile Time Clock browser tests passed, and the final production build passed.
+- Dependency advisory gate: pass after upgrading Zod to `4.6.6`; no high-severity production dependency vulnerability remained.
+- GitHub `Security and release checks` run `40387187656`: pass for the exact candidate. Candidate gate job `121798467193` and CodeQL job `121798467595` both succeeded.
 - `git diff --check`: pass.
 
-## Operational cautions
+The earlier clean-preview suite contained tests from the separate, unactivated durability release. The lower exact-candidate counts reflect their deliberate exclusion from the production-compatible reconstruction, not skipped molecular coverage.
+
+## Production release and verification
+
+- The ten reviewed molecular migrations were applied before the Worker release. The production migration ledger contains 398 entries, matches the fresh reviewed baseline, and has no drift. The final Worker deployment performed no database write or migration.
+- The guarded Worker release promoted exact source `ccd31ed2a9bf15eaf06af668e494f91ea92aef95` as version `c2e9b3c3-989a-4eab-bc26-9ee4a38ddda0` in deployment `7c226f04-faa7-41ca-a6e0-639e3652e4bf`.
+- The previous Worker version `75910843-52c3-433f-b70b-676e790714dd`, sourced from `6070d5e49daac7854fd8c97c331c87fd97c8f03d`, remains the reviewed rollback baseline.
+- Promotion completed without ambiguity or rollback. Health returned HTTP 200, readiness returned HTTP 200 with `ready=true`, every readiness check passed, and `consecutiveFailures=0`.
+- Two natural scheduled-runtime cycles executed on the new version. Required automation, push-delivery and alert-lifecycle lanes all completed, and the full-success source remained the exact release commit.
+- Production read-only timings after deployment were 1,333.394 ms for the current pay period (134 rows), 2,157.008 ms for the prior period (227 rows), and 5,292.369 ms for the maximum supported 46-day range (705 rows).
+- Three simultaneous current-period reviews completed in 2,249.893 ms, 2,400.763 ms and 2,363.806 ms. Every measurement remained below the unchanged eight-second application timeout.
+- No source punches, adjustments, schedules, payroll records, identities, permissions, client records, licensing records or audit history were edited during production verification.
+
+## Rejected candidate and composition control
+
+An earlier broad candidate was rejected and automatically rolled back because it included unactivated durability Worker code that depended on database RPCs outside this molecular release. Timekeeping automation completed in 298 ms; the required push-delivery lane failed because production did not contain the separate durability RPC contract. The molecular database repair itself was not the failing component.
+
+The final candidate was reconstructed from production source `6070d5e49daac7854fd8c97c331c87fd97c8f03d`, received only the reviewed molecular repair, and explicitly excludes the unactivated durability RPC names. That excluded work is preserved on `safety/unactivated-durability-20261026`. The exact source guard, migration-ledger gate, natural-cycle gate and automatic rollback boundary prevent a future mixed-contract release from being accepted as healthy.
+
+## Rollback and remaining limitations
 
 - Resume an interrupted online-index release at its ledger-validation phase after the raw index succeeded; do not blindly rerun the raw phase.
 - Full schedule recovery uses the coupled `20261026151000` inverse for both schedule migrations. The partial-only `20261026142017` recovery must not run afterward.
-- Production remains unchanged until the exact commit passes repository CI and the reviewed release sequence is explicitly applied.
+- Worker rollback returns traffic to version `75910843-52c3-433f-b70b-676e790714dd`. Database recovery remains forward-only through the reviewed inverse templates; applied migrations must never be deleted or edited.
+- A candidate-version URL was unavailable. The release therefore used guarded promotion, exact-source verification, immediate health/readiness probes, automatic rollback criteria and subsequent natural-cycle confirmation.
+- No authenticated production save was performed because that would alter a published schedule or employee time record. Atomic save, readback, retry and no-partial-write behavior were verified in rollback-only SQL regression, disposable preview and application tests; production verification intentionally remained read-only.
