@@ -115,6 +115,7 @@ All new regressions passed, together with event classification, payroll-week ela
 ## Local release gates
 
 - Independent security and migration audit: no release-blocking finding.
+- Fresh cross-repository ownership review captured the current 388-entry production ledger and the clean Sygilant source tree; the reviewed expected post-activation manifest preserves those entries and appends only the ten exact release identities. See `DATABASE_BASELINE_REVIEW.md`.
 - `pnpm check`: pass; 2,501 tests passed and one skipped, 207 release tests passed, typecheck/lint/build/static-asset validation passed.
 - `pnpm release:verify`: pass; repeated full check passed, 42/42 desktop/mobile Time Clock browser tests passed, final production build passed.
 - `git diff --check`: pass.

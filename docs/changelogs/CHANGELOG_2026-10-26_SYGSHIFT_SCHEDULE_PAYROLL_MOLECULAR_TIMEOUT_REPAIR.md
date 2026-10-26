@@ -81,5 +81,6 @@ Final clean-preview evidence:
 - a full runtime cycle completed in 177.287 ms under deliberate rollback and persisted no probe job;
 - recovery restored all protected source hashes and unchanged authoritative row counts before the disposable branch was deleted;
 - `pnpm check` and `pnpm release:verify` passed, including 2,501 unit/component tests, 207 release tests and 42/42 desktop/mobile Time Clock browser tests.
+- A fresh 388-entry production migration capture and clean Sygilant `origin/main` source review produced a fail-closed expected 398-entry post-activation manifest containing only the ten exact migration additions for this repair.
 
 Production deployment evidence will be recorded here before this status is changed to released.
