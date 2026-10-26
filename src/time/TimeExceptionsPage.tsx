@@ -26,6 +26,7 @@ import {
   type TimekeepingExceptionResolutionAction,
   type TimekeepingReviewRow,
 } from '../data/timekeeping'
+import { shouldRetryTimekeepingReview, timekeepingReviewErrorMessage } from './timekeepingReviewRetry'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../pages/TimePage'
@@ -252,6 +253,7 @@ export function TimeExceptionsPage() {
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && teamAllowed,
     queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
     queryKey: ['time-exceptions-review', fromDate, throughDate],
+    retry: shouldRetryTimekeepingReview,
   })
   const decisionMutation = useMutation({
     mutationFn: (input: { approved: boolean; correctionId: string; note: string | null }) => reviewTimeEventCorrection(input),
@@ -543,7 +545,7 @@ export function TimeExceptionsPage() {
             <p>Checking payroll rows and correction requests.</p>
           </DataStatePanel>
         ) : reviewQuery.isError ? (
-          <DataStatePanel icon={ShieldAlert} title="Exception review unavailable" tone="error"><p>{reviewQuery.error.message}</p></DataStatePanel>
+          <DataStatePanel icon={ShieldAlert} title="Exception review unavailable" tone="error"><p>{timekeepingReviewErrorMessage(reviewQuery.error)}</p></DataStatePanel>
         ) : unresolvedRows === 0 ? (
           <DataStatePanel icon={CheckCircle2} title="No rows match this exception view">
             <p>{filter === 'all' ? 'No payroll blockers were found in this range.' : 'Change the filter to see other exception types.'}</p>

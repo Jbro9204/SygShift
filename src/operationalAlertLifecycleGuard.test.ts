@@ -38,11 +38,12 @@ describe('operational alert lifecycle reconciliation', () => {
     expect(lifecycle).toContain('The unresolved occurrence remains available for payroll review.')
   })
 
-  it('runs incremental reconciliation every minute and a full integrity pass at 2 AM Mountain', () => {
+  it('runs incremental reconciliation every minute and staggers the full integrity pass after attendance', () => {
     expect(worker).toContain("'service_reconcile_operational_alert_lifecycle'")
     expect(worker).toContain("timeZone: 'America/Denver'")
-    expect(worker).toContain("fullReconciliation: hour === '02' && minute === 0")
-    expect(worker).toContain('{ target_full_reconciliation: fullReconciliation }')
+    expect(worker).toContain("attendanceFullReconciliation: (hour === '02' || springForwardFallback) && minute === 0")
+    expect(worker).toContain("operationalAlertFullReconciliation: (hour === '02' || springForwardFallback) && minute === 10")
+    expect(worker).toContain('{ target_full_reconciliation: operationalAlertFullReconciliation }')
   })
 
   it('keeps acknowledgment separate from global alert resolution', () => {

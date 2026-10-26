@@ -13307,18 +13307,35 @@ export function secureResponse(request: Request, response: Response, requestId: 
   })
 }
 
-function scheduledDenverClock(scheduledTime: number): { fullReconciliation: boolean, minute: number } {
-  const parts = new Intl.DateTimeFormat('en-US', {
+function scheduledDenverClock(scheduledTime: number): {
+  attendanceFullReconciliation: boolean
+  minute: number
+  operationalAlertFullReconciliation: boolean
+} {
+  const formatter = new Intl.DateTimeFormat('en-US', {
     hour: '2-digit',
     hourCycle: 'h23',
     minute: '2-digit',
     timeZone: 'America/Denver',
-  }).formatToParts(new Date(scheduledTime))
+  })
+  const parts = formatter.formatToParts(new Date(scheduledTime))
   const hour = parts.find((part) => part.type === 'hour')?.value
   const minute = Number(parts.find((part) => part.type === 'minute')?.value)
+  const previousHour = formatter
+    .formatToParts(new Date(scheduledTime - 60 * 60 * 1000))
+    .find((part) => part.type === 'hour')?.value
+  // America/Denver advances directly from 01:xx to 03:xx in spring. Run the
+  // missing 02:xx full lanes at the matching 03:xx minute only on that day.
+  // On the fall transition, the repeated local hour is 01, so 02:xx still
+  // exists once and this fallback remains false.
+  const springForwardFallback = hour === '03' && previousHour === '01'
   return {
-    fullReconciliation: hour === '02' && minute === 0,
+    attendanceFullReconciliation: (hour === '02' || springForwardFallback) && minute === 0,
     minute: Number.isFinite(minute) ? minute : 0,
+    // Do not place both database-wide reconciliation lanes on the same tick.
+    // The lifecycle pass remains complete once daily, ten minutes after the
+    // attendance pass, while its ordinary per-minute calls remain incremental.
+    operationalAlertFullReconciliation: (hour === '02' || springForwardFallback) && minute === 10,
   }
 }
 
@@ -13432,9 +13449,16 @@ async function runScheduledWorkerCycle(
     circuit.open = true
     scheduledAbortController.abort()
   })
-  const { fullReconciliation, minute } = scheduledDenverClock(controller.scheduledTime)
-  const attendanceSafetyRefreshDue = fullReconciliation || minute % 5 === 0
-  const availabilityRecoveryDue = fullReconciliation || minute % 15 === 0
+  const {
+    attendanceFullReconciliation,
+    minute,
+    operationalAlertFullReconciliation,
+  } = scheduledDenverClock(controller.scheduledTime)
+  const attendanceSafetyRefreshDue = attendanceFullReconciliation || minute % 5 === 0
+  // The :00 cleanup/recovery lane normally runs every fifteen minutes. Skip
+  // only the daily 02:00 attendance-full tick; 02:15 remains the next normal
+  // complete recovery pass, so no work class is removed or made best-effort.
+  const availabilityRecoveryDue = !attendanceFullReconciliation && minute % 15 === 0
   const requiredLaneFailures: ScheduledRequiredLaneFailure[] = []
 
   let automation: Record<string, unknown>
@@ -13517,7 +13541,7 @@ async function runScheduledWorkerCycle(
         attendanceScheduleRefresh = await rpc<Record<string, unknown>>(
           config,
           'service_refresh_attendance_alert_schedule_state',
-          { target_full_reconciliation: fullReconciliation },
+          { target_full_reconciliation: attendanceFullReconciliation },
           config.serviceRoleKey,
         )
       } catch (error) {
@@ -13538,7 +13562,7 @@ async function runScheduledWorkerCycle(
       alertLifecycle = await rpc<Record<string, unknown>>(
         config,
         'service_reconcile_operational_alert_lifecycle',
-        { target_full_reconciliation: fullReconciliation },
+        { target_full_reconciliation: operationalAlertFullReconciliation },
         config.serviceRoleKey,
       )
     } catch (error) {
@@ -13706,11 +13730,15 @@ async function runScheduledWorkerCycle(
       mfaResetRecovery,
       coverageNotifications,
       cron: controller.cron,
-      fullReconciliation,
+      attendanceFullReconciliation,
+      // Preserve the original observability contract for dashboards and
+      // consumers that still treat the attendance pass as the daily marker.
+      fullReconciliation: attendanceFullReconciliation,
       hrAutomation,
       jobRunId,
       notifications,
       offboardingDue,
+      operationalAlertFullReconciliation,
       patrol,
       pushJobs,
       requiredLaneFailures,

@@ -55,7 +55,7 @@
     "preview": "pnpm build && vite preview",
     "deploy": "node tools/release-production.mjs",
     "deploy:lifecycle-bootstrap": "node tools/deploy-lifecycle-bootstrap.mjs",
-    "release:test": "node --test tools/production-release-core.test.mjs tools/lifecycle-bootstrap-core.test.mjs tools/database-migration-ownership.test.mjs tools/database-release-gate.test.mjs tools/capture-database-migration-baseline.test.mjs tools/main-release-gate.test.mjs tools/run-vitest.test.mjs tools/run-time-clock-release-test.test.mjs tools/time-clock-fixture-server.test.mjs tools/validate-toolchain.test.mjs tools/prepare-timekeeping-review-diagnostics.test.mjs tools/prepare-stability-durability-release.test.mjs && node tools/validate-main-release-discipline.mjs",
+    "release:test": "node --test tools/production-release-core.test.mjs tools/lifecycle-bootstrap-core.test.mjs tools/database-migration-ownership.test.mjs tools/database-release-gate.test.mjs tools/capture-database-migration-baseline.test.mjs tools/main-release-gate.test.mjs tools/run-vitest.test.mjs tools/run-time-clock-release-test.test.mjs tools/time-clock-fixture-server.test.mjs tools/validate-toolchain.test.mjs tools/prepare-timekeeping-review-diagnostics.test.mjs tools/prepare-stability-durability-release.test.mjs tools/prepare-schedule-payroll-molecular-release.test.mjs tools/validate-timekeeping-review-preview.test.mjs && node tools/validate-main-release-discipline.mjs",
     "database:baseline:capture": "node tools/capture-database-migration-baseline.mjs",
     "database:release:gate": "node tools/database-release-gate.mjs",
     "bootstrap:admin": "node tools/bootstrap-admin.mjs"

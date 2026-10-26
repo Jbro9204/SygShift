@@ -87,6 +87,7 @@ const shiftSchema = z.object({
   event: eventSchema.nullable(),
   assignments: z.array(assignmentSchema),
   coverage: shiftCoverageStatusSchema.nullable().optional(),
+  versionToken: z.string().min(1).optional(),
 })
 
 const scheduleSchema = z.object({
@@ -422,6 +423,7 @@ export interface AddDraftShiftAssignmentInput {
 
 export interface UpdateDraftShiftInput {
   shiftId: string
+  expectedVersionToken: string
   shiftDate: string
   startTime: string
   endTime: string
@@ -650,8 +652,9 @@ export async function ensureScheduleDraft(weekStartsOn: string): Promise<WeeklyS
 }
 
 export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Promise<WeeklySchedule> {
-  const { data, error } = await getSupabaseClient().rpc('scheduler_update_typed_draft_shift_with_payroll_category_v1', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_materialize_and_update_shift_v1', {
     target_shift_id: input.shiftId,
+    expected_shift_version: input.expectedVersionToken,
     shift_operational_date: input.shiftDate,
     shift_start_time: input.startTime,
     shift_end_time: input.endTime,
@@ -669,18 +672,7 @@ export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Pr
   })
 
   if (error) throw new Error(error.message || 'The draft shift could not be updated.')
-  const schedule = scheduleSchema.parse(data)
-  return hydrateShiftPayrollCategories({
-    ...schedule,
-    shifts: schedule.shifts.map((shift) => shift.id === input.shiftId ? {
-      ...shift,
-      work_type: input.workType ?? 'post',
-      payrollCategory: input.payrollCategory ?? 'regular',
-      assignment_type: input.dispatchMode
-        ? input.dispatchMode === 'concurrent_duty' ? 'dispatch_phone_duty' : 'dispatch_primary'
-        : shift.assignment_type,
-    } : shift),
-  })
+  return hydrateShiftPayrollCategories(scheduleSchema.parse(data))
 }
 
 export async function addScheduleDraftShiftAssignment(input: AddDraftShiftAssignmentInput): Promise<WeeklySchedule> {

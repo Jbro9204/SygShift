@@ -4080,6 +4080,148 @@ describe('Cloudflare Worker boundary', () => {
     vi.unstubAllGlobals()
   })
 
+  it.each([
+    {
+      attendanceFull: true,
+      cleanupDue: false,
+      label: 'attendance full reconciliation at 02:00 Mountain',
+      lifecycleFull: false,
+      scheduledTime: Date.UTC(2026, 9, 26, 8, 0),
+    },
+    {
+      attendanceFull: false,
+      cleanupDue: false,
+      label: 'alert lifecycle full reconciliation at 02:10 Mountain',
+      lifecycleFull: true,
+      scheduledTime: Date.UTC(2026, 9, 26, 8, 10),
+    },
+    {
+      attendanceFull: false,
+      cleanupDue: true,
+      label: 'deferred cleanup and recovery at 02:15 Mountain',
+      lifecycleFull: false,
+      scheduledTime: Date.UTC(2026, 9, 26, 8, 15),
+    },
+    {
+      attendanceFull: true,
+      cleanupDue: false,
+      label: 'spring-forward attendance fallback at 03:00 Mountain',
+      lifecycleFull: false,
+      scheduledTime: Date.UTC(2026, 2, 8, 9, 0),
+    },
+    {
+      attendanceFull: false,
+      cleanupDue: false,
+      label: 'spring-forward alert lifecycle fallback at 03:10 Mountain',
+      lifecycleFull: true,
+      scheduledTime: Date.UTC(2026, 2, 8, 9, 10),
+    },
+    {
+      attendanceFull: false,
+      cleanupDue: true,
+      label: 'spring-forward deferred cleanup at 03:15 Mountain',
+      lifecycleFull: false,
+      scheduledTime: Date.UTC(2026, 2, 8, 9, 15),
+    },
+    {
+      attendanceFull: false,
+      cleanupDue: true,
+      label: 'first fall-back 01:00 Mountain does not run a full lane',
+      lifecycleFull: false,
+      scheduledTime: Date.UTC(2026, 10, 1, 7, 0),
+    },
+    {
+      attendanceFull: false,
+      cleanupDue: true,
+      label: 'repeated fall-back 01:00 Mountain does not run a full lane',
+      lifecycleFull: false,
+      scheduledTime: Date.UTC(2026, 10, 1, 8, 0),
+    },
+    {
+      attendanceFull: true,
+      cleanupDue: false,
+      label: 'fall-back 02:00 Mountain runs attendance exactly once',
+      lifecycleFull: false,
+      scheduledTime: Date.UTC(2026, 10, 1, 9, 0),
+    },
+    {
+      attendanceFull: false,
+      cleanupDue: false,
+      label: 'first fall-back 01:10 Mountain does not run the lifecycle full lane',
+      lifecycleFull: false,
+      scheduledTime: Date.UTC(2026, 10, 1, 7, 10),
+    },
+    {
+      attendanceFull: false,
+      cleanupDue: false,
+      label: 'repeated fall-back 01:10 Mountain does not run the lifecycle full lane',
+      lifecycleFull: false,
+      scheduledTime: Date.UTC(2026, 10, 1, 8, 10),
+    },
+    {
+      attendanceFull: false,
+      cleanupDue: false,
+      label: 'fall-back 02:10 Mountain runs the lifecycle full lane exactly once',
+      lifecycleFull: true,
+      scheduledTime: Date.UTC(2026, 10, 1, 9, 10),
+    },
+  ])('stages the daily database-wide lanes: $label', async ({
+    attendanceFull,
+    cleanupDue,
+    lifecycleFull,
+    scheduledTime,
+  }) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input)
+      const payload = url.includes('/rpc/service_reconcile_employee_push_provider_outcomes')
+        ? { reconciled: 0, disabledSubscriptions: 0, completionPending: 0, reviewRequired: 0 }
+        : url.includes('/rpc/service_process_due_sygtasks_reminders')
+          ? { processed: 0, triggered: 0, cancelled: 0 }
+          : url.includes('/rpc/service_process_due_sygtasks_recurring_series')
+            ? { processed: 0, created: 0, paused: 0, canceled: 0 }
+            : []
+      return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } })
+    })
+    const scheduledWork: Promise<unknown>[] = []
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await worker.scheduled(
+        { cron: '* * * * *', scheduledTime },
+        environment(new Response('asset'), {
+          ...configuredEnvironment,
+          EMAIL: { send: vi.fn() },
+          SYGSHIFT_SYGSPHERE_RESUMABLE_UPLOADS_ENABLED: 'true',
+        }),
+        { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+      )
+      await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+
+      const attendanceCall = fetchMock.mock.calls.find(([input]) => (
+        String(input).includes('/rpc/service_refresh_attendance_alert_schedule_state')
+      ))
+      const lifecycleCall = fetchMock.mock.calls.find(([input]) => (
+        String(input).includes('/rpc/service_reconcile_operational_alert_lifecycle')
+      ))
+      expect(attendanceCall).toBeDefined()
+      expect(lifecycleCall).toBeDefined()
+      expect(JSON.parse(String(attendanceCall?.[1]?.body))).toMatchObject({
+        target_full_reconciliation: attendanceFull,
+      })
+      expect(JSON.parse(String(lifecycleCall?.[1]?.body))).toMatchObject({
+        target_full_reconciliation: lifecycleFull,
+      })
+
+      const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
+      expect(calledUrls.some((url) => url.includes('/rpc/service_list_sygsphere_file_availability_recovery')))
+        .toBe(cleanupDue)
+      expect(calledUrls.some((url) => url.includes('/rpc/service_list_protected_storage_cleanup_v2')))
+        .toBe(cleanupDue)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('renews the scheduler lease while a scheduled cycle is still delivering work', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(Date.UTC(2026, 9, 19, 15, 0)))

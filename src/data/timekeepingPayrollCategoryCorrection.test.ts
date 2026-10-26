@@ -191,8 +191,6 @@ describe('time maintenance payroll category correction', () => {
         },
         error: null,
       })
-      .mockResolvedValueOnce({ data: [], error: null })
-      .mockResolvedValueOnce({ data: [], error: null })
 
     const review = await getTimekeepingReview({
       fromDate: '2026-10-04',
@@ -210,6 +208,125 @@ describe('time maintenance payroll category correction', () => {
       epMinutes: 0,
       truepMinutes: 0,
       unclassifiedCategoryMinutes: 0,
+    })
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'get_timekeeping_review_v2',
+    ])
+  })
+
+  it('uses the payroll category already returned by the authoritative review payload', async () => {
+    rpc
+      .mockResolvedValueOnce({
+        data: {
+          serverTimestamp: '2026-10-06T13:00:00.000Z',
+          fromDate: '2026-10-04',
+          throughDate: '2026-10-10',
+          operationalTimeZone: 'America/Denver',
+          summary: {
+            rowCount: 1,
+            readyCount: 1,
+            exceptionCount: 0,
+            pendingCorrectionCount: 0,
+            grossMinutes: 480,
+            paidMinutes: 480,
+            regularMinutes: 480,
+            overtimeMinutes: 0,
+            regularCategoryMinutes: 0,
+            epMinutes: 480,
+            truepMinutes: 0,
+            unclassifiedCategoryMinutes: 0,
+            timeOffMinutes: 0,
+            salaryDefaultMinutes: 0,
+          },
+          rows: [{
+            rowKind: 'time_event',
+            employeeId: '73000000-0000-4000-8000-000000000001',
+            username: 'jbrown',
+            employeeName: 'Jordan Brown',
+            role: 'admin',
+            employmentType: 'hourly',
+            shiftId: null,
+            operationalDate: '2026-10-06',
+            siteName: null,
+            siteCode: null,
+            postName: null,
+            eventName: null,
+            locationName: 'Executive protection assignment',
+            scheduledStartsAt: null,
+            scheduledEndsAt: null,
+            timeZone: 'America/Denver',
+            firstClockIn: '2026-10-06T14:00:00.000Z',
+            lastClockOut: '2026-10-06T22:00:00.000Z',
+            grossMinutes: 480,
+            breakMinutes: 0,
+            paidMinutes: 480,
+            regularMinutes: 480,
+            overtimeMinutes: 0,
+            salaryDefaultMinutes: 0,
+            timeOffMinutes: 0,
+            eventCount: 2,
+            requiresArmed: false,
+            isOvertime: false,
+            payrollReady: true,
+            exceptionCodes: [],
+            payrollNotes: [],
+            payrollCategory: 'ep',
+            payrollCategoryLabel: 'EP',
+            payrollCategoryResolved: true,
+            mixedPayrollCategories: false,
+            workType: 'training',
+            workTypeLabel: 'Paid Training',
+            payCode: 'TRAIN',
+            workTypePaid: true,
+            workTypeOvertimeEligible: true,
+            workTypeRateSource: 'employee_base_rate',
+            mixedWorkTypes: false,
+          }],
+          pendingCorrections: [],
+        },
+        error: null,
+      })
+
+    await expect(getTimekeepingReview({
+      fromDate: '2026-10-04',
+      throughDate: '2026-10-10',
+    })).resolves.toMatchObject({
+      rows: [{
+        payrollCategory: 'ep',
+        payrollCategoryLabel: 'EP',
+        payrollCategoryResolved: true,
+        workType: 'training',
+        workTypeLabel: 'Paid Training',
+        payCode: 'TRAIN',
+      }],
+    })
+
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'get_timekeeping_review_v2',
+    ])
+  })
+
+  it('preserves SQLSTATE 57014 and does not start supplemental queries after a review timeout', async () => {
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: '57014',
+        message: 'canceling statement due to statement timeout',
+      },
+    })
+
+    await expect(getTimekeepingReview({
+      fromDate: '2026-10-04',
+      throughDate: '2026-10-17',
+    })).rejects.toMatchObject({
+      code: '57014',
+      message: 'canceling statement due to statement timeout',
+    })
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith('get_timekeeping_review_v2', {
+      target_from_date: '2026-10-04',
+      target_through_date: '2026-10-17',
     })
   })
 })

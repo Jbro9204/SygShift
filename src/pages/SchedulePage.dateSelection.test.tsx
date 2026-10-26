@@ -76,6 +76,8 @@ function createQueryClient() {
 
 describe('Schedule date retention', () => {
   beforeAll(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-19T16:00:00.000Z'))
     vi.stubGlobal('ResizeObserver', class {
       disconnect() {}
       observe() {}
@@ -91,7 +93,10 @@ describe('Schedule date retention', () => {
     })
   })
 
-  afterAll(() => vi.unstubAllGlobals())
+  afterAll(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
 
   beforeEach(() => {
     window.sessionStorage.clear()

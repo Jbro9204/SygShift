@@ -88,6 +88,7 @@ import { personalDisplayTimeZone } from '../lib/usTimeZones'
 import { TimeCommandCenterPage } from '../time/TimeCommandCenterPage'
 import { payrollLockBlocker, workedTimePayrollReview } from '../time/timePayroll'
 import { currentPayrollWeek } from '../time/timeRules'
+import { shouldRetryTimekeepingReview, timekeepingReviewErrorMessage } from '../time/timekeepingReviewRetry'
 import { adjacentOperationalDate, recommendedManualPunchTimestamp } from '../time/manualPunchWorkday'
 import {
   canExportPayroll as sessionCanExportPayroll,
@@ -513,7 +514,8 @@ export function TimeMaintenanceWorkbench({
     enabled: isSupabaseConfigured,
     queryKey: ['time-maintenance-review-summary', fromDate, throughDate],
     queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
-    refetchInterval: 30_000,
+    retry: shouldRetryTimekeepingReview,
+    staleTime: 30_000,
   })
   const maintenanceQuery = useQuery({
     enabled: !lockEmployeeFilter || employeeId !== '',
@@ -866,7 +868,7 @@ export function TimeMaintenanceWorkbench({
 
           {!showOverview && overviewReviewQuery.isError ? (
             <DataStatePanel icon={ShieldAlert} title="Verified worked total unavailable" tone="error">
-              <p>{overviewReviewQuery.error.message}</p>
+              <p>{timekeepingReviewErrorMessage(overviewReviewQuery.error)}</p>
               <button className="secondary-button" onClick={() => void overviewReviewQuery.refetch()} type="button">Try again</button>
             </DataStatePanel>
           ) : null}
@@ -1257,7 +1259,7 @@ export function TimeMaintenanceWorkbench({
               </DataStatePanel>
             ) : overviewReviewQuery.isError ? (
               <DataStatePanel icon={ShieldAlert} title="Worked totals unavailable" tone="error">
-                <p>{overviewReviewQuery.error.message}</p>
+                <p>{timekeepingReviewErrorMessage(overviewReviewQuery.error)}</p>
               </DataStatePanel>
             ) : liveRosterQuery.isError ? (
               <DataStatePanel icon={ShieldAlert} title="Current clock status unavailable" tone="error">
@@ -2056,6 +2058,7 @@ function SupervisorTimeReview({
   const reviewQuery = useQuery({
     queryKey: ['timekeeping-review', fromDate, throughDate],
     queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
+    retry: shouldRetryTimekeepingReview,
   })
   const exportHistoryQuery = useQuery({
     queryKey: ['payroll-export-history'],
@@ -2099,7 +2102,7 @@ function SupervisorTimeReview({
       {reviewQuery.isPending ? (
         <DataStatePanel icon={FileClock} title="Loading payroll review"><p>Calculating paid time, breaks, corrections, and exception flags.</p></DataStatePanel>
       ) : reviewQuery.isError ? (
-        <DataStatePanel icon={ShieldAlert} title="Payroll review unavailable" tone="error"><p>{reviewQuery.error.message}</p></DataStatePanel>
+        <DataStatePanel icon={ShieldAlert} title="Payroll review unavailable" tone="error"><p>{timekeepingReviewErrorMessage(reviewQuery.error)}</p></DataStatePanel>
       ) : review ? (
         <>
           <section className="time-review-metrics" aria-label="Payroll review totals">

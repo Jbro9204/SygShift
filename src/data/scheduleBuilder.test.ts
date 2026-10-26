@@ -648,6 +648,7 @@ describe('schedule builder data contract', () => {
 
     await expect(updateScheduleDraftShift({
       shiftId: '40000000-0000-4000-8000-000000000001',
+      expectedVersionToken: 'schedule-revision-shift-token',
       shiftDate: '2026-07-29',
       startTime: '08:00',
       endTime: '16:00',
@@ -663,8 +664,9 @@ describe('schedule builder data contract', () => {
       status: 'draft',
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_update_typed_draft_shift_with_payroll_category_v1', {
+    expect(rpc).toHaveBeenCalledWith('scheduler_materialize_and_update_shift_v1', {
       target_shift_id: '40000000-0000-4000-8000-000000000001',
+      expected_shift_version: 'schedule-revision-shift-token',
       shift_operational_date: '2026-07-29',
       shift_start_time: '08:00',
       shift_end_time: '16:00',

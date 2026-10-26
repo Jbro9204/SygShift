@@ -42,6 +42,7 @@ import {
 } from '../data/timekeeping'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
+import { shouldRetryTimekeepingReview, timekeepingReviewErrorMessage } from './timekeepingReviewRetry'
 import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../pages/TimePage'
 import { canExportPayroll, canManageTime, canOverridePayrollAssignment, canViewTeamTime } from './timePermissions'
 import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, shiftPayrollPeriod, type TimePeriod } from './timeRules'
@@ -1566,6 +1567,7 @@ export function TimePayrollPage() {
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed && reviewNeeded,
     queryKey: ['time-payroll-review', sessionQuery.data?.employeeId ?? 'anonymous', fromDate, throughDate],
     queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
+    retry: shouldRetryTimekeepingReview,
   })
   const accountabilityQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed && activeSection === 'export',
@@ -1968,7 +1970,7 @@ export function TimePayrollPage() {
             </DataStatePanel>
           ) : reviewQuery.isError ? (
             <DataStatePanel icon={ShieldAlert} title="Payroll review unavailable" tone="error">
-              <p>{reviewQuery.error.message}</p>
+              <p>{timekeepingReviewErrorMessage(reviewQuery.error)}</p>
             </DataStatePanel>
           ) : review ? (
             <div className="payroll-readiness-card__body">
@@ -1993,7 +1995,7 @@ export function TimePayrollPage() {
       ) : null}
       {activeSection !== 'rules' && reviewQuery.isError ? (
         <DataStatePanel icon={ShieldAlert} title="Payroll workspace unavailable" tone="error">
-          <p>{reviewQuery.error.message}</p>
+          <p>{timekeepingReviewErrorMessage(reviewQuery.error)}</p>
         </DataStatePanel>
       ) : null}
 

@@ -1011,6 +1011,7 @@ function EditShiftDialog({
   suggestions: StaffingSuggestion | undefined
   mutation: ReturnType<typeof useMutation<unknown, Error, {
     shiftId: string
+    expectedVersionToken: string
     shiftDate: string
     startTime: string
     endTime: string
@@ -1150,6 +1151,7 @@ function EditShiftDialog({
     const form = new FormData(event.currentTarget)
     mutation.mutate({
       shiftId: shift.id,
+      expectedVersionToken: shift.versionToken ?? '',
       shiftDate: String(form.get('shiftDate')),
       startTime: String(form.get('startTime')),
       endTime: String(form.get('endTime')),
@@ -2981,44 +2983,15 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     },
   })
   const ensureDraftMutation = useMutation({
-    mutationFn: (input?: { shift?: ScheduleShift, openEditor?: boolean }) => ensureScheduleDraft(weekKey).then((draft) => ({
-      draft,
-      openEditor: Boolean(input?.openEditor),
-      shift: input?.shift,
-    })),
-    onSuccess: async ({ draft, openEditor, shift }) => {
+    mutationFn: () => ensureScheduleDraft(weekKey).then((draft) => ({ draft })),
+    onSuccess: async ({ draft }) => {
       if (draft) {
         queryClient.setQueryData(['weekly-schedule', weekKey], draft)
-        setBuilderMessage(openEditor && shift ? `Working draft opened for revision ${draft.revision}. Opening the shift editor...` : `Working draft opened for revision ${draft.revision}. Publish when ready.`)
-        if (openEditor && shift) {
-          const copiedShift = findMatchingDraftShift(draft, shift)
-          if (copiedShift) {
-            setShiftEditor({
-              editableShift: copiedShift,
-              originalShift: shift,
-              status: 'ready',
-            })
-            setSelectedPlannerShiftId(copiedShift.id)
-          } else {
-            setShiftEditor({
-              message: 'The draft opened, but SygShift could not safely match this live shift to its draft copy. Select the copied shift in the draft and try Edit full block again.',
-              originalShift: shift,
-              status: 'error',
-            })
-            setBuilderMessage('Draft opened, but the selected shift could not be matched automatically. Select the shift in the draft and click Edit full block again.')
-          }
-        }
+        setBuilderMessage(`Working draft opened for revision ${draft.revision}. Publish when ready.`)
       }
       await queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions'] })
     },
-    onError: (error, input) => {
-      if (input?.openEditor && input.shift) {
-        setShiftEditor({
-          message: error instanceof Error ? error.message : 'The editable schedule draft could not be prepared.',
-          originalShift: input.shift,
-          status: 'error',
-        })
-      }
+    onError: (error) => {
       setBuilderMessage(error instanceof Error ? error.message : 'The schedule draft could not be opened.')
     },
   })
@@ -3690,22 +3663,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     updateDraftShiftMutation.reset()
     setBuilderOpen(false)
     setResolvingShift(null)
-    if (scheduleQuery.data?.status === 'draft') {
-      setBuilderMessage(null)
-      setShiftEditor({
-        editableShift: shift,
-        originalShift: shift,
-        status: 'ready',
-      })
-      return
-    }
-    setBuilderMessage('Opening a working draft before editing this shift...')
+    setBuilderMessage(null)
     setShiftEditor({
-      message: 'Preparing an editable draft for this shift. The live schedule will not change until the draft is published.',
+      editableShift: shift,
       originalShift: shift,
-      status: 'preparing',
+      status: 'ready',
     })
-    ensureDraftMutation.mutate({ openEditor: true, shift })
   }
 
   function openVacancyPatrolRecovery(shift: ScheduleShift) {
@@ -3749,7 +3712,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     }
 
     setBuilderMessage('Opening a working draft before adding this guard...')
-    ensureDraftMutation.mutate({ openEditor: false, shift }, {
+    ensureDraftMutation.mutate(undefined, {
       onSuccess: ({ draft }) => {
         if (!draft) return
         const copiedShift = findMatchingDraftShift(draft, shift)
@@ -3778,7 +3741,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     }
 
     setBuilderMessage('Opening a working draft before removing this shift...')
-    ensureDraftMutation.mutate({ openEditor: false, shift }, {
+    ensureDraftMutation.mutate(undefined, {
       onSuccess: ({ draft }) => {
         if (!draft) return
         const copiedShift = findMatchingDraftShift(draft, shift)

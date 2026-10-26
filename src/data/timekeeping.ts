@@ -1402,83 +1402,41 @@ export async function getTimekeepingReview(input: {
   fromDate: string
   throughDate: string
 }): Promise<TimekeepingReview> {
-  const [reviewResult, workTypeResult, payrollCategoryResult] = await Promise.all([
-    supabaseWithIdentityVerification(() => getSupabaseClient().rpc('get_timekeeping_review', {
-      target_from_date: input.fromDate,
-      target_through_date: input.throughDate,
-    }), 'general'),
-    supabaseWithIdentityVerification(() => getSupabaseClient().rpc('get_time_work_type_map', {
-      target_from_date: input.fromDate,
-      target_through_date: input.throughDate,
-    }), 'general'),
-    supabaseWithIdentityVerification(() => getSupabaseClient().rpc('get_time_payroll_category_map', {
-      target_from_date: input.fromDate,
-      target_through_date: input.throughDate,
-    }), 'general'),
-  ])
+  const reviewResult = await supabaseWithIdentityVerification(() => getSupabaseClient().rpc('get_timekeeping_review_v2', {
+    target_from_date: input.fromDate,
+    target_through_date: input.throughDate,
+  }), 'general')
   const { data, error } = reviewResult
-  if (error) throw new Error(error.message || 'Supervisor time review could not be loaded.')
+  if (error) {
+    throw Object.assign(
+      new Error(error.message || 'Supervisor time review could not be loaded.'),
+      { code: error.code },
+    )
+  }
   const review = parseTimekeepingReview(data)
-  if (workTypeResult.error) throw new Error(workTypeResult.error.message || 'Work classifications could not be loaded.')
-  if (payrollCategoryResult.error) throw new Error(payrollCategoryResult.error.message || 'Payroll categories could not be loaded.')
-  const workTypes = z.array(timeWorkTypeMapItemSchema).parse(workTypeResult.data ?? [])
-  const payrollCategories = z.array(timePayrollCategoryMapItemSchema).parse(payrollCategoryResult.data ?? [])
-  const workTypeByOccurrence = new Map(workTypes.map((item) => [
-    `${item.employeeId}|${item.shiftId ?? ''}|${item.operationalDate}`,
-    item,
-  ]))
-  const payrollCategoryByCanonicalOccurrence = new Map(payrollCategories
-    .filter((item) => item.payrollOccurrenceKey)
-    .map((item) => [item.payrollOccurrenceKey, item]))
-  const payrollCategoryByEventId = new Map(payrollCategories.flatMap((item) =>
-    item.eventIds.map((eventId) => [eventId, item] as const)))
-  const payrollCategoryByLegacyOccurrence = new Map(payrollCategories
-    .filter((item) => !item.payrollOccurrenceKey && item.eventIds.length === 0)
-    .map((item) => [
-      `${item.employeeId}|${item.shiftId ?? ''}|${item.operationalDate}`,
-      item,
-    ]))
 
   return {
     ...review,
     rows: review.rows.map((row) => {
-      const occurrenceKey = `${row.employeeId}|${row.shiftId ?? ''}|${row.operationalDate}`
-      const workType = workTypeByOccurrence.get(occurrenceKey)
-      const payrollCategory = (row.payrollOccurrenceKey
-        ? payrollCategoryByCanonicalOccurrence.get(row.payrollOccurrenceKey)
-        : undefined)
-        ?? row.eventTimeline.map((event) => payrollCategoryByEventId.get(event.id)).find(Boolean)
-        ?? payrollCategoryByLegacyOccurrence.get(occurrenceKey)
       const isWorkedTime = row.rowKind === 'time_event'
       const payrollCategoryResolved = !isWorkedTime
-        || Boolean(payrollCategory)
         || row.payrollCategoryResolved !== false
       const livePayrollCategory = !isWorkedTime
         ? null
         : payrollCategoryResolved
-        ? payrollCategory?.payrollCategory ?? row.payrollCategory ?? 'regular'
+        ? row.payrollCategory ?? 'regular'
         : null
       return {
         ...row,
-        mixedPayrollCategories: payrollCategory?.mixedPayrollCategories ?? row.mixedPayrollCategories ?? false,
+        mixedPayrollCategories: row.mixedPayrollCategories ?? false,
         payrollCategory: livePayrollCategory,
         payrollCategoryLabel: !isWorkedTime
           ? row.payrollCategoryLabel ?? 'Not applicable'
           : payrollCategoryResolved
-          ? payrollCategory?.payrollCategoryLabel
-            ?? (row.payrollCategory ? row.payrollCategoryLabel : null)
+          ? (row.payrollCategory ? row.payrollCategoryLabel : null)
             ?? payrollCategoryLabel(livePayrollCategory)
           : row.payrollCategoryLabel ?? payrollCategoryLabel(null),
         payrollCategoryResolved,
-        ...(workType ? {
-          mixedWorkTypes: workType.mixedWorkTypes,
-          payCode: workType.payCode,
-          workType: workType.workType,
-          workTypeLabel: workType.label,
-          workTypeOvertimeEligible: workType.overtimeEligible,
-          workTypePaid: workType.paid,
-          workTypeRateSource: workType.rateSource,
-        } : {}),
       }
     }),
   }

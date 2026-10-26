@@ -33,6 +33,7 @@ import { formatOperationalDateTime } from '../lib/time'
 import { buildTimeCommandCenterModel, canViewTeamTime } from './timeCommandCenter'
 import { canViewOwnTime } from './timePermissions'
 import { currentPayrollPeriod, formatUsDateKey, payrollPeriodFromBoundary } from './timeRules'
+import { shouldRetryTimekeepingReview } from './timekeepingReviewRetry'
 import {
   TimeAlertCard,
   TimeEmptyState,
@@ -83,6 +84,7 @@ export function TimeCommandCenterPage() {
         throughDate,
       })
     },
+    retry: shouldRetryTimekeepingReview,
   })
   const liveRosterQuery = useQuery({
     enabled: isSupabaseConfigured && teamAllowed,
