@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { SharedIdentityCallbackPage } from './SharedIdentityCallbackPage'
 import {
@@ -13,27 +13,12 @@ const supabaseMocks = vi.hoisted(() => ({
   deactivateSharedIdentitySupabaseSession: vi.fn(),
 }))
 
-const browserSyncMocks = vi.hoisted(() => ({
-  listener: null as null | ((action: 'cleared' | 'updated') => void),
-  publishSharedIdentityBrowserEvent: vi.fn(),
-}))
-
 vi.mock('../lib/supabase', () => supabaseMocks)
-vi.mock('../lib/sharedIdentityBrowserSync', () => ({
-  publishSharedIdentityBrowserEvent: browserSyncMocks.publishSharedIdentityBrowserEvent,
-  subscribeToSharedIdentityBrowserEvents: vi.fn((listener: (action: 'cleared' | 'updated') => void) => {
-    browserSyncMocks.listener = listener
-    return () => {
-      if (browserSyncMocks.listener === listener) browserSyncMocks.listener = null
-    }
-  }),
-}))
 
 const sharedIdentityToken = 'shared-token'.repeat(5)
 
 afterEach(() => {
   clearSharedIdentitySession()
-  browserSyncMocks.listener = null
   vi.clearAllMocks()
   vi.unstubAllGlobals()
 })
@@ -64,7 +49,6 @@ describe('shared identity callback', () => {
     )
     expect(getSharedIdentitySessionToken()).toBe(sharedIdentityToken)
     expect(getSharedIdentitySessionScope()).toBe(scope)
-    expect(browserSyncMocks.publishSharedIdentityBrowserEvent).toHaveBeenCalledWith('updated')
   })
 
   it('fails closed when the returned destination and scope do not match', async () => {
@@ -102,62 +86,6 @@ describe('shared identity callback', () => {
       '/api/v1/auth/shared-identity/finalize',
       expect.anything(),
     )
-  })
-
-  it('shows the callback failure even when remote session cleanup is unavailable', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith('/session/logout')) {
-        return Response.json({ error: 'temporarily_unavailable' }, { status: 503 })
-      }
-      return Response.json({ error: 'invalid_handoff' }, { status: 400 })
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    renderCallback()
-
-    expect(await screen.findByText('SygShift could not open.')).toBeInTheDocument()
-    expect(screen.getByText('The shared SygShift session could not be verified.')).toBeInTheDocument()
-    expect(supabaseMocks.deactivateSharedIdentitySupabaseSession).toHaveBeenCalled()
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/auth/shared-identity/session/logout',
-      expect.objectContaining({ method: 'POST' }),
-    ))
-  })
-
-  it('does not recreate a session when another tab signs out during finalization', async () => {
-    let finishFinalization: ((response: Response) => void) | null = null
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (String(input).endsWith('/session/logout')) return Promise.resolve(new Response(null, { status: 204 }))
-      return new Promise<Response>((resolve) => { finishFinalization = resolve })
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    renderCallback()
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/auth/shared-identity/finalize',
-      expect.objectContaining({ method: 'POST' }),
-    ))
-
-    act(() => browserSyncMocks.listener?.('cleared'))
-    await act(async () => {
-      finishFinalization?.(Response.json({
-        destination: '/',
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        persistent: true,
-        scope: 'platform',
-        sharedIdentityToken,
-        supabaseSession: { accessToken: 'access-token', refreshToken: 'refresh-token' },
-      }))
-      await Promise.resolve()
-    })
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/auth/shared-identity/session/logout',
-      expect.objectContaining({ method: 'POST' }),
-    ))
-    expect(supabaseMocks.activateSharedIdentitySupabaseSession).not.toHaveBeenCalled()
-    expect(getSharedIdentitySessionToken()).toBeNull()
-    expect(screen.queryByText('Platform opened')).not.toBeInTheDocument()
   })
 })
 

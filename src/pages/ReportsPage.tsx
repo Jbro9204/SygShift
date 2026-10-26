@@ -98,36 +98,8 @@ function valueFor(value: unknown, field?: string): string {
   return text.replaceAll('_', ' ')
 }
 
-// oxlint-disable-next-line react/only-export-components -- Exported for duplicate-row identity regression coverage.
-export function reportRowKey(row: Record<string, unknown>, index: number): string {
-  const identityCandidates: Array<[string, unknown]> = [
-    ['id', row.id],
-    ['shift', row.shiftId],
-    ['history', row.historyId],
-    ['manual', row.manualEntryId],
-    ['occurrence', row.payrollOccurrenceKey],
-    ['exception', row.exceptionId],
-    ['correction', row.correctionId],
-    ['request', row.requestId],
-    ['event', row.timeEventId],
-    ['calloff', row.callOffId],
-  ]
-  const immutableParts = identityCandidates.filter((part): part is [string, string | number] => (
-    (typeof part[1] === 'string' && part[1].length > 0) || typeof part[1] === 'number'
-  ))
-  if (immutableParts.length > 0) {
-    return immutableParts.map(([label, value]) => `${label}:${String(value)}`).join('|')
-  }
-  const rowSignature = JSON.stringify(
-    Object.fromEntries(Object.entries(row).sort(([left], [right]) => left.localeCompare(right))),
-  )
-  return [
-    `employee:${String(row.employeeId ?? 'unknown')}`,
-    `date:${String(row.workDate ?? row.operationalDate ?? 'unknown')}`,
-    `start:${String(row.startsAt ?? row.scheduledStartAt ?? row.firstClockIn ?? 'unknown')}`,
-    `record:${rowSignature}`,
-    `row:${index}`,
-  ].join('|')
+function rowKey(row: Record<string, unknown>, index: number): string {
+  return String(row.id ?? `${row.employeeId ?? 'row'}-${row.workDate ?? row.operationalDate ?? row.startsAt ?? index}`)
 }
 
 function RangeControls({ from, onChange, through }: { from: string; onChange: (from: string, through: string) => void; through: string }) {
@@ -176,7 +148,7 @@ function ReportLibrary({ from, permissions, through }: { from: string; permissio
       {attentionQuery.isPending ? <div className="report-empty">Loading attention items…</div> : null}
       {attentionQuery.isError ? <div className="shell-alert" role="alert">{attentionQuery.error.message}</div> : null}
       {!attentionQuery.isPending && !attentionQuery.isError && attentionRows.length === 0 ? <div className="report-empty">No unresolved timekeeping items are in this range.</div> : null}
-      {attentionRows.length ? <div className="reports-attention-list">{attentionRows.map((row, index) => <article key={reportRowKey(row, index)}><div><strong>{valueFor(row.employeeName)}</strong><span>{valueFor(row.exceptionCode)} · {valueFor(row.sitePost)}</span></div><span>{valueFor(row.scheduledStartAt ?? row.detectedAt)}</span></article>)}</div> : null}
+      {attentionRows.length ? <div className="reports-attention-list">{attentionRows.map((row, index) => <article key={rowKey(row, index)}><div><strong>{valueFor(row.employeeName)}</strong><span>{valueFor(row.exceptionCode)} · {valueFor(row.sitePost)}</span></div><span>{valueFor(row.scheduledStartAt ?? row.detectedAt)}</span></article>)}</div> : null}
     </section> : null}
 
     {report ? <section className="operations-panel reports-snapshot" aria-labelledby="reports-snapshot-title">
@@ -212,7 +184,7 @@ function ReportResultCard({ definition, onInspect, row }: { definition: Operatio
 
 function ReportWorkspace({ definition, from, onRangeChange, through }: { definition: OperationalReportDefinition; from: string; onRangeChange: (from: string, through: string) => void; through: string }) {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null)
+  const [selectedRow, setSelectedRow] = useState<Record<string, unknown> | null>(null)
   const search = searchParams.get('search') ?? ''
   const scopeValue = searchParams.get('scope')
   const scope = scopeValue === 'archive' || scopeValue === 'all' ? scopeValue : 'active'
@@ -238,19 +210,6 @@ function ReportWorkspace({ definition, from, onRangeChange, through }: { definit
     enabled: isSupabaseConfigured && through >= from,
     placeholderData: (previous) => previous,
   })
-  const resultsUpdating = query.isPlaceholderData
-  const resultsVerified = !query.isError && !resultsUpdating
-  const selectedRow = selectedRowKey && resultsVerified
-    ? query.data?.rows.find((row, index) => reportRowKey(row, index) === selectedRowKey) ?? null
-    : null
-
-  useEffect(() => {
-    setSelectedRowKey(null)
-  }, [definition.key, filterValue, from, page, pageSize, scope, search, sort, through])
-
-  useEffect(() => {
-    if (!resultsVerified || (selectedRowKey && !selectedRow)) setSelectedRowKey(null)
-  }, [resultsVerified, selectedRow, selectedRowKey])
 
   return <>
     <section className="operations-panel reports-workspace-heading"><Link className="secondary-button reports-back" to={`/reports?from=${from}&through=${through}`}><ArrowLeft aria-hidden="true" size={18} />Back to report library</Link><div><p className="eyebrow">Focused report</p><h1>{definition.title}</h1><p>{definition.description}</p></div></section>
@@ -262,20 +221,17 @@ function ReportWorkspace({ definition, from, onRangeChange, through }: { definit
         <label><span>Sort</span><select onChange={(event) => updateParameters({ sort: event.target.value, page: 1 })} value={sort}><option value="priority">Priority</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="employee">Employee name</option></select></label>
         <label><span>Rows</span><select onChange={(event) => updateParameters({ pageSize: event.target.value, page: 1 })} value={pageSize}>{pageSizes.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
       </div>
-      <div className="reports-scope-tabs" role="tablist" aria-label="Report status"><button aria-selected={scope === 'active'} className={scope === 'active' ? 'reports-scope-tab reports-scope-tab--active' : 'reports-scope-tab'} onClick={() => updateParameters({ scope: 'active', page: 1 })} role="tab" type="button">{definition.activeLabel}{query.data && resultsVerified ? ` (${number(query.data.activeCount)})` : ''}</button><button aria-selected={scope === 'archive'} className={scope === 'archive' ? 'reports-scope-tab reports-scope-tab--active' : 'reports-scope-tab'} onClick={() => updateParameters({ scope: 'archive', page: 1 })} role="tab" type="button">{definition.archiveLabel}{query.data && resultsVerified ? ` (${number(query.data.archiveCount)})` : ''}</button></div>
+      <div className="reports-scope-tabs" role="tablist" aria-label="Report status"><button aria-selected={scope === 'active'} className={scope === 'active' ? 'reports-scope-tab reports-scope-tab--active' : 'reports-scope-tab'} onClick={() => updateParameters({ scope: 'active', page: 1 })} role="tab" type="button">{definition.activeLabel}{query.data ? ` (${number(query.data.activeCount)})` : ''}</button><button aria-selected={scope === 'archive'} className={scope === 'archive' ? 'reports-scope-tab reports-scope-tab--active' : 'reports-scope-tab'} onClick={() => updateParameters({ scope: 'archive', page: 1 })} role="tab" type="button">{definition.archiveLabel}{query.data ? ` (${number(query.data.archiveCount)})` : ''}</button></div>
     </section>
     <section className="operations-panel reports-results" aria-live="polite">
-      <div className="reports-section-heading"><div><p className="eyebrow">Results</p><h2>{query.data && resultsVerified ? `${number(query.data.totalCount)} records` : query.isError ? 'Records unavailable' : 'Loading records'}</h2></div><Link className="secondary-button reports-canonical-link" to={definition.canonicalPath}>{definition.canonicalLabel}</Link></div>
-      {query.isPending || resultsUpdating ? <div className="report-empty" role="status">Loading report results that match the selected dates and filters…</div> : null}
+      <div className="reports-section-heading"><div><p className="eyebrow">Results</p><h2>{query.data ? `${number(query.data.totalCount)} records` : 'Loading records'}</h2></div><Link className="secondary-button reports-canonical-link" to={definition.canonicalPath}>{definition.canonicalLabel}</Link></div>
+      {query.isPending ? <div className="report-empty">Loading report results…</div> : null}
       {query.isError ? <DataStatePanel icon={ShieldAlert} title="Report unavailable" tone="error"><p>{query.error.message}</p><p>Your access is verified on the server before any report data is returned.</p></DataStatePanel> : null}
-      {!query.isPending && resultsVerified && query.data?.rows.length === 0 ? <div className="report-empty">No records match this date range and these filters.</div> : null}
-      {resultsVerified && query.data?.rows.length ? <div className="reports-result-list">{query.data.rows.map((row, index) => {
-        const key = reportRowKey(row, index)
-        return <ReportResultCard definition={definition} key={key} onInspect={() => setSelectedRowKey(key)} row={row} />
-      })}</div> : null}
-      {resultsVerified && query.data && query.data.totalPages > 1 ? <div className="reports-pagination" aria-label="Report pages"><button className="secondary-button" disabled={page <= 1 || query.isFetching} onClick={() => updateParameters({ page: page - 1 })} type="button"><ChevronLeft aria-hidden="true" size={18} />Previous</button><span>Page {page} of {query.data.totalPages}</span><button className="secondary-button" disabled={page >= query.data.totalPages || query.isFetching} onClick={() => updateParameters({ page: page + 1 })} type="button">Next<ChevronRight aria-hidden="true" size={18} /></button></div> : null}
+      {!query.isPending && !query.isError && query.data?.rows.length === 0 ? <div className="report-empty">No records match this date range and these filters.</div> : null}
+      {query.data?.rows.length ? <div className="reports-result-list">{query.data.rows.map((row, index) => <ReportResultCard definition={definition} key={rowKey(row, index)} onInspect={() => setSelectedRow(row)} row={row} />)}</div> : null}
+      {query.data && query.data.totalPages > 1 ? <div className="reports-pagination" aria-label="Report pages"><button className="secondary-button" disabled={page <= 1 || query.isFetching} onClick={() => updateParameters({ page: page - 1 })} type="button"><ChevronLeft aria-hidden="true" size={18} />Previous</button><span>Page {page} of {query.data.totalPages}</span><button className="secondary-button" disabled={page >= query.data.totalPages || query.isFetching} onClick={() => updateParameters({ page: page + 1 })} type="button">Next<ChevronRight aria-hidden="true" size={18} /></button></div> : null}
     </section>
-    {selectedRow ? <ModalDialog className="reports-detail-modal" description="Read-only report detail. Operational changes are completed in the linked source workspace." onClose={() => setSelectedRowKey(null)} title={definition.title}><div className="reports-detail-grid">{definition.detailFields.map((field) => <div key={field}><span>{labelFor(field)}</span><strong>{valueFor(selectedRow[field], field)}</strong></div>)}</div><div className="modal-actions"><Link className="primary-action" to={definition.canonicalPath}>{definition.canonicalLabel}</Link><button className="secondary-button" onClick={() => setSelectedRowKey(null)} type="button">Close</button></div></ModalDialog> : null}
+    {selectedRow ? <ModalDialog className="reports-detail-modal" description="Read-only report detail. Operational changes are completed in the linked source workspace." onClose={() => setSelectedRow(null)} title={definition.title}><div className="reports-detail-grid">{definition.detailFields.map((field) => <div key={field}><span>{labelFor(field)}</span><strong>{valueFor(selectedRow[field], field)}</strong></div>)}</div><div className="modal-actions"><Link className="primary-action" to={definition.canonicalPath}>{definition.canonicalLabel}</Link><button className="secondary-button" onClick={() => setSelectedRow(null)} type="button">Close</button></div></ModalDialog> : null}
   </>
 }
 

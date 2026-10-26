@@ -2,14 +2,10 @@ import { ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { activateSharedIdentitySupabaseSession, deactivateSharedIdentitySupabaseSession } from '../lib/supabase'
-import {
-  publishSharedIdentityBrowserEvent,
-  subscribeToSharedIdentityBrowserEvents,
-} from '../lib/sharedIdentityBrowserSync'
+import { publishSharedIdentityBrowserEvent } from '../lib/sharedIdentityBrowserSync'
 import {
   clearSharedIdentityServerSession,
   setSharedIdentitySession,
-  waitForSharedIdentityLogoutBarrier,
   type SharedIdentityScope,
 } from '../lib/sharedIdentitySession'
 
@@ -35,20 +31,12 @@ export function SharedIdentityCallbackPage() {
 
   useEffect(() => {
     let active = true
-    const barrierController = new AbortController()
-    const stopForBrowserSignOut = subscribeToSharedIdentityBrowserEvents((action) => {
-      if (action !== 'cleared') return
-      active = false
-      barrierController.abort()
-    })
     void (async () => {
       try {
         window.history.replaceState(null, '', '/auth/shared-identity/callback')
         if (handoffFailed) {
           throw new Error('Sygilant could not complete the shared sign-in. Return to Sygilant and try the SygShift button again.')
         }
-        await waitForSharedIdentityLogoutBarrier(barrierController.signal)
-        if (!active) return
         const response = await fetch('/api/v1/auth/shared-identity/finalize', {
           cache: 'no-store',
           credentials: 'same-origin',
@@ -58,36 +46,25 @@ export function SharedIdentityCallbackPage() {
         if (!response.ok || !isFinalizationResponse(payload)) {
           throw new Error('The shared SygShift session could not be verified.')
         }
-        if (!active) throw new Error('The shared sign-in was cancelled.')
         await activateSharedIdentitySupabaseSession(
           payload.supabaseSession.accessToken,
           payload.supabaseSession.refreshToken,
         )
-        if (!active) throw new Error('The shared sign-in was cancelled.')
-        if (!setSharedIdentitySession(
+        setSharedIdentitySession(
           payload.sharedIdentityToken,
           payload.expiresAt,
           payload.persistent,
           payload.scope,
-        )) throw new Error('A previous sign-out is still completing. Try opening SygShift again.')
-        if (!active) throw new Error('The shared sign-in was cancelled.')
+        )
         publishSharedIdentityBrowserEvent('updated')
         navigate(payload.destination, { replace: true })
       } catch (callbackError) {
-        // Never let remote cookie cleanup strand the callback on its loading
-        // screen. Local bearer material is cleared synchronously; the durable
-        // logout barrier keeps a later sign-in from restoring the cookie until
-        // the server cleanup can be retried successfully.
+        await clearSharedIdentityServerSession()
         deactivateSharedIdentitySupabaseSession()
         if (active) setError(callbackError instanceof Error ? callbackError.message : 'SygShift could not be opened.')
-        void clearSharedIdentityServerSession().catch(() => undefined)
       }
     })()
-    return () => {
-      active = false
-      barrierController.abort()
-      stopForBrowserSignOut()
-    }
+    return () => { active = false }
   }, [handoffFailed, navigate])
 
   return (

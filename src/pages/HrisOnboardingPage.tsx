@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -94,31 +94,7 @@ function groupTasks(tasks: Task[]) {
   }, {})
 }
 
-// oxlint-disable-next-line react/only-export-components -- Pure refresh-result helper is exported for focused regression coverage.
-export function onboardingRefreshError(result: { error: unknown; isError: boolean }): Error | null {
-  if (!result.isError) return null
-  return result.error instanceof Error
-    ? result.error
-    : new Error('The onboarding workspace could not be refreshed.')
-}
-
-// oxlint-disable-next-line react/only-export-components -- Pure exact-case verification helper is exported for focused regression coverage.
-export async function verifyOnboardingCaseRefresh(
-  caseId: string,
-  loadCase: (targetCaseId: string) => Promise<unknown>,
-): Promise<Error | null> {
-  try {
-    await loadCase(caseId)
-    return null
-  } catch (error) {
-    return error instanceof Error
-      ? error
-      : new Error('The selected onboarding case could not be refreshed.')
-  }
-}
-
 export function HrisOnboardingPage() {
-  const queryClient = useQueryClient()
   const [pageSize, setPageSize] = useState<PageSize>(10)
   const [offset, setOffset] = useState(0)
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null)
@@ -166,24 +142,10 @@ export function HrisOnboardingPage() {
   const roleAssignmentMessage = roleSelectionError ?? roleAssignmentGuidance
   const taskGroups = useMemo(() => groupTasks(caseQuery.data?.tasks ?? []), [caseQuery.data?.tasks])
 
-  async function refreshWorkspace(caseId?: string | null): Promise<Error | null> {
+  async function refreshWorkspace(caseId?: string | null) {
     const targetCaseId = caseId ?? selectedCaseId
-    try {
-      const workspaceResult = await workspaceQuery.refetch()
-      const workspaceError = onboardingRefreshError(workspaceResult)
-      if (workspaceError) return workspaceError
-      if (targetCaseId) {
-        const caseError = await verifyOnboardingCaseRefresh(targetCaseId, (caseId) => queryClient.fetchQuery({
-          queryFn: () => getHrOnboardingCase(caseId),
-          queryKey: ['hr-onboarding-case', caseId],
-          staleTime: 0,
-        }))
-        if (caseError) return caseError
-      }
-      return null
-    } catch (error) {
-      return error instanceof Error ? error : new Error('The onboarding workspace could not be refreshed.')
-    }
+    await workspaceQuery.refetch()
+    if (targetCaseId && targetCaseId === selectedCaseId) await caseQuery.refetch()
   }
 
   async function submitPrehire(event: FormEvent<HTMLFormElement>) {
@@ -215,10 +177,8 @@ export function HrisOnboardingPage() {
       setCreateStep(1)
       setSelectedEmployeeId(null)
       if (result.caseId) setSelectedCaseId(result.caseId)
-      const refreshError = await refreshWorkspace(result.caseId)
-      setFeedback(refreshError
-        ? { tone: 'error', message: `The employee and onboarding checklist were created, but this screen could not refresh: ${refreshError.message} Refresh the page before continuing.` }
-        : { tone: 'success', message: 'The employee and applicable onboarding checklist were created.' })
+      await refreshWorkspace(result.caseId)
+      setFeedback({ tone: 'success', message: 'The employee and applicable onboarding checklist were created.' })
     } catch (error) {
       setCreateFeedback({ tone: 'error', message: error instanceof Error ? error.message : 'The onboarding record could not be created.' })
     } finally {
@@ -272,10 +232,8 @@ export function HrisOnboardingPage() {
       await runHrOnboardingAction(pendingAction.action, pendingAction.payload, actionReason.trim())
       setPendingAction(null)
       setActionReason('')
-      const refreshError = await refreshWorkspace()
-      setFeedback(refreshError
-        ? { tone: 'error', message: `The onboarding action and audit history were saved, but this screen could not refresh: ${refreshError.message} Refresh the page before continuing.` }
-        : { tone: 'success', message: 'The onboarding record was updated and the audit history was saved.' })
+      await refreshWorkspace()
+      setFeedback({ tone: 'success', message: 'The onboarding record was updated and the audit history was saved.' })
     } catch (error) {
       setFeedback({ tone: 'error', message: error instanceof Error ? error.message : 'The onboarding action could not be completed.' })
     } finally {
@@ -289,16 +247,11 @@ export function HrisOnboardingPage() {
     setFeedback(null)
     try {
       const result = await sendHrOnboardingWelcomePackage(selectedCaseId, 'Send approved onboarding welcome and account setup package.')
-      const refreshError = await refreshWorkspace()
-      setFeedback(refreshError
-        ? {
-          tone: 'error',
-          message: `Welcome package result was recorded (welcome: ${formatStatus(result.delivery.welcome)}; account setup: ${formatStatus(result.delivery.accountSetup)}), but this screen could not refresh: ${refreshError.message}`,
-        }
-        : {
-          tone: 'success',
-          message: `Welcome email: ${formatStatus(result.delivery.welcome)}. Account setup: ${formatStatus(result.delivery.accountSetup)}.`,
-        })
+      await refreshWorkspace()
+      setFeedback({
+        tone: 'success',
+        message: `Welcome email: ${formatStatus(result.delivery.welcome)}. Account setup: ${formatStatus(result.delivery.accountSetup)}.`,
+      })
     } catch (error) {
       setFeedback({ tone: 'error', message: error instanceof Error ? error.message : 'The welcome package could not be sent.' })
     } finally {

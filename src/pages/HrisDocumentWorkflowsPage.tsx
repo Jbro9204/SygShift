@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import { type FormEvent, type ReactNode, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ClipboardList, FileSignature, Plus, XCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -14,7 +14,6 @@ import {
   type HrDocumentAssignment,
   type HrDocumentRequest,
 } from '../data/hrDocumentWorkflows'
-import { queryVerificationFailed, verifiedQueryData } from '../lib/verifiedQueryData'
 
 type PageSize = 5 | 10 | 20
 type Composer = 'request' | 'assignment' | null
@@ -31,43 +30,26 @@ export function HrisDocumentWorkflowsPage() {
   const [cancelTarget, setCancelTarget] = useState<HrDocumentAssignment | null>(null)
   const workflowQuery = useQuery({ queryFn: () => getHrDocumentWorkflowWorkspace({ page, pageSize, status }), queryKey: ['hr-document-workflows', page, pageSize, status] })
   const inventoryQuery = useQuery({ queryFn: () => getHrDocumentWorkspace({ page: 1, pageSize: 20 }), queryKey: ['hr-documents', 'workflow-composer'] })
-  const workflowQueryFailed = queryVerificationFailed(workflowQuery)
-  const inventoryQueryFailed = queryVerificationFailed(inventoryQuery)
-  const workflow = verifiedQueryData(workflowQuery.data, workflowQuery)
-  const inventory = verifiedQueryData(inventoryQuery.data, inventoryQuery)
-  const inventoryReady = Boolean(inventory)
   const refresh = () => Promise.all([
     client.invalidateQueries({ queryKey: ['hr-document-workflows'] }),
     client.invalidateQueries({ queryKey: ['my-hr-documents'] }),
   ])
 
-  useEffect(() => {
-    if (!inventory) setComposer(null)
-  }, [inventory])
-
-  useEffect(() => {
-    if (!workflow) {
-      setReviewTarget(null)
-      setCancelTarget(null)
-    }
-  }, [workflow])
-
   return <main className="hr-document-workflows-page">
     <header className="hr-documents-hero"><div><p className="eyebrow">HR &amp; Finance</p><h1>Document Workflows</h1><p>Request records, assign exact document versions, and track employee completion without changing original evidence.</p></div><div className="hr-documents-hero__security"><FileSignature aria-hidden="true" size={24}/><div><strong>Audited employee actions</strong><span>Recent MFA and assigned vault permission required</span></div></div></header>
     <nav aria-label="People and HR sections" className="hr-people-tabs"><Link to="/hr">Overview</Link><Link to="/hr/people">People</Link><Link to="/hr/documents">Document Center</Link><Link className="active" to="/hr/documents/workflows">Requests &amp; assignments</Link></nav>
-    <section className="hr-workflow-commandbar"><div><p className="eyebrow">Workflow queue</p><h2>Requests and assigned documents</h2><p>Keep the list focused; open a record only when action is needed.</p></div><div className="hr-workflow-commandbar__actions"><button className="secondary-button" disabled={!inventoryReady} onClick={() => setComposer('request')} type="button"><Plus size={17}/>{inventoryQuery.isPending ? 'Loading options…' : 'Request document'}</button><button className="primary-action" disabled={!inventoryReady} onClick={() => setComposer('assignment')} type="button"><FileSignature size={17}/>{inventoryQuery.isPending ? 'Loading options…' : 'Assign document'}</button></div></section>
-    {inventoryQueryFailed ? <DataStatePanel icon={AlertTriangle} tone="error" title="Document workflow options unavailable"><p>{inventoryQuery.error instanceof Error ? inventoryQuery.error.message : 'Employees, vaults, and available documents could not be loaded.'}</p><button className="secondary-button" disabled={inventoryQuery.isFetching} onClick={() => void inventoryQuery.refetch()} type="button">Try again</button></DataStatePanel> : null}
+    <section className="hr-workflow-commandbar"><div><p className="eyebrow">Workflow queue</p><h2>Requests and assigned documents</h2><p>Keep the list focused; open a record only when action is needed.</p></div><div className="hr-workflow-commandbar__actions"><button className="secondary-button" onClick={() => setComposer('request')} type="button"><Plus size={17}/>Request document</button><button className="primary-action" onClick={() => setComposer('assignment')} type="button"><FileSignature size={17}/>Assign document</button></div></section>
     <section className="hr-workflow-filters"><label>Status<select onChange={(event) => { setStatus(event.target.value); setPage(1) }} value={status}><option value="">All workflow states</option><option value="requested">Requested</option><option value="pending">Pending assignment</option><option value="completed">Completed</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="cancelled">Cancelled</option></select></label><label>Rows<select onChange={(event) => { setPageSize(Number(event.target.value) as PageSize); setPage(1) }} value={pageSize}><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option></select></label></section>
     {workflowQuery.isPending ? <DataStatePanel icon={ClipboardList} title="Loading document workflows"><p>Checking authorized requests and assignments.</p></DataStatePanel> : null}
-    {workflowQueryFailed ? <DataStatePanel icon={AlertTriangle} tone="error" title="Document workflows unavailable"><p>{workflowQuery.error instanceof Error ? workflowQuery.error.message : 'The workflow queue could not be loaded.'}</p><button className="secondary-button" disabled={workflowQuery.isFetching} onClick={() => void workflowQuery.refetch()} type="button">Try again</button></DataStatePanel> : null}
-    {workflow ? <div className="hr-workflow-grid">
-      <WorkflowList title="Document requests" count={workflow.pagination.requestTotal} empty="No document requests match this view.">{workflow.requests.map((item) => <RequestRow item={item} key={item.id} onReview={() => setReviewTarget(item)}/>)}</WorkflowList>
-      <WorkflowList title="Employee assignments" count={workflow.pagination.assignmentTotal} empty="No document assignments match this view.">{workflow.assignments.map((item) => <AssignmentRow item={item} key={item.id} onCancel={() => setCancelTarget(item)}/>)}</WorkflowList>
+    {workflowQuery.isError ? <DataStatePanel icon={AlertTriangle} tone="error" title="Document workflows unavailable"><p>{workflowQuery.error instanceof Error ? workflowQuery.error.message : 'The workflow queue could not be loaded.'}</p></DataStatePanel> : null}
+    {workflowQuery.data ? <div className="hr-workflow-grid">
+      <WorkflowList title="Document requests" count={workflowQuery.data.pagination.requestTotal} empty="No document requests match this view.">{workflowQuery.data.requests.map((item) => <RequestRow item={item} key={item.id} onReview={() => setReviewTarget(item)}/>)}</WorkflowList>
+      <WorkflowList title="Employee assignments" count={workflowQuery.data.pagination.assignmentTotal} empty="No document assignments match this view.">{workflowQuery.data.assignments.map((item) => <AssignmentRow item={item} key={item.id} onCancel={() => setCancelTarget(item)}/>)}</WorkflowList>
     </div> : null}
-    {workflow ? <div className="hr-documents-pagination"><button className="secondary-button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} type="button">Previous</button><span>Page {page}</span><button className="secondary-button" disabled={workflow.requests.length < pageSize && workflow.assignments.length < pageSize} onClick={() => setPage((value) => value + 1)} type="button">Next</button></div> : null}
-    {composer && inventory ? <WorkflowComposer employees={inventory.employees} documents={inventory.documents.filter((item) => item.version?.scanState === 'clean')} mode={composer} onClose={() => setComposer(null)} onSaved={async () => { setComposer(null); await refresh() }} vaults={inventory.vaults.filter((item) => item.canManage)}/> : null}
-    {reviewTarget && workflow ? <ReviewRequestModal item={reviewTarget} onClose={() => setReviewTarget(null)} onSaved={async () => { setReviewTarget(null); await refresh() }}/> : null}
-    {cancelTarget && workflow ? <CancelAssignmentModal item={cancelTarget} onClose={() => setCancelTarget(null)} onSaved={async () => { setCancelTarget(null); await refresh() }}/> : null}
+    {workflowQuery.data ? <div className="hr-documents-pagination"><button className="secondary-button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} type="button">Previous</button><span>Page {page}</span><button className="secondary-button" disabled={workflowQuery.data.requests.length < pageSize && workflowQuery.data.assignments.length < pageSize} onClick={() => setPage((value) => value + 1)} type="button">Next</button></div> : null}
+    {composer ? <WorkflowComposer employees={inventoryQuery.data?.employees ?? []} documents={inventoryQuery.data?.documents.filter((item) => item.version?.scanState === 'clean') ?? []} mode={composer} onClose={() => setComposer(null)} onSaved={async () => { setComposer(null); await refresh() }} vaults={inventoryQuery.data?.vaults.filter((item) => item.canManage) ?? []}/> : null}
+    {reviewTarget ? <ReviewRequestModal item={reviewTarget} onClose={() => setReviewTarget(null)} onSaved={async () => { setReviewTarget(null); await refresh() }}/> : null}
+    {cancelTarget ? <CancelAssignmentModal item={cancelTarget} onClose={() => setCancelTarget(null)} onSaved={async () => { setCancelTarget(null); await refresh() }}/> : null}
   </main>
 }
 

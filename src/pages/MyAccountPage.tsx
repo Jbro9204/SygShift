@@ -20,16 +20,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { canAccessRoute } from '../app/accessPolicy'
 import {
-  acquirePersonalEmailVerificationIntent,
-  clearPersonalEmailVerificationIntent,
   confirmPersonalEmailVerification,
   getMyAccount,
   getMyAccountPhoto,
   type MyAccount,
   type MyAccountNotifications,
-  passwordChangeResultIsCurrent,
-  persistPersonalEmailVerificationIntent,
-  personalEmailVerificationFailureIsAmbiguous,
   removeMyAccountPhoto,
   requestPersonalEmailVerification,
   signOutOtherSessions,
@@ -335,8 +330,6 @@ function ProfileTab({ account, refreshAccount, refreshPhoto, photoUrl }: {
   const [emailBusy, setEmailBusy] = useState(false)
   const [feedback, setFeedback] = useState<Feedback>(null)
   const [emailFeedback, setEmailFeedback] = useState<Feedback>(null)
-  const emailVerificationIntent = useRef<ReturnType<typeof acquirePersonalEmailVerificationIntent> | null>(null)
-  const emailVerificationOwner = useRef(account.profile.employeeId)
   const emailAlreadyVerified = Boolean(
     account.profile.personalEmailVerifiedAt
     && personalEmail.trim().toLowerCase() === account.profile.personalEmail?.trim().toLowerCase(),
@@ -346,11 +339,6 @@ function ProfileTab({ account, refreshAccount, refreshPhoto, photoUrl }: {
     setPreferredName(account.profile.preferredName || '')
     setMobilePhone(account.profile.mobilePhone || '')
     setPersonalEmail(account.profile.personalEmail || '')
-    if (emailVerificationOwner.current !== account.profile.employeeId) {
-      clearPersonalEmailVerificationIntent()
-      emailVerificationIntent.current = null
-      emailVerificationOwner.current = account.profile.employeeId
-    }
   }, [account])
 
   async function saveProfile(event: React.FormEvent) {
@@ -373,37 +361,10 @@ function ProfileTab({ account, refreshAccount, refreshPhoto, photoUrl }: {
     event.preventDefault()
     setEmailBusy(true)
     setEmailFeedback(null)
-    const normalizedEmail = personalEmail.trim().toLowerCase()
-    let intent = emailVerificationIntent.current
-    if (!intent
-      || intent.ownerEmployeeId !== account.profile.employeeId
-      || intent.email !== normalizedEmail
-      || Date.now() - intent.startedAt >= 55 * 60 * 1000) {
-      intent = acquirePersonalEmailVerificationIntent(
-        account.profile.employeeId,
-        normalizedEmail,
-      )
-      emailVerificationIntent.current = intent
-    }
-    // Persist before the request leaves the browser. If the tab closes after
-    // the server commits but before the response arrives, the next mount must
-    // replay this exact operation rather than minting a second verification.
-    persistPersonalEmailVerificationIntent(intent)
     try {
-      await requestPersonalEmailVerification(
-        normalizedEmail,
-        intent.operationId,
-      )
-      clearPersonalEmailVerificationIntent()
-      emailVerificationIntent.current = null
+      await requestPersonalEmailVerification(personalEmail)
       setEmailFeedback({ kind: 'success', text: 'Verification sent. Your current personal email stays in place until you confirm the new address.' })
     } catch (error) {
-      if (personalEmailVerificationFailureIsAmbiguous(error)) {
-        persistPersonalEmailVerificationIntent(intent)
-      } else {
-        clearPersonalEmailVerificationIntent()
-        emailVerificationIntent.current = null
-      }
       setEmailFeedback({ kind: 'error', text: error instanceof Error ? error.message : 'Verification could not be sent.' })
     } finally {
       setEmailBusy(false)
@@ -461,16 +422,13 @@ function EmploymentTab({ account }: { account: MyAccount }) {
   )
 }
 
-export function SecurityTab({ account, refreshAccount }: { account: MyAccount; refreshAccount: () => Promise<void> }) {
+function SecurityTab({ account, refreshAccount }: { account: MyAccount; refreshAccount: () => Promise<void> }) {
   const [devices, setDevices] = useState<TrustedDevice[]>([])
-  const [devicesError, setDevicesError] = useState<string | null>(null)
   const [devicesLoading, setDevicesLoading] = useState(true)
   const [factors, setFactors] = useState<MfaFactorSummary[]>([])
   const [securityKeys, setSecurityKeys] = useState<SecurityKeySummary[]>([])
   const [securityKeyPilotEligible, setSecurityKeyPilotEligible] = useState(false)
-  const [securityMethodsError, setSecurityMethodsError] = useState<string | null>(null)
   const [securityMethodsLoading, setSecurityMethodsLoading] = useState(true)
-  const [securityMethodsVerifiedOnce, setSecurityMethodsVerifiedOnce] = useState(false)
   const [rawAuthenticatorLevel, setRawAuthenticatorLevel] = useState<string | null>(null)
   const [securityKeyName, setSecurityKeyName] = useState('Primary security key')
   const [editingSecurityKeyId, setEditingSecurityKeyId] = useState<string | null>(null)
@@ -480,32 +438,15 @@ export function SecurityTab({ account, refreshAccount }: { account: MyAccount; r
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<Feedback>(null)
-  const passwordChangeOperation = useRef(0)
-  const activeEmployeeIdRef = useRef(account.profile.employeeId)
-  activeEmployeeIdRef.current = account.profile.employeeId
   const policy = validatePassword(password, account.employment.username)
   const verifiedFactors = factors.filter((factor) => factor.status === 'verified')
   const verifiedAuthenticatorFactors = verifiedFactors.filter((factor) => factor.factorType === 'totp' || factor.factorType === 'phone')
   const securityKeySupported = isSecurityKeySupported()
-  const securityMethodsVerified = !securityMethodsLoading && !securityMethodsError && securityMethodsVerifiedOnce
   const needsFreshMfaForManagement = rawAuthenticatorLevel !== 'aal2'
-
-  useEffect(() => {
-    passwordChangeOperation.current += 1
-    setPassword('')
-    setConfirmPassword('')
-    setBusy((current) => current === 'password' ? null : current)
-    setFeedback(null)
-  }, [account.profile.employeeId])
 
   const loadDevices = useCallback(async () => {
     setDevicesLoading(true)
-    try {
-      setDevices(await getCurrentTrustedDevices())
-      setDevicesError(null)
-    } catch {
-      setDevicesError('Remembered devices could not be loaded. Please retry the protected check.')
-    } finally { setDevicesLoading(false) }
+    try { setDevices(await getCurrentTrustedDevices()) } catch { setDevices([]) } finally { setDevicesLoading(false) }
   }, [])
 
   const loadSecurityMethods = useCallback(async () => {
@@ -520,10 +461,11 @@ export function SecurityTab({ account, refreshAccount }: { account: MyAccount; r
       setRawAuthenticatorLevel(level.currentLevel)
       setSecurityKeyPilotEligible(securityKeyDirectory.pilotEligible)
       setSecurityKeys(securityKeyDirectory.keys)
-      setSecurityMethodsError(null)
-      setSecurityMethodsVerifiedOnce(true)
     } catch {
-      setSecurityMethodsError('Security methods could not be verified. Please retry the protected check.')
+      setFactors([])
+      setRawAuthenticatorLevel(null)
+      setSecurityKeyPilotEligible(false)
+      setSecurityKeys([])
     } finally {
       setSecurityMethodsLoading(false)
     }
@@ -537,11 +479,6 @@ export function SecurityTab({ account, refreshAccount }: { account: MyAccount; r
   async function addSecurityKey(event: React.FormEvent) {
     event.preventDefault()
     setFeedback(null)
-
-    if (!securityMethodsVerified) {
-      setFeedback({ kind: 'error', text: 'Retry the security-method check before changing registered keys.' })
-      return
-    }
 
     if (needsFreshMfaForManagement) {
       setFeedback({ kind: 'error', text: 'Verify an existing MFA method before adding a security key.' })
@@ -565,11 +502,6 @@ export function SecurityTab({ account, refreshAccount }: { account: MyAccount; r
   async function handleRemoveSecurityKey(key: SecurityKeySummary) {
     setFeedback(null)
 
-    if (!securityMethodsVerified) {
-      setFeedback({ kind: 'error', text: 'Retry the security-method check before changing registered keys.' })
-      return
-    }
-
     if (rawAuthenticatorLevel !== 'aal2') {
       setFeedback({ kind: 'error', text: 'Verify MFA before removing a security key.' })
       return
@@ -591,10 +523,6 @@ export function SecurityTab({ account, refreshAccount }: { account: MyAccount; r
 
   function beginRenameSecurityKey(key: SecurityKeySummary) {
     setFeedback(null)
-    if (!securityMethodsVerified) {
-      setFeedback({ kind: 'error', text: 'Retry the security-method check before changing registered keys.' })
-      return
-    }
     if (rawAuthenticatorLevel !== 'aal2') {
       setFeedback({ kind: 'error', text: 'Verify MFA before renaming a security key.' })
       return
@@ -606,10 +534,6 @@ export function SecurityTab({ account, refreshAccount }: { account: MyAccount; r
   async function handleRenameSecurityKey(event: React.FormEvent, key: SecurityKeySummary) {
     event.preventDefault()
     setFeedback(null)
-    if (!securityMethodsVerified) {
-      setFeedback({ kind: 'error', text: 'Retry the security-method check before changing registered keys.' })
-      return
-    }
     if (rawAuthenticatorLevel !== 'aal2') {
       setFeedback({ kind: 'error', text: 'Verify MFA before renaming a security key.' })
       return
@@ -635,30 +559,17 @@ export function SecurityTab({ account, refreshAccount }: { account: MyAccount; r
       setFeedback({ kind: 'error', text: password !== confirmPassword ? 'The passwords do not match.' : policy.failures.join(' ') })
       return
     }
-    const ownerEmployeeId = account.profile.employeeId
-    const operation = ++passwordChangeOperation.current
     setBusy('password')
     try {
-      const result = await updateMyPassword(password, ownerEmployeeId)
-      if (!passwordChangeResultIsCurrent(
-        operation,
-        passwordChangeOperation.current,
-        ownerEmployeeId,
-        activeEmployeeIdRef.current,
-        result,
-      )) return
+      await updateMyPassword(password)
       setPassword('')
       setConfirmPassword('')
       await refreshAccount()
       notifySessionContextChanged()
       setFeedback({ kind: 'success', text: 'Your password was changed.' })
     } catch (error) {
-      if (operation === passwordChangeOperation.current && activeEmployeeIdRef.current === ownerEmployeeId) {
-        setFeedback({ kind: 'error', text: error instanceof Error ? error.message : 'Your password could not be changed.' })
-      }
-    } finally {
-      if (operation === passwordChangeOperation.current && activeEmployeeIdRef.current === ownerEmployeeId) setBusy(null)
-    }
+      setFeedback({ kind: 'error', text: error instanceof Error ? error.message : 'Your password could not be changed.' })
+    } finally { setBusy(null) }
   }
 
   async function revoke(device: TrustedDevice) {
@@ -715,17 +626,14 @@ export function SecurityTab({ account, refreshAccount }: { account: MyAccount; r
         </section>
       </div>
 
-      {securityMethodsLoading || securityMethodsError || securityKeyPilotEligible ? <section className="account-card account-card--wide account-security-keys">
-        <div className="account-card__heading"><div><p className="eyebrow">Phishing-resistant MFA</p><h2>Security keys</h2></div><div className="account-actions"><button className="secondary-button" disabled={securityMethodsLoading} onClick={() => void loadSecurityMethods()} type="button">Refresh security methods</button><Usb size={22} /></div></div>
+      {securityKeyPilotEligible ? <section className="account-card account-card--wide account-security-keys">
+        <div className="account-card__heading"><div><p className="eyebrow">Phishing-resistant MFA</p><h2>Security keys</h2></div><Usb size={22} /></div>
         <p className="account-card__intro">Register a FIDO2 security key to complete SygShift MFA with a physical key. Your password remains required, and your authenticator app stays available as a backup. Verify your authenticator before adding or removing security keys.</p>
 
-        {securityMethodsLoading && !securityMethodsVerifiedOnce ? (
+        {securityMethodsLoading ? (
           <p className="account-loading-inline"><LoaderCircle className="account-spinner" size={18} />Loading security methods…</p>
         ) : (
-          <>
-          {securityMethodsError ? <div className="account-feedback account-feedback--error" role="alert"><span>{securityMethodsError} Registered security methods have not been verified.</span><button className="secondary-button" disabled={securityMethodsLoading} onClick={() => void loadSecurityMethods()} type="button">Try security methods again</button></div> : null}
-          {securityMethodsLoading ? <p className="account-loading-inline"><LoaderCircle className="account-spinner" size={18} />Refreshing security methods…</p> : null}
-          {securityKeyPilotEligible ? <div className="account-security-key-layout">
+          <div className="account-security-key-layout">
             <div className="account-security-key-list" aria-label="Registered security keys">
               <div className="account-security-key-list__heading">
                 <strong>Registered keys</strong>
@@ -752,8 +660,8 @@ export function SecurityTab({ account, refreshAccount }: { account: MyAccount; r
                         </span>
                       </div>
                       <div className="account-security-key-row__actions">
-                        <button className="secondary-button" disabled={!securityMethodsVerified || rawAuthenticatorLevel !== 'aal2'} onClick={() => beginRenameSecurityKey(key)} type="button">Rename</button>
-                        <LoadingButton busy={busy === `security-key-remove-${key.id}`} className="quiet-danger-button" disabled={!securityMethodsVerified || rawAuthenticatorLevel !== 'aal2'} onClick={() => void handleRemoveSecurityKey(key)} type="button">Remove</LoadingButton>
+                        <button className="secondary-button" disabled={rawAuthenticatorLevel !== 'aal2'} onClick={() => beginRenameSecurityKey(key)} type="button">Rename</button>
+                        <LoadingButton busy={busy === `security-key-remove-${key.id}`} className="quiet-danger-button" disabled={rawAuthenticatorLevel !== 'aal2'} onClick={() => void handleRemoveSecurityKey(key)} type="button">Remove</LoadingButton>
                       </div>
                     </>
                   )}
@@ -763,9 +671,7 @@ export function SecurityTab({ account, refreshAccount }: { account: MyAccount; r
 
             <form className="account-security-key-enrollment" onSubmit={addSecurityKey}>
               <div><strong>Add a security key</strong><p>Use a unique name so you can identify the key later.</p></div>
-              {!securityMethodsVerified ? (
-                <div className="account-security-key-verification"><p>Security methods must be verified before registered keys can be changed.</p></div>
-              ) : !securityKeySupported ? (
+              {!securityKeySupported ? (
                 <div className="account-feedback account-feedback--error" role="alert">This browser or connection cannot use security keys. Use a current browser at the secure SygShift address.</div>
               ) : verifiedAuthenticatorFactors.length === 0 ? (
                 <div className="account-security-key-verification">
@@ -788,22 +694,19 @@ export function SecurityTab({ account, refreshAccount }: { account: MyAccount; r
               ) : (
                 <>
                   <label className="form-field"><span>Key name</span><input autoComplete="off" maxLength={60} onChange={(event) => setSecurityKeyName(event.target.value)} value={securityKeyName} /></label>
-                   <LoadingButton busy={busy === 'security-key-add'} className="primary-action" disabled={!securityMethodsVerified || securityKeys.length >= 5} type="submit"><Usb size={17} />{securityKeys.length >= 5 ? 'Key limit reached' : 'Add security key'}</LoadingButton>
+                  <LoadingButton busy={busy === 'security-key-add'} className="primary-action" disabled={securityKeys.length >= 5} type="submit"><Usb size={17} />{securityKeys.length >= 5 ? 'Key limit reached' : 'Add security key'}</LoadingButton>
                 </>
               )}
             </form>
-          </div> : null}
-          </>
+          </div>
         )}
       </section> : null}
 
       <section className="account-card account-card--wide">
-        <div className="account-card__heading"><div><p className="eyebrow">Trusted access</p><h2>Remembered devices</h2></div><div className="account-actions"><button className="secondary-button" disabled={devicesLoading} onClick={() => void loadDevices()} type="button">Refresh remembered devices</button><Smartphone size={22} /></div></div>
-        {devicesLoading ? <p className="account-loading-inline"><LoaderCircle className="account-spinner" size={18} />Loading devices…</p> : null}
-        {!devicesLoading && devicesError ? <div className="account-feedback account-feedback--error" role="alert"><span>{devicesError} The device list has not been verified.</span><button className="secondary-button" onClick={() => void loadDevices()} type="button">Try again</button></div> : null}
-        {!devicesLoading && !devicesError && devices.length ? (
-          <div className="account-device-list">{devices.map((device) => <div className="account-device-row" key={device.id}><div><strong>{device.deviceLabel || 'Browser device'}{device.isCurrentDevice ? ' · This device' : ''}</strong><span>Last used {device.lastSeenAt ? formatOperationalDateTime(device.lastSeenAt) : 'not recorded'} · Expires {formatOperationalDateTime(device.expiresAt)}</span></div><LoadingButton busy={busy === device.id} className="quiet-danger-button" disabled={Boolean(devicesError) || devicesLoading} onClick={() => revoke(device)} type="button">Remove</LoadingButton></div>)}</div>
-        ) : !devicesLoading && !devicesError ? <p className="account-empty">No remembered devices are active.</p> : null}
+        <div className="account-card__heading"><div><p className="eyebrow">Trusted access</p><h2>Remembered devices</h2></div><Smartphone size={22} /></div>
+        {devicesLoading ? <p className="account-loading-inline"><LoaderCircle className="account-spinner" size={18} />Loading devices…</p> : devices.length ? (
+          <div className="account-device-list">{devices.map((device) => <div className="account-device-row" key={device.id}><div><strong>{device.deviceLabel || 'Browser device'}{device.isCurrentDevice ? ' · This device' : ''}</strong><span>Last used {device.lastSeenAt ? formatOperationalDateTime(device.lastSeenAt) : 'not recorded'} · Expires {formatOperationalDateTime(device.expiresAt)}</span></div><LoadingButton busy={busy === device.id} className="quiet-danger-button" onClick={() => revoke(device)} type="button">Remove</LoadingButton></div>)}</div>
+        ) : <p className="account-empty">No remembered devices are active.</p>}
       </section>
 
       <section className="account-card account-card--wide">

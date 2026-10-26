@@ -1,14 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { CheckCircle2, Copy, Eye, EyeOff, KeyRound, Loader2, MessageSquareText, QrCode, ShieldCheck, Usb } from 'lucide-react'
+import { CheckCircle2, Copy, Download, Eye, EyeOff, KeyRound, Loader2, MessageSquareText, QrCode, ShieldCheck, Usb } from 'lucide-react'
 import {
-  clearPendingTotpEnrollment,
   getSessionContext,
   isTransientSessionContextError,
   notifySessionContextChanged,
   signOut,
-  TOTP_SETUP_STORAGE_KEY,
   type SessionContext,
   validatePassword,
 } from '../data/auth'
@@ -25,6 +23,7 @@ import {
   type MfaFactorSummary,
   type MfaPhoneEnrollment,
 } from '../data/mfa'
+import { generateMfaRecoveryCodes, recoverMfaWithCode } from '../data/mfaRecovery'
 import {
   authenticateWithSecurityKey,
   getSecurityKeyDirectory,
@@ -37,9 +36,38 @@ import {
   revokeCurrentTrustedDevice,
   type TrustedDevice,
 } from '../data/trustedDevices'
-import { passwordChangeResultIsCurrent, updateMyPassword } from '../data/myAccount'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
+
+function isAlreadyCurrentPasswordError(error: unknown): boolean {
+  const message =
+    typeof error === 'object' && error && 'message' in error && typeof error.message === 'string'
+      ? error.message.toLowerCase()
+      : ''
+
+  return (
+    message.includes('different from the old password') ||
+    message.includes('same as the old password') ||
+    message.includes('same password') ||
+    message.includes('new password should be different')
+  )
+}
+
+async function markPasswordChangedWithRetry(): Promise<void> {
+  const supabase = getSupabaseClient()
+  let marked = await supabase.rpc('mark_password_changed')
+
+  if (!marked.error) return
+
+  await supabase.auth.refreshSession()
+  marked = await supabase.rpc('mark_password_changed')
+
+  if (marked.error) {
+    throw new Error(
+      'Your password was accepted, but SygShift could not finish clearing the temporary-password checkpoint. Please sign out and try again, or contact an administrator.',
+    )
+  }
+}
 
 type AccountSecurityLocationState = {
   from?: {
@@ -50,92 +78,34 @@ type AccountSecurityLocationState = {
 }
 
 type MfaMethod = MfaFactorType
-type TrustedDeviceLoadState = 'idle' | 'loading' | 'ready' | 'error'
 const SMS_MFA_ENABLED = import.meta.env.VITE_ENABLE_SMS_MFA === 'true'
+const TOTP_SETUP_STORAGE_KEY = 'sygshift:totp-setup'
 
-export type OwnedTotpEnrollment = {
-  enrollment: MfaEnrollment
-  ownerId: string
-}
-
-// oxlint-disable-next-line react/only-export-components -- Pure owner-bound state helper is exported for focused regression coverage.
-export function totpEnrollmentForEmployee(
-  ownedEnrollment: OwnedTotpEnrollment | null,
-  employeeId: string | null | undefined,
-): MfaEnrollment | null {
-  return ownedEnrollment && employeeId && ownedEnrollment.ownerId === employeeId
-    ? ownedEnrollment.enrollment
-    : null
-}
-
-function readStoredTotpEnrollment(ownerId: string): MfaEnrollment | null {
+function readStoredTotpEnrollment(): MfaEnrollment | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = window.sessionStorage.getItem(TOTP_SETUP_STORAGE_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as {
-      enrollment?: Partial<MfaEnrollment>
-      ownerId?: unknown
-    }
-    if (parsed.ownerId !== ownerId || !parsed.enrollment) {
-      clearPendingTotpEnrollment()
-      return null
-    }
-    const enrollment = parsed.enrollment
-    if (!enrollment.factorId || !enrollment.qrCode || !enrollment.secret || !enrollment.uri) {
-      clearPendingTotpEnrollment()
-      return null
-    }
+    const parsed = JSON.parse(raw) as Partial<MfaEnrollment>
+    if (!parsed.factorId || !parsed.qrCode || !parsed.secret || !parsed.uri) return null
     return {
-      factorId: enrollment.factorId,
-      qrCode: enrollment.qrCode,
-      secret: enrollment.secret,
-      uri: enrollment.uri,
+      factorId: parsed.factorId,
+      qrCode: parsed.qrCode,
+      secret: parsed.secret,
+      uri: parsed.uri,
     }
   } catch {
-    clearPendingTotpEnrollment()
     return null
   }
 }
 
-function storeTotpEnrollment(enrollment: MfaEnrollment | null, ownerId: string | null = null): void {
+function storeTotpEnrollment(enrollment: MfaEnrollment | null): void {
   if (typeof window === 'undefined') return
-  if (!enrollment || !ownerId) {
-    clearPendingTotpEnrollment()
+  if (!enrollment) {
+    window.sessionStorage.removeItem(TOTP_SETUP_STORAGE_KEY)
     return
   }
-  try {
-    window.sessionStorage.setItem(TOTP_SETUP_STORAGE_KEY, JSON.stringify({ enrollment, ownerId }))
-  } catch {
-    // The active component still owns the secret; unavailable storage should
-    // not misreport a successfully started enrollment as a server failure.
-  }
-}
-
-// oxlint-disable-next-line react/only-export-components -- Pure ownership check is exported for account-switch race coverage.
-export function totpEnrollmentResultIsCurrent(
-  operation: number,
-  currentOperation: number,
-  ownerId: string | null,
-  activeEmployeeId: string | null,
-): boolean {
-  return ownerId !== null && operation === currentOperation && activeEmployeeId === ownerId
-}
-
-// oxlint-disable-next-line react/only-export-components -- Pure owner/session fence is exported for cross-account verification regression coverage.
-export function mfaVerificationResultIsCurrent(
-  operation: number,
-  currentOperation: number,
-  ownerEmployeeId: string | null,
-  activeEmployeeId: string | null,
-  ownerAuthUserId: string | null,
-  activeAuthUserId: string | null,
-): boolean {
-  return ownerEmployeeId !== null
-    && ownerAuthUserId !== null
-    && operation === currentOperation
-    && activeEmployeeId === ownerEmployeeId
-    && activeAuthUserId === ownerAuthUserId
+  window.sessionStorage.setItem(TOTP_SETUP_STORAGE_KEY, JSON.stringify(enrollment))
 }
 
 export function AccountSecurityPage() {
@@ -146,7 +116,7 @@ export function AccountSecurityPage() {
   const [factors, setFactors] = useState<MfaFactorSummary[]>([])
   const [securityKeys, setSecurityKeys] = useState<SecurityKeySummary[]>([])
   const [securityKeyLoadError, setSecurityKeyLoadError] = useState<string | null>(null)
-  const [ownedEnrollment, setOwnedEnrollment] = useState<OwnedTotpEnrollment | null>(null)
+  const [enrollment, setEnrollment] = useState<MfaEnrollment | null>(null)
   const [phoneEnrollment, setPhoneEnrollment] = useState<MfaPhoneEnrollment | null>(null)
   const [selectedMfaMethod, setSelectedMfaMethod] = useState<MfaMethod | null>(null)
   const [phoneNumber, setPhoneNumber] = useState('')
@@ -165,16 +135,12 @@ export function AccountSecurityPage() {
   const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false)
   const [rememberDevice, setRememberDevice] = useState(true)
   const [trustedDevices, setTrustedDevices] = useState<TrustedDevice[]>([])
-  const [trustedDeviceLoadState, setTrustedDeviceLoadState] = useState<TrustedDeviceLoadState>('idle')
-  const [trustedDeviceLoadError, setTrustedDeviceLoadError] = useState<string | null>(null)
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([])
+  const [recoveryCode, setRecoveryCode] = useState('')
+  const [showRecoveryEntry, setShowRecoveryEntry] = useState(false)
+  const [showRecoveryRegeneration, setShowRecoveryRegeneration] = useState(false)
+  const [recoveryVerificationCode, setRecoveryVerificationCode] = useState('')
   const [rawAuthenticatorLevel, setRawAuthenticatorLevel] = useState<string | null>(null)
-  const totpEnrollmentOperation = useRef(0)
-  const mfaVerificationOperation = useRef(0)
-  const passwordChangeOperation = useRef(0)
-  const activeEmployeeIdRef = useRef<string | null>(null)
-  const lastEnrollmentEmployeeIdRef = useRef<string | null | undefined>(undefined)
-  activeEmployeeIdRef.current = context?.employeeId ?? null
-  const enrollment = totpEnrollmentForEmployee(ownedEnrollment, context?.employeeId)
 
   const returnPath = useMemo(() => {
     const state = location.state as AccountSecurityLocationState | null
@@ -295,24 +261,16 @@ export function AccountSecurityPage() {
     return nextContext
   }
 
-  async function refreshTrustedDevices(): Promise<boolean> {
+  async function refreshTrustedDevices(): Promise<void> {
     if (!canRememberDevice) {
       setTrustedDevices([])
-      setTrustedDeviceLoadError(null)
-      setTrustedDeviceLoadState('ready')
-      return true
+      return
     }
 
-    setTrustedDeviceLoadError(null)
-    setTrustedDeviceLoadState('loading')
     try {
       setTrustedDevices(await getCurrentTrustedDevices())
-      setTrustedDeviceLoadState('ready')
-      return true
     } catch {
-      setTrustedDeviceLoadError('Remembered devices could not be loaded. Please retry the protected check.')
-      setTrustedDeviceLoadState('error')
-      return false
+      setTrustedDevices([])
     }
   }
 
@@ -333,27 +291,15 @@ export function AccountSecurityPage() {
 
     async function loadTrustedDevices() {
       if (!context || needsMfa || !canRememberDevice) {
-        if (active) {
-          setTrustedDevices([])
-          setTrustedDeviceLoadError(null)
-          setTrustedDeviceLoadState('idle')
-        }
+        setTrustedDevices([])
         return
       }
 
-      setTrustedDeviceLoadError(null)
-      setTrustedDeviceLoadState('loading')
       try {
         const devices = await getCurrentTrustedDevices()
-        if (active) {
-          setTrustedDevices(devices)
-          setTrustedDeviceLoadState('ready')
-        }
+        if (active) setTrustedDevices(devices)
       } catch {
-        if (active) {
-          setTrustedDeviceLoadError('Remembered devices could not be loaded. Please retry the protected check.')
-          setTrustedDeviceLoadState('error')
-        }
+        if (active) setTrustedDevices([])
       }
     }
 
@@ -376,45 +322,13 @@ export function AccountSecurityPage() {
   }, [availableVerifiedFactors, needsMfa, selectedMfaMethod])
 
   useEffect(() => {
-    return () => {
-      totpEnrollmentOperation.current += 1
-      mfaVerificationOperation.current += 1
-    }
-  }, [])
-
-  useEffect(() => {
-    const employeeId = context?.employeeId ?? null
-    const previousEmployeeId = lastEnrollmentEmployeeIdRef.current
-    if (previousEmployeeId === undefined) {
-      // The first resolved employee owns any resumable session enrollment.
-      // Do not clear it while the initial session context is still loading.
-      if (employeeId) lastEnrollmentEmployeeIdRef.current = employeeId
-      return
-    }
-    if (previousEmployeeId === employeeId) return
-    lastEnrollmentEmployeeIdRef.current = employeeId
-    totpEnrollmentOperation.current += 1
-    mfaVerificationOperation.current += 1
-    passwordChangeOperation.current += 1
-    setOwnedEnrollment(null)
-    clearPendingTotpEnrollment()
-    setPassword('')
-    setPasswordConfirmation('')
-    setMfaCode('')
-    setMessage(null)
-    setErrorMessage(null)
-    setBusyAction(null)
-  }, [context?.employeeId])
-
-  useEffect(() => {
     if (!needsMfa || enrollment || verifiedTotpFactor) return
-    if (!context?.employeeId) return
-    const storedEnrollment = readStoredTotpEnrollment(context.employeeId)
+    const storedEnrollment = readStoredTotpEnrollment()
     if (!storedEnrollment) return
     setSelectedMfaMethod('totp')
-    setOwnedEnrollment({ enrollment: storedEnrollment, ownerId: context.employeeId })
+    setEnrollment(storedEnrollment)
     setMessage('Authenticator setup is still active. Enter the six-digit code from your app to finish.')
-  }, [context?.employeeId, enrollment, needsMfa, verifiedTotpFactor])
+  }, [enrollment, needsMfa, verifiedTotpFactor])
 
   async function handlePasswordUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -439,22 +353,18 @@ export function AccountSecurityPage() {
       return
     }
 
-    const ownerEmployeeId = context?.employeeId ?? null
-    if (!ownerEmployeeId) {
-      setErrorMessage('Reload your secure account before changing the password.')
-      return
-    }
-    const operation = ++passwordChangeOperation.current
     setBusyAction('password')
     try {
-      const result = await updateMyPassword(submittedPassword, ownerEmployeeId)
-      if (!passwordChangeResultIsCurrent(
-        operation,
-        passwordChangeOperation.current,
-        ownerEmployeeId,
-        activeEmployeeIdRef.current,
-        result,
-      )) return
+      const update = await getSupabaseClient().auth.updateUser({ password: submittedPassword })
+      if (update.error) {
+        if (isAlreadyCurrentPasswordError(update.error)) {
+          if (context?.mustChangePassword) await markPasswordChangedWithRetry()
+        } else {
+          throw new Error(update.error.message || 'The password could not be updated.')
+        }
+      } else if (context?.mustChangePassword) {
+        await markPasswordChangedWithRetry()
+      }
 
       setPassword('')
       setPasswordConfirmation('')
@@ -482,21 +392,16 @@ export function AccountSecurityPage() {
         navigate(returnPath, { replace: true })
       }
     } catch (error) {
-      if (operation === passwordChangeOperation.current && activeEmployeeIdRef.current === ownerEmployeeId) {
-        setErrorMessage(error instanceof Error ? error.message : 'The password update failed.')
-      }
+      setErrorMessage(error instanceof Error ? error.message : 'The password update failed.')
     } finally {
-      if (operation === passwordChangeOperation.current && activeEmployeeIdRef.current === ownerEmployeeId) {
-        setBusyAction(null)
-      }
+      setBusyAction(null)
     }
   }
 
   function handleSelectMfaMethod(method: MfaMethod) {
     if (method === 'phone' && !SMS_MFA_ENABLED) return
     setSelectedMfaMethod(method)
-    totpEnrollmentOperation.current += 1
-    setOwnedEnrollment(null)
+    setEnrollment(null)
     if (method !== 'totp') storeTotpEnrollment(null)
     setPhoneEnrollment(null)
     setPhoneChallengeId(null)
@@ -506,10 +411,8 @@ export function AccountSecurityPage() {
   }
 
   async function handleStartEnrollment() {
-    const ownerId = context?.employeeId ?? null
     setErrorMessage(null)
-    const operation = ++totpEnrollmentOperation.current
-    setOwnedEnrollment(null)
+    setEnrollment(null)
     storeTotpEnrollment(null)
     setPhoneEnrollment(null)
     setPhoneChallengeId(null)
@@ -523,42 +426,28 @@ export function AccountSecurityPage() {
     setBusyAction('start-mfa')
 
     try {
-      if (!ownerId) throw new Error('Your account could not be verified for authenticator setup. Refresh the page and try again.')
       const nextEnrollment = await startTotpEnrollment()
-      // A stale account A response must not clear the newer account B setup
-      // from session storage. Account A's unfinished remote factor is removed
-      // the next time A starts enrollment; it is never exposed to B.
-      if (!totpEnrollmentResultIsCurrent(operation, totpEnrollmentOperation.current, ownerId, activeEmployeeIdRef.current)) return
-      setOwnedEnrollment({ enrollment: nextEnrollment, ownerId })
-      storeTotpEnrollment(nextEnrollment, ownerId)
+      setEnrollment(nextEnrollment)
+      storeTotpEnrollment(nextEnrollment)
       setMessage('Authenticator setup is ready. Scan the QR code, then enter the six-digit code from the app.')
       try {
-        const nextFactors = await listMfaFactors()
-        if (totpEnrollmentResultIsCurrent(operation, totpEnrollmentOperation.current, ownerId, activeEmployeeIdRef.current)) {
-          setFactors(nextFactors)
-        }
+        setFactors(await listMfaFactors())
       } catch {
         // The QR code is already available; do not block setup on a secondary list refresh.
       }
     } catch (error) {
-      if (!totpEnrollmentResultIsCurrent(operation, totpEnrollmentOperation.current, ownerId, activeEmployeeIdRef.current)) return
       setErrorMessage(
         error instanceof Error
           ? error.message
           : 'Authenticator setup failed. Refresh the page and try again.',
       )
       try {
-        const nextFactors = await listMfaFactors()
-        if (totpEnrollmentResultIsCurrent(operation, totpEnrollmentOperation.current, ownerId, activeEmployeeIdRef.current)) {
-          setFactors(nextFactors)
-        }
+        setFactors(await listMfaFactors())
       } catch {
         // Keep the original setup error visible instead of replacing it with a secondary refresh error.
       }
     } finally {
-      if (totpEnrollmentResultIsCurrent(operation, totpEnrollmentOperation.current, ownerId, activeEmployeeIdRef.current)) {
-        setBusyAction(null)
-      }
+      setBusyAction(null)
     }
   }
 
@@ -570,8 +459,7 @@ export function AccountSecurityPage() {
     }
     setErrorMessage(null)
     setMessage(null)
-    totpEnrollmentOperation.current += 1
-    setOwnedEnrollment(null)
+    setEnrollment(null)
     storeTotpEnrollment(null)
     setPhoneEnrollment(null)
     setPhoneChallengeId(null)
@@ -618,9 +506,7 @@ export function AccountSecurityPage() {
     setErrorMessage(null)
     setMessage(null)
     setSelectedMfaMethod('phone')
-    totpEnrollmentOperation.current += 1
-    setOwnedEnrollment(null)
-    storeTotpEnrollment(null)
+    setEnrollment(null)
     setPhoneEnrollment(null)
     setMfaCode('')
     setBusyAction('send-phone-code')
@@ -642,125 +528,52 @@ export function AccountSecurityPage() {
 
   async function handleMfaVerification(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const ownerEmployeeId = context?.employeeId ?? null
-    const operation = ++mfaVerificationOperation.current
-    const supabase = getSupabaseClient()
-    let ownerAuthUserId: string | null = null
     setErrorMessage(null)
     setMessage(null)
     setBusyAction('verify-mfa')
 
     try {
-      if (!ownerEmployeeId) throw new Error('Your account could not be verified for MFA. Refresh the page and try again.')
-
-      // Bind the entire multi-request transaction to both the verified employee
-      // and the authenticated Supabase user. An account switch must stop the
-      // flow before any later RPC, remembered-device write, or UI commit.
-      const sessionBefore = await supabase.auth.getSession()
-      if (sessionBefore.error || !sessionBefore.data.session?.user.id) {
-        throw new Error('Your secure session could not be verified. Refresh the page and try again.')
-      }
-      ownerAuthUserId = sessionBefore.data.session.user.id
-      const ownerContext = await getSessionContext()
-      const sessionAfter = await supabase.auth.getSession()
-      if (
-        ownerContext.employeeId !== ownerEmployeeId
-        || sessionAfter.error
-        || sessionAfter.data.session?.user.id !== ownerAuthUserId
-        || !mfaVerificationResultIsCurrent(
-          operation,
-          mfaVerificationOperation.current,
-          ownerEmployeeId,
-          activeEmployeeIdRef.current,
-          ownerAuthUserId,
-          sessionAfter.data.session?.user.id ?? null,
-        )
-      ) {
-        throw new Error('Your signed-in account changed while MFA was being verified. Start the verification again for the current account.')
-      }
-
-      async function verificationIsCurrent(): Promise<boolean> {
-        if (!mfaVerificationResultIsCurrent(
-          operation,
-          mfaVerificationOperation.current,
-          ownerEmployeeId,
-          activeEmployeeIdRef.current,
-          ownerAuthUserId,
-          ownerAuthUserId,
-        )) return false
-        const activeSession = await supabase.auth.getSession()
-        return !activeSession.error && mfaVerificationResultIsCurrent(
-          operation,
-          mfaVerificationOperation.current,
-          ownerEmployeeId,
-          activeEmployeeIdRef.current,
-          ownerAuthUserId,
-          activeSession.data.session?.user.id ?? null,
-        )
-      }
-
       let verifiedMethod: MfaMethod = selectedMfaMethod ?? 'totp'
       const completedNewEnrollment = Boolean(enrollment || phoneEnrollment)
 
       if (enrollment) {
         await verifyTotpEnrollment(enrollment.factorId, mfaCode)
-        if (!await verificationIsCurrent()) return
         verifiedMethod = 'totp'
       } else if (phoneEnrollment) {
         await verifyMfaChallenge(phoneEnrollment.factorId, phoneEnrollment.challengeId, mfaCode, 'phone')
-        if (!await verificationIsCurrent()) return
         verifiedMethod = 'phone'
       } else if (activeVerifiedFactor) {
         if (activeVerifiedFactor.factorType === 'phone') {
           if (!phoneChallengeId) throw new Error('Send a text code before verifying SMS MFA.')
           await verifyMfaChallenge(activeVerifiedFactor.id, phoneChallengeId, mfaCode, 'phone')
-          if (!await verificationIsCurrent()) return
           verifiedMethod = 'phone'
         } else {
           const challengeId = await createMfaChallenge(activeVerifiedFactor.id, 'totp')
-          if (!await verificationIsCurrent()) return
           await verifyMfaChallenge(activeVerifiedFactor.id, challengeId, mfaCode, 'totp')
-          if (!await verificationIsCurrent()) return
           verifiedMethod = 'totp'
         }
       } else {
         throw new Error('Choose an MFA method before entering a code.')
       }
 
-      if (!await verificationIsCurrent()) return
-      const marked = await supabase.rpc('mark_mfa_enrolled')
-      if (!await verificationIsCurrent()) return
+      const marked = await getSupabaseClient().rpc('mark_mfa_enrolled')
       if (marked.error) throw new Error('MFA enrollment could not be recorded.')
 
       let rememberDeviceFailed = false
       if (rememberDevice && canRememberDevice) {
         try {
-          if (!await verificationIsCurrent()) return
           await rememberCurrentDevice(14)
-          if (!await verificationIsCurrent()) return
         } catch {
-          if (!await verificationIsCurrent()) return
           rememberDeviceFailed = true
         }
       }
 
-      if (!await verificationIsCurrent()) return
-      const nextContext = await getSessionContext()
-      if (nextContext.employeeId !== ownerEmployeeId || !await verificationIsCurrent()) return
-      const [nextFactors, level, nextSecurityKeyDirectory] = await Promise.all([
-        listMfaFactors(),
-        getAuthenticatorLevel(),
-        getSecurityKeyDirectory(),
-      ])
-      if (!await verificationIsCurrent()) return
-      setContext(nextContext)
-      setFactors(nextFactors)
-      setRawAuthenticatorLevel(level.currentLevel)
-      setSecurityKeys(nextSecurityKeyDirectory.keys)
-      setSecurityKeyLoadError(null)
-      notifySessionContextChanged()
-      totpEnrollmentOperation.current += 1
-      setOwnedEnrollment(null)
+      const nextContext = await refreshContext()
+      if (completedNewEnrollment) {
+        const batch = await generateMfaRecoveryCodes()
+        setRecoveryCodes(batch.codes)
+      }
+      setEnrollment(null)
       storeTotpEnrollment(null)
       setPhoneEnrollment(null)
       setPhoneChallengeId(null)
@@ -771,9 +584,10 @@ export function AccountSecurityPage() {
       setShowPassword(false)
       setShowPasswordConfirmation(false)
       setCheckpointVersion((version) => version + 1)
+      await refreshTrustedDevices()
 
       if (completedNewEnrollment) {
-        setMessage('MFA is active. One-time recovery codes are paused; use password recovery or contact an administrator if you lose access to your authenticator.')
+        setMessage('MFA is active. Save your one-time recovery codes before continuing.')
       } else if (!nextContext.mustChangePassword && !(nextContext.mfaRequired && !nextContext.hasMfa)) {
         setMessage(
           rememberDeviceFailed
@@ -789,24 +603,9 @@ export function AccountSecurityPage() {
         )
       }
     } catch (error) {
-      if (ownerAuthUserId) {
-        const activeSession = await supabase.auth.getSession().catch(() => null)
-        if (!activeSession || !mfaVerificationResultIsCurrent(
-          operation,
-          mfaVerificationOperation.current,
-          ownerEmployeeId,
-          activeEmployeeIdRef.current,
-          ownerAuthUserId,
-          activeSession.data.session?.user.id ?? null,
-        )) return
-      } else if (operation !== mfaVerificationOperation.current || activeEmployeeIdRef.current !== ownerEmployeeId) {
-        return
-      }
       setErrorMessage(error instanceof Error ? error.message : 'MFA verification failed.')
     } finally {
-      if (operation === mfaVerificationOperation.current && activeEmployeeIdRef.current === ownerEmployeeId) {
-        setBusyAction(null)
-      }
+      setBusyAction(null)
     }
   }
 
@@ -832,6 +631,71 @@ export function AccountSecurityPage() {
     } finally {
       setBusyAction(null)
     }
+  }
+
+  async function handleRecovery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErrorMessage(null)
+    setMessage(null)
+    setBusyAction('recover-mfa')
+    try {
+      await recoverMfaWithCode(recoveryCode)
+      clearRememberedDeviceOnThisBrowser()
+      setRecoveryCode('')
+      setShowRecoveryEntry(false)
+      setEnrollment(null)
+      storeTotpEnrollment(null)
+      await refreshContext()
+      setFactors(await listMfaFactors())
+      setSelectedMfaMethod('totp')
+      setMessage('Recovery code accepted. Set up a new authenticator now; the remaining codes in that set have been revoked.')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'The recovery code could not be used.')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleRegenerateRecoveryCodes(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErrorMessage(null)
+    setMessage(null)
+    setBusyAction('regenerate-recovery')
+    try {
+      const factor = verifiedTotpFactor ?? verifiedPhoneFactor
+      if (!factor) throw new Error('No verified code-based MFA method is available for identity confirmation.')
+      const challengeId = await createMfaChallenge(factor.id, factor.factorType)
+      await verifyMfaChallenge(factor.id, challengeId, recoveryVerificationCode, factor.factorType)
+      const batch = await generateMfaRecoveryCodes()
+      setRecoveryCodes(batch.codes)
+      setRecoveryVerificationCode('')
+      setShowRecoveryRegeneration(false)
+      setMessage('A new recovery-code set was created. All previous unused recovery codes are revoked.')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Recovery codes could not be regenerated.')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function copyRecoveryCodes(): Promise<void> {
+    await navigator.clipboard.writeText(recoveryCodes.join('\n'))
+    setMessage('Recovery codes copied. Store them somewhere private and separate from this device.')
+  }
+
+  function downloadRecoveryCodes(): void {
+    const content = [
+      'SygShift one-time MFA recovery codes',
+      'Each code can be used once. Store these privately.',
+      '',
+      ...recoveryCodes,
+    ].join('\n')
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'sygshift-mfa-recovery-codes.txt'
+    anchor.click()
+    URL.revokeObjectURL(url)
   }
 
   if (!isSupabaseConfigured) return <Navigate to="/login" replace />
@@ -1244,11 +1108,64 @@ export function AccountSecurityPage() {
             ) : null}
 
             {availableVerifiedFactors.length > 0 && !enrollment && !phoneEnrollment ? (
-              <div className="auth-notice auth-notice--warning auth-notice--inline" role="status">
-                <ShieldCheck aria-hidden="true" size={21} />
-                <span>One-time MFA recovery is temporarily paused until it can safely invalidate every active session. Use password recovery or contact an administrator.</span>
+              <div className="mfa-recovery-entry">
+                <button className="text-action" onClick={() => setShowRecoveryEntry((current) => !current)} type="button">
+                  {showRecoveryEntry ? 'Use authenticator instead' : 'Use a one-time recovery code'}
+                </button>
+                {showRecoveryEntry ? (
+                  <form className="mfa-form" onSubmit={handleRecovery}>
+                    <label className="field-label">
+                      <span>Recovery code</span>
+                      <input
+                        autoComplete="one-time-code"
+                        disabled={busyAction === 'recover-mfa'}
+                        onChange={(event) => setRecoveryCode(event.target.value.toUpperCase())}
+                        placeholder="SYG-XXXX-XXXX"
+                        required
+                        value={recoveryCode}
+                      />
+                    </label>
+                    <button className="primary-action" disabled={busyAction === 'recover-mfa'} type="submit">
+                      Use recovery code
+                    </button>
+                  </form>
+                ) : null}
               </div>
             ) : null}
+          </section>
+        ) : null}
+
+        {recoveryCodes.length > 0 ? (
+          <section className="security-panel recovery-code-panel" aria-labelledby="recovery-code-title">
+            <div>
+              <p className="eyebrow">One-time account recovery</p>
+              <h2 id="recovery-code-title">Save these recovery codes now.</h2>
+              <p>
+                Each code works once. SygShift stores only protected hashes, so this is the only time
+                the complete codes can be shown.
+              </p>
+            </div>
+            <div className="recovery-code-grid" aria-label="MFA recovery codes">
+              {recoveryCodes.map((code) => <code key={code}>{code}</code>)}
+            </div>
+            <div className="button-row">
+              <button className="secondary-button" onClick={() => void copyRecoveryCodes()} type="button">
+                <Copy aria-hidden="true" size={18} /> Copy all
+              </button>
+              <button className="secondary-button" onClick={downloadRecoveryCodes} type="button">
+                <Download aria-hidden="true" size={18} /> Download
+              </button>
+              <button
+                className="primary-action"
+                onClick={() => {
+                  setRecoveryCodes([])
+                  navigate(returnPath, { replace: true })
+                }}
+                type="button"
+              >
+                I saved these codes
+              </button>
+            </div>
           </section>
         ) : null}
 
@@ -1261,23 +1178,7 @@ export function AccountSecurityPage() {
                 Signing out keeps this browser remembered. Use Remove, or an admin revoke, when this device should require MFA again.
               </p>
             </div>
-            {trustedDeviceLoadState === 'loading' || trustedDeviceLoadState === 'idle' ? (
-              <p className="trusted-device-empty" role="status">Checking remembered devices…</p>
-            ) : trustedDeviceLoadState === 'error' ? (
-              <div className="security-key-error" role="alert">
-                <p>
-                  Remembered devices could not be verified. No device changes are available until this check succeeds.
-                  {trustedDeviceLoadError ? ` ${trustedDeviceLoadError}` : ''}
-                </p>
-                <button
-                  className="secondary-button secondary-button--small"
-                  onClick={() => { void refreshTrustedDevices() }}
-                  type="button"
-                >
-                  Retry device check
-                </button>
-              </div>
-            ) : trustedDevices.length === 0 ? (
+            {trustedDevices.length === 0 ? (
               <p className="trusted-device-empty">No active remembered devices are on file for this account.</p>
             ) : (
               <div className="trusted-device-list">
@@ -1292,32 +1193,18 @@ export function AccountSecurityPage() {
                     </div>
                     <button
                       className="secondary-button secondary-button--small"
-                      disabled={busyAction !== null || trustedDeviceLoadState !== 'ready'}
                       onClick={async () => {
-                        const action = `remove-trusted-device:${device.id}`
-                        setBusyAction(action)
-                        setErrorMessage(null)
-                        setMessage(null)
-                        try {
-                          await revokeCurrentTrustedDevice(device.id)
-                          if (device.isCurrentDevice) clearRememberedDeviceOnThisBrowser()
-                          if (!await refreshTrustedDevices()) {
-                            setMessage('This remembered device was removed, but the remaining device list could not be verified. Retry the device check before making another change.')
-                            return
-                          }
-                          const nextContext = await refreshContext()
-                          setMessage(nextContext.mfaRequired && !nextContext.hasMfa
-                            ? 'This remembered device was removed. Verify MFA to continue.'
-                            : 'This remembered device was removed.')
-                        } catch (error) {
-                          setErrorMessage(error instanceof Error ? error.message : 'The remembered device could not be removed.')
-                        } finally {
-                          setBusyAction((current) => current === action ? null : current)
+                        await revokeCurrentTrustedDevice(device.id)
+                        if (device.isCurrentDevice) clearRememberedDeviceOnThisBrowser()
+                        await refreshTrustedDevices()
+                        const nextContext = await refreshContext()
+                        if (nextContext.mfaRequired && !nextContext.hasMfa) {
+                          setMessage('This remembered device was removed. Verify MFA to continue.')
                         }
                       }}
                       type="button"
                     >
-                      {busyAction === `remove-trusted-device:${device.id}` ? 'Removing…' : 'Remove'}
+                      Remove
                     </button>
                   </article>
                 ))}
@@ -1326,19 +1213,42 @@ export function AccountSecurityPage() {
           </section>
         ) : null}
 
-        {context?.mfaRequired && !needsMfa ? (
+        {context?.mfaRequired && !needsMfa && recoveryCodes.length === 0 ? (
           <section className="security-panel recovery-regeneration-panel">
             <div>
               <h2>Recovery codes</h2>
               <p>
-                One-time recovery-code generation is paused until recovery can safely invalidate every active session.
-                Existing protected code records are preserved. Use password recovery or contact an administrator if you lose access to your authenticator.
+                Generate a fresh set after confirming your identity with your current authenticator.
+                Existing unused codes will be revoked.
               </p>
             </div>
+            {!showRecoveryRegeneration ? (
+              <button className="secondary-button" onClick={() => setShowRecoveryRegeneration(true)} type="button">
+                Regenerate recovery codes
+              </button>
+            ) : (
+              <form className="mfa-form" onSubmit={handleRegenerateRecoveryCodes}>
+                <label className="field-label">
+                  <span>Current authenticator code</span>
+                  <input
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    maxLength={8}
+                    onChange={(event) => setRecoveryVerificationCode(event.target.value)}
+                    pattern="[0-9 ]{6,8}"
+                    required
+                    value={recoveryVerificationCode}
+                  />
+                </label>
+                <button className="primary-action" disabled={busyAction === 'regenerate-recovery'} type="submit">
+                  Verify and regenerate
+                </button>
+              </form>
+            )}
           </section>
         ) : null}
 
-        {isComplete ? (
+        {isComplete && recoveryCodes.length === 0 ? (
           <section className="security-complete">
             <CheckCircle2 aria-hidden="true" size={34} />
             <div>

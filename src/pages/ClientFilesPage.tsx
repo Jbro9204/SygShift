@@ -15,7 +15,6 @@ import { continentalUsTimeZones } from '../lib/usTimeZones'
 import {
   exportClientActivity, getClientDocumentBlob, getClientFile, getClientImportQueue, getClientImportSourceRecords, getClientsWorkspace, isClientIdentityVerificationRequired,
   linkSiteToClient, resolveClientImportRow, saveClient, saveClientContact, saveClientServiceRecord, updateClientSiteLocation, uploadClientDocument,
-  shouldReuseClientDocumentUploadRequest,
   type ClientContact, type ClientDocument, type ClientFile, type ClientRecord, type ClientSite, type ClientSourceRecord, type ClientStatus,
 } from '../data/clients'
 
@@ -65,150 +64,11 @@ function DocumentAccess({ action, document, onClose }: { action: 'preview' | 'do
   return <>{<ModalDialog busy={mutation.isPending} busyLabel={action === 'preview' ? 'Opening document…' : 'Preparing download…'} className="client-document-access-modal" description={`${document.filename} · Authorized access is recorded automatically.`} onClose={onClose} title={action === 'preview' ? 'View client document' : 'Download client document'}>{preview ? <div className="client-document-preview">{preview.type === 'application/pdf' && preview.bytes ? <SecurePdfViewer bytes={preview.bytes} title={document.title} /> : preview.type.startsWith('image/') && preview.url ? <img alt={document.title} src={preview.url} /> : <p>Preview is not available for this file type. Download the file to open it.</p>}<div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Close preview</button></div></div> : <div className="client-form document-access-progress"><div className="hr-document-access-summary"><FileText aria-hidden="true" size={24} /><div><strong>{document.filename}</strong><span>Authorized access is recorded automatically.</span></div></div>{mutation.isError && !isClientIdentityVerificationRequired(mutation.error) ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}<div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Close</button>{mutation.isError && !isClientIdentityVerificationRequired(mutation.error) ? <button className="primary-action" disabled={mutation.isPending} onClick={() => mutation.mutate()} type="button">Try again</button> : null}</div></div>}</ModalDialog>}{verify ? <IdentityVerificationModal context="general" onCancel={() => setVerify(false)} onVerified={() => { setVerify(false); mutation.reset(); mutation.mutate() }} /> : null}</>
 }
 
-type ClientDocumentUploadInput = Parameters<typeof uploadClientDocument>[0]
-
-const CLIENT_DOCUMENT_UPLOAD_REQUEST_STORAGE_PREFIX = 'sygshift:client-document-upload-request:v1'
-
-function clientDocumentUploadIntent(input: Omit<ClientDocumentUploadInput, 'file' | 'idempotencyKey'>): string {
-  return JSON.stringify([
-    input.accessClassification,
-    input.category,
-    input.clientId,
-    input.description,
-    input.effectiveOn,
-    input.expiresOn,
-    input.portalState,
-    input.title,
-  ])
-}
-
-async function clientDocumentUploadFingerprint(file: File, intent: string): Promise<string | null> {
-  const metadata = `${file.name}\u0000${file.type}\u0000${file.size}\u0000${file.lastModified}`
-  try {
-    const fileDigest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
-    const fileChecksum = Array.from(new Uint8Array(fileDigest), (byte) => byte.toString(16).padStart(2, '0')).join('')
-    const operationDigest = await crypto.subtle.digest(
-      'SHA-256',
-      new TextEncoder().encode(`${metadata}\u0000${fileChecksum}\u0000${intent}`),
-    )
-    return Array.from(new Uint8Array(operationDigest), (byte) => byte.toString(16).padStart(2, '0')).join('')
-  } catch {
-    // Never persist a filename or user-entered document metadata in a browser
-    // storage key. The in-memory request key still makes same-dialog retries
-    // idempotent when Web Crypto is unavailable, but it intentionally cannot be
-    // restored after the dialog or browser session is closed.
-    return null
-  }
-}
-
-function clientDocumentUploadStorageKey(ownerId: string, clientId: string, fingerprint: string): string {
-  return `${CLIENT_DOCUMENT_UPLOAD_REQUEST_STORAGE_PREFIX}:${ownerId}:${clientId}:${fingerprint}`
-}
-
-function readClientDocumentUploadRequest(storageKey: string): string | null {
-  try { return window.sessionStorage.getItem(storageKey) } catch { return null }
-}
-
-function storeClientDocumentUploadRequest(storageKey: string, requestKey: string): void {
-  try { window.sessionStorage.setItem(storageKey, requestKey) } catch { /* The in-memory request key still protects retries while this dialog remains mounted. */ }
-}
-
-function removeClientDocumentUploadRequest(storageKey: string | null): void {
-  if (!storageKey) return
-  try { window.sessionStorage.removeItem(storageKey) } catch { /* The request completed or failed deterministically even when browser storage is unavailable. */ }
-}
-
-function DocumentUpload({ clientId, onClose, onSaved, ownerId }: { clientId: string; onClose: () => void; onSaved: () => void; ownerId: string }) {
-  const [file, setFile] = useState<File | null>(null)
-  const [progress, setProgress] = useState(0)
-  const [verify, setVerify] = useState(false)
-  const [pending, setPending] = useState<ClientDocumentUploadInput | null>(null)
-  const [preparing, setPreparing] = useState(false)
-  const [preparationError, setPreparationError] = useState<string | null>(null)
-  const uploadRequestKey = useRef<string | null>(null)
-  const uploadStorageKey = useRef<string | null>(null)
-  const fileSelectionGeneration = useRef(0)
-  const mutation = useMutation({
-    mutationFn: (payload: ClientDocumentUploadInput) => uploadClientDocument(payload, setProgress),
-    onMutate: () => setPreparing(false),
-    onSuccess: () => {
-      removeClientDocumentUploadRequest(uploadStorageKey.current)
-      uploadStorageKey.current = null
-      uploadRequestKey.current = null
-      onSaved()
-    },
-    onError: (error) => {
-      if (isClientIdentityVerificationRequired(error)) {
-        setVerify(true)
-        return
-      }
-      if (!shouldReuseClientDocumentUploadRequest(error)) {
-        removeClientDocumentUploadRequest(uploadStorageKey.current)
-        uploadStorageKey.current = null
-        uploadRequestKey.current = null
-      }
-    },
-  })
-  const busy = preparing || mutation.isPending
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!file || busy) return
-    const selectedFile = file
-    const selectionGeneration = fileSelectionGeneration.current
-    const data = new FormData(event.currentTarget)
-    const basePayload: Omit<ClientDocumentUploadInput, 'idempotencyKey'> = {
-      accessClassification: value(data, 'accessClassification') as ClientDocument['accessClassification'],
-      category: value(data, 'category') as ClientDocument['category'],
-      clientId,
-      description: value(data, 'description') ?? '',
-      effectiveOn: value(data, 'effectiveOn'),
-      expiresOn: value(data, 'expiresOn'),
-      file: selectedFile,
-      portalState: 'internal_only',
-      title: value(data, 'title') ?? '',
-    }
-    setPreparing(true)
-    setPreparationError(null)
-    try {
-      const fingerprint = await clientDocumentUploadFingerprint(
-        selectedFile,
-        clientDocumentUploadIntent(basePayload),
-      )
-      if (selectionGeneration !== fileSelectionGeneration.current) return
-      const storageKey = fingerprint === null
-        ? null
-        : clientDocumentUploadStorageKey(ownerId, clientId, fingerprint)
-      if (storageKey !== null && uploadStorageKey.current !== storageKey) {
-        uploadStorageKey.current = storageKey
-        uploadRequestKey.current = readClientDocumentUploadRequest(storageKey)
-      } else if (storageKey === null) {
-        uploadStorageKey.current = null
-      }
-      uploadRequestKey.current ??= crypto.randomUUID()
-      if (storageKey !== null) storeClientDocumentUploadRequest(storageKey, uploadRequestKey.current)
-      const payload = { ...basePayload, idempotencyKey: uploadRequestKey.current }
-      setPending(payload)
-      mutation.mutate(payload)
-    } catch {
-      setPreparing(false)
-      setPreparationError('The file could not be prepared for a safe upload. Choose it again and retry.')
-    }
-  }
-
-  function chooseFile(nextFile: File | null) {
-    fileSelectionGeneration.current += 1
-    setFile(nextFile)
-    setPending(null)
-    setProgress(0)
-    setPreparing(false)
-    setPreparationError(null)
-    uploadStorageKey.current = null
-    uploadRequestKey.current = null
-    mutation.reset()
-  }
-
-  return <><ModalDialog busy={busy} busyLabel={preparing ? 'Preparing a safe upload…' : `Encrypting and storing document… ${progress}%`} className="client-document-upload-modal" description="Files remain in a private vault. Contract and pricing categories have a separate restricted permission." onClose={onClose} title="Upload client document"><form className="client-form" onSubmit={submit}><label><span>File</span><input accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx" disabled={busy} onChange={(event) => chooseFile(event.target.files?.[0] ?? null)} required type="file" /><small>PDF, image, text, Word, or Excel · 25 MB maximum</small></label><div className="form-grid form-grid--two"><label><span>Category</span><select name="category"><option value="proposal">Proposal</option><option value="contract">Contract</option><option value="amendment">Amendment</option><option value="pricing">Pricing</option><option value="post_order">Post order</option><option value="insurance">Insurance</option><option value="correspondence">Correspondence</option><option value="report">Report</option><option value="other">Other</option></select></label><label><span>Access</span><select name="accessClassification"><option value="confidential">Confidential</option><option value="restricted">Restricted</option><option value="highly_restricted">Highly restricted</option></select></label></div><label><span>Title</span><input name="title" required /></label><label><span>Description</span><textarea name="description" rows={3} /></label><div className="form-grid form-grid--two"><label><span>Effective date</span><input name="effectiveOn" type="date" /></label><label><span>Expiration date</span><input name="expiresOn" type="date" /></label></div>{preparationError ? <div className="inline-alert" role="alert">{preparationError}</div> : null}{mutation.isError && !isClientIdentityVerificationRequired(mutation.error) ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}<div className="modal-actions"><button className="secondary-button" disabled={busy} onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={!file || busy} type="submit"><Upload size={17} />Upload securely</button></div></form></ModalDialog>{verify ? <IdentityVerificationModal context="general" onCancel={() => setVerify(false)} onVerified={() => { setVerify(false); mutation.reset(); if (pending) mutation.mutate(pending) }} /> : null}</>
+function DocumentUpload({ clientId, onClose, onSaved }: { clientId: string; onClose: () => void; onSaved: () => void }) {
+  const [file, setFile] = useState<File | null>(null); const [progress, setProgress] = useState(0); const [verify, setVerify] = useState(false); const [pending, setPending] = useState<Record<string, unknown> | null>(null)
+  const mutation = useMutation({ mutationFn: (payload: Record<string, unknown>) => uploadClientDocument(payload as Parameters<typeof uploadClientDocument>[0], setProgress), onSuccess: onSaved, onError: (error) => { if (isClientIdentityVerificationRequired(error)) setVerify(true) } })
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!file) return; const data = new FormData(event.currentTarget); const payload = { clientId, file, idempotencyKey: crypto.randomUUID(), category: value(data, 'category'), title: value(data, 'title'), description: value(data, 'description') ?? '', accessClassification: value(data, 'accessClassification'), portalState: 'internal_only', effectiveOn: value(data, 'effectiveOn'), expiresOn: value(data, 'expiresOn') }; setPending(payload); mutation.mutate(payload) }
+  return <><ModalDialog busy={mutation.isPending} busyLabel={`Encrypting and storing document… ${progress}%`} className="client-document-upload-modal" description="Files remain in a private vault. Contract and pricing categories have a separate restricted permission." onClose={onClose} title="Upload client document"><form className="client-form" onSubmit={submit}><label><span>File</span><input accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx" onChange={(event) => setFile(event.target.files?.[0] ?? null)} required type="file" /><small>PDF, image, text, Word, or Excel · 25 MB maximum</small></label><div className="form-grid form-grid--two"><label><span>Category</span><select name="category"><option value="proposal">Proposal</option><option value="contract">Contract</option><option value="amendment">Amendment</option><option value="pricing">Pricing</option><option value="post_order">Post order</option><option value="insurance">Insurance</option><option value="correspondence">Correspondence</option><option value="report">Report</option><option value="other">Other</option></select></label><label><span>Access</span><select name="accessClassification"><option value="confidential">Confidential</option><option value="restricted">Restricted</option><option value="highly_restricted">Highly restricted</option></select></label></div><label><span>Title</span><input name="title" required /></label><label><span>Description</span><textarea name="description" rows={3} /></label><div className="form-grid form-grid--two"><label><span>Effective date</span><input name="effectiveOn" type="date" /></label><label><span>Expiration date</span><input name="expiresOn" type="date" /></label></div>{mutation.isError && !isClientIdentityVerificationRequired(mutation.error) ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}<div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={!file || mutation.isPending} type="submit"><Upload size={17} />Upload securely</button></div></form></ModalDialog>{verify ? <IdentityVerificationModal context="general" onCancel={() => setVerify(false)} onVerified={() => { setVerify(false); mutation.reset(); if (pending) mutation.mutate(pending) }} /> : null}</>
 }
 
 function ServiceRecordEditor({ clientId, onClose, onSaved }: { clientId: string; onClose: () => void; onSaved: () => void }) {
@@ -267,7 +127,7 @@ export function ClientFilesPage() {
   useEffect(() => { setActivityPage(1); setDocumentPage(1) }, [clientId])
   const workspace = useQuery({ queryKey: ['clients', search, status, page, pageSize], queryFn: () => getClientsWorkspace(search, status, page, pageSize), enabled: !clientId && !communicationsView, placeholderData: keepPreviousData })
   const file = useQuery({ queryKey: ['client-file', clientId, activityPage, activityPageSize, documentPage, documentPageSize], queryFn: () => getClientFile(clientId!, activityPage, activityPageSize, documentPage, documentPageSize), enabled: Boolean(clientId) })
-  if (clientId) return <ClientFileView activityPage={activityPage} activityPageSize={activityPageSize} communicationsEmployeeId={canViewClientCommunications ? communicationsEmployeeId : null} currentEmployeeId={communicationsEmployeeId} data={file.data} documentPage={documentPage} documentPageSize={documentPageSize} error={file.error} loading={file.isPending} onActivityPage={setActivityPage} onActivityPageSize={(size) => { setActivityPageSize(size); setActivityPage(1) }} onBack={() => navigate('/clients')} onDocumentPage={setDocumentPage} onDocumentPageSize={(size) => { setDocumentPageSize(size); setDocumentPage(1) }} onRefresh={() => queryClient.invalidateQueries({ queryKey: ['client-file', clientId] })} />
+  if (clientId) return <ClientFileView activityPage={activityPage} activityPageSize={activityPageSize} communicationsEmployeeId={canViewClientCommunications ? communicationsEmployeeId : null} data={file.data} documentPage={documentPage} documentPageSize={documentPageSize} error={file.error} loading={file.isPending} onActivityPage={setActivityPage} onActivityPageSize={(size) => { setActivityPageSize(size); setActivityPage(1) }} onBack={() => navigate('/clients')} onDocumentPage={setDocumentPage} onDocumentPageSize={(size) => { setDocumentPageSize(size); setDocumentPage(1) }} onRefresh={() => queryClient.invalidateQueries({ queryKey: ['client-file', clientId] })} />
   if (communicationsView && sessionContext.isPending) return <div className="page page--clients"><DataStatePanel icon={ShieldCheck} title="Checking Client Communications access"><p>Verifying your current effective permissions.</p></DataStatePanel></div>
   if (communicationsView) {
     if (!canViewClientCommunications || !communicationsEmployeeId) return <Navigate replace to="/clients" />
@@ -276,18 +136,17 @@ export function ClientFilesPage() {
   if (workspace.isPending) return <div className="page page--clients"><DataStatePanel icon={Building2} title="Loading Client Files"><p>Connecting clients to sites, operations, documents, and reporting.</p></DataStatePanel></div>
   if (workspace.isError || !workspace.data) return <div className="page page--clients"><DataStatePanel icon={Building2} title="Client Files unavailable"><p>{workspace.error?.message ?? 'The workspace could not be loaded.'}</p></DataStatePanel></div>
   const data = workspace.data
-  const resultsUpdating = workspace.isPlaceholderData
   return <div className="page page--clients"><header className="client-page-hero"><div><p className="eyebrow">Workforce & Operations</p><h1>Client Directory</h1><p>Search every Client File, then open one controlled relationship record for contacts, locations, service history, contracts, evidence, and communications.</p></div><div className="client-page-hero__actions">{canViewClientCommunications ? <button className="secondary-button" onClick={() => setSearchParams({ view: 'communications' })} type="button"><MessageSquareText size={18} />Client communications</button> : null}{data.actor.canManage ? <button className="primary-action" onClick={() => setEditor(true)} type="button"><Plus size={18} />Add client</button> : null}</div></header>
-      {!resultsUpdating ? <section className="client-metrics" aria-label="Client File summary"><article><span>Active clients</span><strong>{data.metrics.active}</strong><small>Currently served</small></article><article><span>Prospects</span><strong>{data.metrics.prospects}</strong><small>Not yet operational</small></article><article><span>Renewals due</span><strong>{data.metrics.renewalsDue}</strong><small>Next 90 days</small></article><article className="client-metric--attention"><span>Needs attention</span><strong>{data.metrics.needsAttention}</strong><small>Onboarding, do not renew, or no linked site</small></article></section> : null}
+      <section className="client-metrics" aria-label="Client File summary"><article><span>Active clients</span><strong>{data.metrics.active}</strong><small>Currently served</small></article><article><span>Prospects</span><strong>{data.metrics.prospects}</strong><small>Not yet operational</small></article><article><span>Renewals due</span><strong>{data.metrics.renewalsDue}</strong><small>Next 90 days</small></article><article className="client-metric--attention"><span>Needs attention</span><strong>{data.metrics.needsAttention}</strong><small>Onboarding, do not renew, or no linked site</small></article></section>
       <section aria-busy={workspace.isFetching && !workspace.isPending} className="client-directory-panel"><div className="client-filters"><label className="search-field"><Search size={18} /><input aria-label="Search Client Files" onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Search client, number, city, or state" value={search} /></label><label><span>Status</span><select onChange={(event) => { setStatus(event.target.value); setPage(1) }} value={status}><option value="all">All statuses</option>{statuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><span aria-live="polite" className="sr-only" role="status">{workspace.isFetching && !workspace.isPending ? 'Updating client results…' : ''}</span></div>
-        {resultsUpdating ? <div className="client-empty"><Building2 size={28} /><strong>Updating Client Files</strong><span>Waiting for results that match the current search and status.</span></div> : <div className="client-directory-list" role="list"><div aria-hidden="true" className="client-directory-row client-directory-row--header"><span>Client</span><span>Status</span><span>Sites</span><span>Records</span><span>Manage</span></div>{data.clients.map((client) => <div className="client-directory-row" key={client.id} role="listitem"><div><strong>{client.displayName}</strong><small>{client.clientNumber} · {client.legalName}</small></div><span className={`status-badge client-status--${client.status}`}>{statusLabel(client.status)}</span><div><strong>{client.siteCount}</strong><small>{[client.city, client.region].filter(Boolean).join(', ') || 'Location pending'}</small></div><div><strong>{client.contactCount} contacts</strong><small>{client.documentCount} documents</small></div><Link className="secondary-button secondary-button--small" to={`/clients/${client.id}`}>Open file</Link></div>)}</div>}
-        {!resultsUpdating && data.clients.length === 0 ? <div className="client-empty"><Building2 size={28} /><strong>No Client Files match these filters</strong><span>Adjust the search or create a controlled Client File.</span></div> : null}
-        {!resultsUpdating ? <footer className="client-pagination"><span>Page {data.pagination.page} · {data.pagination.totalCount} records</span><label>Rows <select onChange={(event) => { setPageSize(Number(event.target.value) as 5 | 10 | 20); setPage(1) }} value={pageSize}><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></label><button className="secondary-button secondary-button--small" disabled={page <= 1} onClick={() => setPage((current) => current - 1)} type="button">Previous</button><button className="secondary-button secondary-button--small" disabled={page >= (data.pagination.totalPages ?? 0)} onClick={() => setPage((current) => current + 1)} type="button">Next</button></footer> : null}
+        <div className="client-directory-list" role="list"><div aria-hidden="true" className="client-directory-row client-directory-row--header"><span>Client</span><span>Status</span><span>Sites</span><span>Records</span><span>Manage</span></div>{data.clients.map((client) => <div className="client-directory-row" key={client.id} role="listitem"><div><strong>{client.displayName}</strong><small>{client.clientNumber} · {client.legalName}</small></div><span className={`status-badge client-status--${client.status}`}>{statusLabel(client.status)}</span><div><strong>{client.siteCount}</strong><small>{[client.city, client.region].filter(Boolean).join(', ') || 'Location pending'}</small></div><div><strong>{client.contactCount} contacts</strong><small>{client.documentCount} documents</small></div><Link className="secondary-button secondary-button--small" to={`/clients/${client.id}`}>Open file</Link></div>)}</div>
+        {data.clients.length === 0 ? <div className="client-empty"><Building2 size={28} /><strong>No Client Files match these filters</strong><span>Adjust the search or create a controlled Client File.</span></div> : null}
+        <footer className="client-pagination"><span>Page {data.pagination.page} · {data.pagination.totalCount} records</span><label>Rows <select onChange={(event) => { setPageSize(Number(event.target.value) as 5 | 10 | 20); setPage(1) }} value={pageSize}><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></label><button className="secondary-button secondary-button--small" disabled={page <= 1} onClick={() => setPage((current) => current - 1)} type="button">Previous</button><button className="secondary-button secondary-button--small" disabled={page >= (data.pagination.totalPages ?? 0)} onClick={() => setPage((current) => current + 1)} type="button">Next</button></footer>
       </section>{data.actor.canManageImports && data.importQueueCount ? <div className="client-import-notice"><ShieldCheck size={20} /><div><strong>{data.importQueueCount} source rows await controlled review</strong><span>Spreadsheet rows remain staged until an authorized manager deliberately matches or excludes each record.</span></div><button className="secondary-button" onClick={() => setImportOpen(true)} type="button">Review source</button></div> : null}
     {editor ? <ClientEditor onClose={() => setEditor(false)} onSaved={(id) => { setEditor(false); navigate(`/clients/${id}`) }} /> : null}{importOpen ? <ImportReview onClose={() => setImportOpen(false)} onResolved={() => queryClient.invalidateQueries({ queryKey: ['clients'] })} /> : null}</div>
 }
 
-function ClientFileView({ activityPage, activityPageSize, communicationsEmployeeId, currentEmployeeId, data, documentPage, documentPageSize, error, loading, onActivityPage, onActivityPageSize, onBack, onDocumentPage, onDocumentPageSize, onRefresh }: { activityPage: number; activityPageSize: 5 | 10 | 20; communicationsEmployeeId: string | null; currentEmployeeId: string | null; data?: ClientFile; documentPage: number; documentPageSize: 5 | 10 | 20; error: Error | null; loading: boolean; onActivityPage: (page: number) => void; onActivityPageSize: (size: 5 | 10 | 20) => void; onBack: () => void; onDocumentPage: (page: number) => void; onDocumentPageSize: (size: 5 | 10 | 20) => void; onRefresh: () => void }) {
+function ClientFileView({ activityPage, activityPageSize, communicationsEmployeeId, data, documentPage, documentPageSize, error, loading, onActivityPage, onActivityPageSize, onBack, onDocumentPage, onDocumentPageSize, onRefresh }: { activityPage: number; activityPageSize: 5 | 10 | 20; communicationsEmployeeId: string | null; data?: ClientFile; documentPage: number; documentPageSize: 5 | 10 | 20; error: Error | null; loading: boolean; onActivityPage: (page: number) => void; onActivityPageSize: (size: 5 | 10 | 20) => void; onBack: () => void; onDocumentPage: (page: number) => void; onDocumentPageSize: (size: 5 | 10 | 20) => void; onRefresh: () => void }) {
   const canViewCommunications = Boolean(communicationsEmployeeId)
   const [tab, setTab] = useState<'overview' | 'contacts' | 'sites' | 'communications' | 'documents' | 'activity' | 'source'>('overview'); const [editClient, setEditClient] = useState(false); const [contact, setContact] = useState<ClientContact | null | undefined>(); const [upload, setUpload] = useState(false); const [service, setService] = useState(false); const [access, setAccess] = useState<{ action: 'preview' | 'download'; document: ClientDocument } | null>(null); const [linkSite, setLinkSite] = useState(false); const [editSite, setEditSite] = useState<ClientSite | null>(null); const [showAllContacts, setShowAllContacts] = useState(false); const [showAllSites, setShowAllSites] = useState(false)
   useEffect(() => { if (!canViewCommunications && tab === 'communications') setTab('overview') }, [canViewCommunications, tab])
@@ -302,10 +161,10 @@ function ClientFileView({ activityPage, activityPageSize, communicationsEmployee
     {tab === 'contacts' ? <section className="client-card"><div className="client-section-heading"><div><p className="eyebrow">People</p><h2>Client contacts</h2></div>{data.actor.canManage ? <button className="primary-action" onClick={() => setContact(null)} type="button"><Plus size={17} />Add contact</button> : null}</div><div className="client-contact-list">{data.contacts.slice(0, showAllContacts ? data.contacts.length : 10).map((item) => <article key={item.id}><div className="client-contact-icon"><UserRound size={20} /></div><div><strong>{item.firstName} {item.lastName}</strong><span>{item.title ?? item.contactType}</span><small>{[item.email, item.phone].filter(Boolean).join(' · ')}</small></div><div className="client-contact-badges">{item.primaryContact ? <span>Primary</span> : null}{item.emergencyContact ? <span>Emergency</span> : null}</div>{data.actor.canManage ? <button className="secondary-button secondary-button--small" onClick={() => setContact(item)} type="button">Edit</button> : null}</article>)}</div>{data.contacts.length > 10 ? <button className="client-list-disclosure" onClick={() => setShowAllContacts((current) => !current)} type="button">{showAllContacts ? 'Show 10 contacts' : `View all ${data.contacts.length} contacts`}</button> : null}</section> : null}
     {tab === 'sites' ? <section className="client-card"><div className="client-section-heading"><div><p className="eyebrow">Authoritative locations</p><h2>Sites & posts</h2></div>{data.actor.canManage && data.unassignedSites.length ? <button className="primary-action" onClick={() => setLinkSite(true)} type="button"><Plus size={17} />Link existing site</button> : null}</div>{data.sites.slice(0, showAllSites ? data.sites.length : 10).map((site) => <article className="client-site-card" key={site.id}><div><MapPin size={20} /><div><strong>{site.name}</strong><span>{[site.addressLine1, site.city, site.region].filter(Boolean).join(', ') || 'Address pending'}{site.geofenceRadiusMeters ? ` · ${site.geofenceRadiusMeters} m geofence` : ''}</span></div></div><div className="client-site-actions"><span className="status-badge">{site.active ? 'Active' : 'Inactive'}</span>{data.actor.canManage ? <button className="secondary-button secondary-button--small" onClick={() => setEditSite(site)} type="button">Edit location</button> : null}</div><div className="client-post-list">{site.posts.slice(0, 10).map((post) => <span key={post.id}>{post.name} · {post.requiresArmed ? 'Armed' : 'Unarmed'}</span>)}{site.posts.length > 10 ? <span>+ {site.posts.length - 10} more posts in Sites & Posts</span> : null}</div></article>)}{data.sites.length > 10 ? <button className="client-list-disclosure" onClick={() => setShowAllSites((current) => !current)} type="button">{showAllSites ? 'Show 10 sites' : `View all ${data.sites.length} sites`}</button> : null}{data.sites.length === 0 ? <div className="client-empty"><MapPin size={26} /><strong>No sites linked</strong><span>Link an existing authoritative Site record; do not re-enter it here.</span></div> : null}</section> : null}
     {tab === 'communications' && communicationsEmployeeId ? <ClientCommunications clientId={client.id} employeeId={communicationsEmployeeId} key={`${communicationsEmployeeId}:${client.id}`} /> : null}
-    {tab === 'documents' ? <section className="client-card"><div className="client-section-heading"><div><p className="eyebrow">Private client vault</p><h2>Proposals, contracts & records</h2><p>Contract and pricing files remain visible only to separately authorized employees.</p></div>{data.actor.canManageDocuments ? <button className="primary-action" disabled={!currentEmployeeId} onClick={() => setUpload(true)} title={!currentEmployeeId ? 'Verifying your signed-in account…' : undefined} type="button"><Upload size={17} />Upload document</button> : null}</div><div className="client-document-list">{data.documents.map((document) => <article key={document.id}><FileText size={22} /><div><strong>{document.title}</strong><span>{document.category.replaceAll('_', ' ')} · {sizeLabel(document.byteSize)} · {document.accessClassification.replaceAll('_', ' ')}</span><small>{document.filename} · Added {dateLabel(document.createdAt.slice(0, 10))}</small></div><span className="client-portal-state">{document.portalState.replaceAll('_', ' ')}</span><div><button className="secondary-button secondary-button--small" onClick={() => setAccess({ action: 'preview', document })} type="button"><Eye size={15} />View</button><button className="secondary-button secondary-button--small" onClick={() => setAccess({ action: 'download', document })} type="button"><Download size={15} />Download</button></div></article>)}</div>{data.documents.length === 0 ? <div className="client-empty"><FolderLock size={26} /><strong>No client documents</strong><span>Upload approved files to the private client vault.</span></div> : null}<footer className="client-pagination"><span>Page {documentPage} · {data.documentPagination.totalCount} documents</span><label>Rows <select onChange={(event) => onDocumentPageSize(Number(event.target.value) as 5 | 10 | 20)} value={documentPageSize}><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></label><button className="secondary-button secondary-button--small" disabled={documentPage <= 1} onClick={() => onDocumentPage(documentPage - 1)} type="button">Previous</button><button className="secondary-button secondary-button--small" disabled={documentPage * documentPageSize >= data.documentPagination.totalCount} onClick={() => onDocumentPage(documentPage + 1)} type="button">Next</button></footer></section> : null}
+    {tab === 'documents' ? <section className="client-card"><div className="client-section-heading"><div><p className="eyebrow">Private client vault</p><h2>Proposals, contracts & records</h2><p>Contract and pricing files remain visible only to separately authorized employees.</p></div>{data.actor.canManageDocuments ? <button className="primary-action" onClick={() => setUpload(true)} type="button"><Upload size={17} />Upload document</button> : null}</div><div className="client-document-list">{data.documents.map((document) => <article key={document.id}><FileText size={22} /><div><strong>{document.title}</strong><span>{document.category.replaceAll('_', ' ')} · {sizeLabel(document.byteSize)} · {document.accessClassification.replaceAll('_', ' ')}</span><small>{document.filename} · Added {dateLabel(document.createdAt.slice(0, 10))}</small></div><span className="client-portal-state">{document.portalState.replaceAll('_', ' ')}</span><div><button className="secondary-button secondary-button--small" onClick={() => setAccess({ action: 'preview', document })} type="button"><Eye size={15} />View</button><button className="secondary-button secondary-button--small" onClick={() => setAccess({ action: 'download', document })} type="button"><Download size={15} />Download</button></div></article>)}</div>{data.documents.length === 0 ? <div className="client-empty"><FolderLock size={26} /><strong>No client documents</strong><span>Upload approved files to the private client vault.</span></div> : null}<footer className="client-pagination"><span>Page {documentPage} · {data.documentPagination.totalCount} documents</span><label>Rows <select onChange={(event) => onDocumentPageSize(Number(event.target.value) as 5 | 10 | 20)} value={documentPageSize}><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></label><button className="secondary-button secondary-button--small" disabled={documentPage <= 1} onClick={() => onDocumentPage(documentPage - 1)} type="button">Previous</button><button className="secondary-button secondary-button--small" disabled={documentPage * documentPageSize >= data.documentPagination.totalCount} onClick={() => onDocumentPage(documentPage + 1)} type="button">Next</button></footer></section> : null}
     {tab === 'activity' ? <section className="client-card"><div className="client-section-heading"><div><p className="eyebrow">Connected service history</p><h2>Shifts, patrols & reports</h2><p>These records are assembled from their source workflows instead of duplicated.</p></div>{data.actor.canExport ? <button className="secondary-button" disabled={exportMutation.isPending} onClick={() => exportMutation.mutate()} type="button"><Download size={17} />{exportMutation.isPending ? 'Preparing…' : 'Export CSV'}</button> : null}</div>{exportMutation.isError ? <div className="inline-alert" role="alert">{exportMutation.error.message}</div> : null}<div className="client-activity-list">{data.activity.map((item) => <article key={`${item.kind}-${item.id}`}><CalendarClock size={19} /><div><strong>{item.title}</strong><span>{item.detail}</span><small>{formatOperationalDateTime(item.occurredAt, { includeTimeZoneName: true })} · {item.kind.replaceAll('_', ' ')}</small></div></article>)}</div>{data.activity.length === 0 ? <div className="client-empty"><CalendarClock size={26} /><strong>No connected activity yet</strong><span>Linked shifts, patrol hits, incidents, and service records will appear here.</span></div> : null}<footer className="client-pagination"><span>Page {activityPage}</span><label>Rows <select onChange={(event) => onActivityPageSize(Number(event.target.value) as 5 | 10 | 20)} value={activityPageSize}><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></label><button className="secondary-button secondary-button--small" disabled={activityPage <= 1} onClick={() => onActivityPage(activityPage - 1)} type="button">Previous</button><button className="secondary-button secondary-button--small" disabled={data.activity.length < activityPageSize} onClick={() => onActivityPage(activityPage + 1)} type="button">Next</button></footer></section> : null}
     {tab === 'source' ? <ClientSourceRecords clientId={client.id} /> : null}
-    {editClient ? <ClientEditor client={client} onClose={() => setEditClient(false)} onSaved={() => { setEditClient(false); onRefresh() }} /> : null}{contact !== undefined ? <ContactEditor clientId={client.id} contact={contact ?? undefined} onClose={() => setContact(undefined)} onSaved={() => { setContact(undefined); onRefresh() }} /> : null}{upload && currentEmployeeId ? <DocumentUpload clientId={client.id} onClose={() => setUpload(false)} onSaved={() => { setUpload(false); onRefresh() }} ownerId={currentEmployeeId} /> : null}{service ? <ServiceRecordEditor clientId={client.id} onClose={() => setService(false)} onSaved={() => { setService(false); onRefresh() }} /> : null}{access ? <DocumentAccess action={access.action} document={access.document} onClose={() => setAccess(null)} /> : null}{editSite ? <SiteLocationEditor clientId={client.id} site={editSite} onClose={() => setEditSite(null)} onSaved={() => { setEditSite(null); onRefresh() }} /> : null}
+    {editClient ? <ClientEditor client={client} onClose={() => setEditClient(false)} onSaved={() => { setEditClient(false); onRefresh() }} /> : null}{contact !== undefined ? <ContactEditor clientId={client.id} contact={contact ?? undefined} onClose={() => setContact(undefined)} onSaved={() => { setContact(undefined); onRefresh() }} /> : null}{upload ? <DocumentUpload clientId={client.id} onClose={() => setUpload(false)} onSaved={() => { setUpload(false); onRefresh() }} /> : null}{service ? <ServiceRecordEditor clientId={client.id} onClose={() => setService(false)} onSaved={() => { setService(false); onRefresh() }} /> : null}{access ? <DocumentAccess action={access.action} document={access.document} onClose={() => setAccess(null)} /> : null}{editSite ? <SiteLocationEditor clientId={client.id} site={editSite} onClose={() => setEditSite(null)} onSaved={() => { setEditSite(null); onRefresh() }} /> : null}
     {linkSite ? <ModalDialog busy={linkMutation.isPending} description="The Site remains authoritative and will appear here by relationship." onClose={() => setLinkSite(false)} title="Link existing site"><form className="client-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); linkMutation.mutate({ siteId: String(form.get('siteId')), reason: String(form.get('reason')) }) }}><label><span>Unassigned site</span><select name="siteId" required><option value="">Choose site</option>{data.unassignedSites.map((site) => <option key={site.id} value={site.id}>{site.name} · {[site.city, site.region].filter(Boolean).join(', ') || 'No address'}</option>)}</select></label><label><span>Relationship reason</span><input defaultValue="Confirmed client and site relationship." minLength={5} name="reason" required /></label>{linkMutation.isError ? <div className="inline-alert" role="alert">{linkMutation.error.message}</div> : null}<div className="modal-actions"><button className="secondary-button" onClick={() => setLinkSite(false)} type="button">Cancel</button><button className="primary-action" type="submit">Link site</button></div></form></ModalDialog> : null}
   </div>
 }

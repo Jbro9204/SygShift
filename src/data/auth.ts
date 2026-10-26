@@ -2,90 +2,14 @@ import { z } from 'zod'
 import { deactivateSharedIdentitySupabaseSession, getSupabaseClient } from '../lib/supabase'
 import { publishSharedIdentityBrowserEvent } from '../lib/sharedIdentityBrowserSync'
 import { clearSecurityKeySession } from '../lib/securityKeySession'
-import {
-  clearSharedIdentityServerSession,
-  clearSharedIdentitySession,
-} from '../lib/sharedIdentitySession'
+import { clearSharedIdentityServerSession, getSharedIdentitySessionScope } from '../lib/sharedIdentitySession'
 import { clearPushSession } from './pushNotifications'
 import { cancelLoginSound } from '../lib/notificationSounds'
 import { clearViewDateSelections } from '../lib/sessionViewDateSelection'
-import { clearPersonalEmailVerificationIntent } from './myAccount'
 
 export const AUTH_EMAIL_DOMAIN = 'accounts.sygshift.invalid'
 export const USERNAME_PATTERN = /^[a-z][a-z0-9]{1,62}$/
 export const SESSION_CONTEXT_REFRESH_EVENT = 'sygshift:session-context-refresh'
-export const TOTP_SETUP_STORAGE_KEY = 'sygshift:totp-setup'
-export const LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY = 'sygshift:local-sign-out-barrier:v1'
-export const LOCAL_SIGN_OUT_BARRIER_EVENT = 'sygshift:local-sign-out-barrier-change'
-
-const SIGN_OUT_REMOTE_CLEANUP_TIMEOUT_MS = 3_000
-let localSignOutBarrierFallback = false
-
-function publishLocalSignOutBarrierChange(): void {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(new Event(LOCAL_SIGN_OUT_BARRIER_EVENT))
-}
-
-function markLocalSignOutBarrier(): void {
-  localSignOutBarrierFallback = true
-  if (typeof window !== 'undefined') {
-    try {
-      window.localStorage.setItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY, 'blocked')
-    } catch {
-      // The in-memory fence still protects this document when storage is unavailable.
-    }
-  }
-  publishLocalSignOutBarrierChange()
-}
-
-export function beginLocalSignOutBarrier(): void {
-  markLocalSignOutBarrier()
-}
-
-function clearLocalSignOutBarrier(): void {
-  localSignOutBarrierFallback = false
-  if (typeof window !== 'undefined') {
-    try {
-      window.localStorage.removeItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY)
-    } catch {
-      // The in-memory fence is authoritative for this document.
-    }
-  }
-  publishLocalSignOutBarrierChange()
-}
-
-export function hasLocalSignOutBarrier(): boolean {
-  if (localSignOutBarrierFallback) return true
-  if (typeof window === 'undefined') return false
-  try {
-    return window.localStorage.getItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY) === 'blocked'
-  } catch {
-    return false
-  }
-}
-
-export function clearPendingTotpEnrollment(): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.sessionStorage.removeItem(TOTP_SETUP_STORAGE_KEY)
-  } catch {
-    // In-memory session teardown must still continue when browser storage is unavailable.
-  }
-}
-
-async function settleRemoteSignOutCleanup(operation: Promise<unknown>): Promise<void> {
-  let timeout: ReturnType<typeof setTimeout> | undefined
-  try {
-    await Promise.race([
-      operation.catch(() => undefined),
-      new Promise<void>((resolve) => {
-        timeout = globalThis.setTimeout(resolve, SIGN_OUT_REMOTE_CLEANUP_TIMEOUT_MS)
-      }),
-    ])
-  } finally {
-    if (timeout !== undefined) globalThis.clearTimeout(timeout)
-  }
-}
 
 const sessionContextSchema = z.object({
   employee_id: z.string().uuid(),
@@ -225,60 +149,21 @@ export async function verifyPasswordRecoveryToken(tokenHash: string): Promise<vo
   }
 }
 
-export async function signOut(options: { sharedIdentityServerSessionCleared?: boolean } = {}): Promise<void> {
-  const client = getSupabaseClient()
-
+export async function signOut(): Promise<void> {
   cancelLoginSound()
-
-  // Enter the browser-wide fail-closed state before either remote or local
-  // session cleanup begins. A shared-cookie outage must not leave reloads or
-  // sibling tabs able to rebuild the workspace from the still-valid local
-  // Supabase session. The fence is cleared only after both required cleanup
-  // steps have succeeded.
-  beginLocalSignOutBarrier()
-
-  // The HttpOnly shared-session cookie must be confirmed cleared before the
-  // local Supabase credential is removed. Supabase emits SIGNED_OUT as soon as
-  // local sign-out runs; doing that first can redirect/unmount the shell before
-  // a failed shared-cookie cleanup can lock the workspace and offer a retry.
-  // Push cleanup remains best-effort and may run alongside the required fence.
-  const pushCleanup = settleRemoteSignOutCleanup(clearPushSession())
-  if (!options.sharedIdentityServerSessionCleared) {
-    try {
-      await clearSharedIdentityServerSession()
-    } catch {
-      await pushCleanup
-      throw new Error('Shared sign-out could not be confirmed. The workspace remains locked; try sign out again before leaving this device.')
-    }
-  }
-
-  clearPendingTotpEnrollment()
-  clearPersonalEmailVerificationIntent()
-
-  let localSignOutError: Error | null = null
+  await clearPushSession()
+  const sharedIdentitySession = getSharedIdentitySessionScope() !== null
+  await clearSharedIdentityServerSession()
+  const client = getSupabaseClient()
   try {
-    const { error } = await client.auth.signOut({ scope: 'local' })
-    if (error) {
-      localSignOutError = new Error('Your local browser session could not be cleared. The workspace remains locked on this device; try sign out again and do not leave this device unattended.')
-    }
-  } catch {
-    localSignOutError = new Error('Your local browser session could not be cleared. The workspace remains locked on this device; try sign out again and do not leave this device unattended.')
+    const { error } = await client.auth.signOut()
+    if (error) throw new Error('You could not be signed out. Please try again.')
   } finally {
     deactivateSharedIdentitySupabaseSession()
-    clearSharedIdentitySession()
     clearSecurityKeySession()
     clearViewDateSelections()
-    // Always notify callback tabs. A shared-login handoff may still be waiting
-    // to finalize even when this tab does not yet hold a shared session.
-    publishSharedIdentityBrowserEvent('cleared')
+    if (sharedIdentitySession) publishSharedIdentityBrowserEvent('cleared')
   }
-
-  await pushCleanup
-  if (localSignOutError) throw localSignOutError
-  // Clear the cross-tab barrier last. A sibling must not be allowed to restore
-  // while this tab still holds the shared bearer, enrollment material, cached
-  // workspace, or has not yet published the cleared-session notification.
-  clearLocalSignOutBarrier()
 }
 
 async function requestSessionContext(signal?: AbortSignal): Promise<SessionContext> {

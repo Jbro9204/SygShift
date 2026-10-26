@@ -3,9 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as mfaData from '../data/mfa'
 import * as securityKeyData from '../data/securityKeys'
-import * as trustedDeviceData from '../data/trustedDevices'
-import { TOTP_SETUP_STORAGE_KEY } from '../data/auth'
-import { AccountSecurityPage, mfaVerificationResultIsCurrent, totpEnrollmentForEmployee, totpEnrollmentResultIsCurrent } from './AccountSecurityPage'
+import { AccountSecurityPage } from './AccountSecurityPage'
 
 const authMock = vi.hoisted(() => ({
   getSessionContext: vi.fn(),
@@ -14,14 +12,9 @@ const authMock = vi.hoisted(() => ({
   transientError: new Error('connection pool timeout'),
 }))
 
-const passwordMock = vi.hoisted(() => ({
-  updateMyPassword: vi.fn(),
-}))
-
 const supabaseMock = vi.hoisted(() => ({
   client: {
     auth: {
-      getSession: vi.fn(),
       refreshSession: vi.fn(),
       signOut: vi.fn(),
       updateUser: vi.fn(),
@@ -46,11 +39,6 @@ vi.mock('../lib/supabase', () => ({
   isSupabaseConfigured: true,
 }))
 
-vi.mock('../data/myAccount', async () => {
-  const actual = await vi.importActual<typeof import('../data/myAccount')>('../data/myAccount')
-  return { ...actual, updateMyPassword: passwordMock.updateMyPassword }
-})
-
 vi.mock('../data/mfa', () => ({
   createMfaChallenge: vi.fn(),
   getAuthenticatorLevel: vi.fn(),
@@ -65,13 +53,6 @@ vi.mock('../data/mfa', () => ({
 vi.mock('../data/securityKeys', () => ({
   authenticateWithSecurityKey: vi.fn(),
   getSecurityKeyDirectory: vi.fn(),
-}))
-
-vi.mock('../data/trustedDevices', () => ({
-  clearRememberedDeviceOnThisBrowser: vi.fn(),
-  getCurrentTrustedDevices: vi.fn(),
-  rememberCurrentDevice: vi.fn(),
-  revokeCurrentTrustedDevice: vi.fn(),
 }))
 
 function sessionContext(overrides: Partial<Awaited<ReturnType<typeof authMock.getSessionContext>>> = {}) {
@@ -92,7 +73,6 @@ function sessionContext(overrides: Partial<Awaited<ReturnType<typeof authMock.ge
 describe('AccountSecurityPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    sessionStorage.clear()
     authMock.getSessionContext
       .mockResolvedValueOnce(sessionContext())
       .mockResolvedValueOnce(sessionContext({
@@ -101,20 +81,9 @@ describe('AccountSecurityPage', () => {
       }))
     authMock.signOut.mockResolvedValue(undefined)
     supabaseMock.client.auth.refreshSession.mockResolvedValue({ data: {}, error: null })
-    supabaseMock.client.auth.getSession.mockResolvedValue({
-      data: { session: { user: { id: '30000000-0000-4000-8000-000000000003' } } },
-      error: null,
-    })
     supabaseMock.client.auth.signOut.mockResolvedValue({ error: null })
     supabaseMock.client.auth.updateUser.mockResolvedValue({ data: {}, error: null })
     supabaseMock.client.rpc.mockResolvedValue({ data: true, error: null })
-    passwordMock.updateMyPassword.mockResolvedValue({
-      authUserId: '30000000-0000-4000-8000-000000000003',
-      employeeId: '10000000-0000-4000-8000-000000000001',
-      passwordAlreadyCurrent: false,
-      saved: true,
-      sessionStillCurrent: true,
-    })
     vi.mocked(mfaData.listMfaFactors).mockResolvedValue([])
     vi.mocked(mfaData.getAuthenticatorLevel).mockResolvedValue({ currentLevel: 'aal2', nextLevel: 'aal2' })
     vi.mocked(securityKeyData.getSecurityKeyDirectory).mockResolvedValue({
@@ -123,8 +92,6 @@ describe('AccountSecurityPage', () => {
       pilotEligible: true,
       requestId: 'request-1',
     })
-    vi.mocked(trustedDeviceData.getCurrentTrustedDevices).mockResolvedValue([])
-    vi.mocked(trustedDeviceData.revokeCurrentTrustedDevice).mockResolvedValue()
   })
 
   it('keeps the authenticated session and offers retry when the security checkpoint is temporarily unavailable', async () => {
@@ -168,12 +135,8 @@ describe('AccountSecurityPage', () => {
     fireEvent.submit(saveButton.closest('form')!)
 
     await waitFor(() => {
-      expect(passwordMock.updateMyPassword).toHaveBeenCalledWith(
-        'StrongAdmin123!',
-        '10000000-0000-4000-8000-000000000001',
-      )
+      expect(supabaseMock.client.auth.updateUser).toHaveBeenCalledWith({ password: 'StrongAdmin123!' })
     })
-    expect(supabaseMock.client.auth.updateUser).not.toHaveBeenCalled()
     expect(screen.queryByText('The password confirmation does not match.')).not.toBeInTheDocument()
   })
 
@@ -196,12 +159,8 @@ describe('AccountSecurityPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save password' }))
 
     await waitFor(() => {
-      expect(passwordMock.updateMyPassword).toHaveBeenCalledWith(
-        'StrongAdmin123!',
-        '10000000-0000-4000-8000-000000000001',
-      )
+      expect(supabaseMock.client.auth.updateUser).toHaveBeenCalledWith({ password: 'StrongAdmin123!' })
     })
-    expect(supabaseMock.client.auth.updateUser).not.toHaveBeenCalled()
     expect(supabaseMock.client.rpc).not.toHaveBeenCalledWith('mark_password_changed')
     expect(authMock.signOut).toHaveBeenCalledTimes(1)
     expect(supabaseMock.client.auth.refreshSession).not.toHaveBeenCalled()
@@ -250,137 +209,6 @@ describe('AccountSecurityPage', () => {
     await screen.findByText('Authenticator app')
     expect(screen.queryByText('Text message')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Start authenticator setup/i })).toBeInTheDocument()
-  })
-
-  it('resumes a pending authenticator enrollment only for the same employee', async () => {
-    const ownerId = '10000000-0000-4000-8000-000000000001'
-    authMock.getSessionContext.mockReset()
-    authMock.getSessionContext.mockResolvedValue(sessionContext({
-      employeeId: ownerId,
-      hasMfa: false,
-      mfaRequired: true,
-      mustChangePassword: false,
-    }))
-    sessionStorage.setItem(TOTP_SETUP_STORAGE_KEY, JSON.stringify({
-      enrollment: {
-        factorId: 'factor-private',
-        qrCode: 'data:image/svg+xml;base64,PHN2Zy8+',
-        secret: 'SAME-EMPLOYEE-SECRET',
-        uri: 'otpauth://totp/SygShift:testadmin?secret=SAMEEMPLOYEESECRET',
-      },
-      ownerId,
-    }))
-
-    render(
-      <MemoryRouter>
-        <AccountSecurityPage />
-      </MemoryRouter>,
-    )
-
-    expect(await screen.findByText('SAME-EMPLOYEE-SECRET')).toBeInTheDocument()
-    expect(screen.getByText(/Authenticator setup is still active/i)).toBeInTheDocument()
-  })
-
-  it('discards a pending authenticator secret owned by a different employee', async () => {
-    authMock.getSessionContext.mockReset()
-    authMock.getSessionContext.mockResolvedValue(sessionContext({
-      employeeId: '10000000-0000-4000-8000-000000000001',
-      hasMfa: false,
-      mfaRequired: true,
-      mustChangePassword: false,
-    }))
-    sessionStorage.setItem(TOTP_SETUP_STORAGE_KEY, JSON.stringify({
-      enrollment: {
-        factorId: 'factor-private',
-        qrCode: 'data:image/svg+xml;base64,PHN2Zy8+',
-        secret: 'OTHER-EMPLOYEE-SECRET',
-        uri: 'otpauth://totp/SygShift:other?secret=OTHEREMPLOYEESECRET',
-      },
-      ownerId: '20000000-0000-4000-8000-000000000002',
-    }))
-
-    render(
-      <MemoryRouter>
-        <AccountSecurityPage />
-      </MemoryRouter>,
-    )
-
-    expect(await screen.findByRole('button', { name: /Start authenticator setup/i })).toBeInTheDocument()
-    expect(screen.queryByText('OTHER-EMPLOYEE-SECRET')).not.toBeInTheDocument()
-    expect(sessionStorage.getItem(TOTP_SETUP_STORAGE_KEY)).toBeNull()
-  })
-
-  it('never exposes an in-memory authenticator enrollment to a different employee', () => {
-    const enrollment = {
-      factorId: 'factor-private',
-      qrCode: 'data:image/svg+xml;base64,PHN2Zy8+',
-      secret: 'PRIVATE-EMPLOYEE-SECRET',
-      uri: 'otpauth://totp/SygShift:testadmin?secret=PRIVATEEMPLOYEESECRET',
-    }
-
-    expect(totpEnrollmentForEmployee({
-      enrollment,
-      ownerId: '10000000-0000-4000-8000-000000000001',
-    }, '10000000-0000-4000-8000-000000000001')).toBe(enrollment)
-    expect(totpEnrollmentForEmployee({
-      enrollment,
-      ownerId: '10000000-0000-4000-8000-000000000001',
-    }, '20000000-0000-4000-8000-000000000002')).toBeNull()
-  })
-
-  it('rejects a late authenticator enrollment result after the active account changes', () => {
-    expect(totpEnrollmentResultIsCurrent(
-      4,
-      5,
-      '10000000-0000-4000-8000-000000000001',
-      '20000000-0000-4000-8000-000000000002',
-    )).toBe(false)
-    expect(totpEnrollmentResultIsCurrent(
-      5,
-      5,
-      '20000000-0000-4000-8000-000000000002',
-      '20000000-0000-4000-8000-000000000002',
-    )).toBe(true)
-  })
-
-  it('rejects every later MFA verification step after either employee or auth-session ownership changes', () => {
-    const employeeA = '10000000-0000-4000-8000-000000000001'
-    const employeeB = '20000000-0000-4000-8000-000000000002'
-    const authA = '30000000-0000-4000-8000-000000000003'
-    const authB = '40000000-0000-4000-8000-000000000004'
-
-    expect(mfaVerificationResultIsCurrent(7, 7, employeeA, employeeA, authA, authA)).toBe(true)
-    expect(mfaVerificationResultIsCurrent(7, 8, employeeA, employeeA, authA, authA)).toBe(false)
-    expect(mfaVerificationResultIsCurrent(7, 7, employeeA, employeeB, authA, authA)).toBe(false)
-    expect(mfaVerificationResultIsCurrent(7, 7, employeeA, employeeA, authA, authB)).toBe(false)
-  })
-
-  it('does not present a failed remembered-device lookup as an empty verified list', async () => {
-    authMock.getSessionContext.mockReset()
-    authMock.getSessionContext.mockResolvedValue(sessionContext({
-      hasMfa: true,
-      mfaRequired: true,
-      mustChangePassword: false,
-    }))
-    vi.mocked(trustedDeviceData.getCurrentTrustedDevices)
-      .mockRejectedValueOnce(new Error('Device directory timed out.'))
-      .mockResolvedValueOnce([])
-
-    render(
-      <MemoryRouter>
-        <AccountSecurityPage />
-      </MemoryRouter>,
-    )
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/Remembered devices could not be verified/i)
-    expect(screen.getByRole('alert')).toHaveTextContent(/Remembered devices could not be loaded/i)
-    expect(screen.getByRole('alert')).not.toHaveTextContent('Device directory timed out.')
-    expect(screen.queryByText(/No active remembered devices/i)).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Retry device check' }))
-
-    expect(await screen.findByText(/No active remembered devices/i)).toBeInTheDocument()
-    expect(trustedDeviceData.getCurrentTrustedDevices).toHaveBeenCalledTimes(2)
   })
 
   it('lets Recruiting and Licensing remember an MFA-verified browser', async () => {

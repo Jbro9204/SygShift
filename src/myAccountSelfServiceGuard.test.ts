@@ -10,7 +10,6 @@ const migration = readFileSync(
   'utf8',
 )
 const page = readFileSync(join(root, 'src', 'pages', 'MyAccountPage.tsx'), 'utf8')
-const securityPage = readFileSync(join(root, 'src', 'pages', 'AccountSecurityPage.tsx'), 'utf8')
 const data = readFileSync(join(root, 'src', 'data', 'myAccount.ts'), 'utf8')
 const shell = readFileSync(join(root, 'src', 'components', 'AppShell.tsx'), 'utf8')
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
@@ -36,27 +35,11 @@ describe('My Account self-service guardrails', () => {
     expect(data).toContain('appendProtectedSessionHeaders(headers)')
   })
 
-  it('binds password changes to the immutable request bearer and suppresses stale-tab results', () => {
-    expect(worker).toContain("url.pathname === '/api/v1/account/password'")
-    expect(worker).toContain('expectedEmployeeId !== session.context.employee_id')
-    expect(worker).toContain('expectedAuthUserId !== authUserId')
-    expect(worker).toContain('`${session.config.url}/auth/v1/user`')
-    expect(worker).toContain("'mark_password_changed'")
-    expect(data).toContain("fetch('/api/v1/account/password'")
-    expect(data).toContain('expectedAuthUserId: ownerSession.user.id')
-    expect(data).toContain('current.data.session?.access_token === ownerSession.access_token')
-    expect(page).toContain('passwordChangeResultIsCurrent(')
-    expect(securityPage).toContain('passwordChangeResultIsCurrent(')
-    expect(page).not.toContain('supabase.auth.updateUser({ password })')
-    expect(securityPage).not.toContain('.auth.updateUser({ password: submittedPassword })')
-  })
-
   it('makes notification preferences operational without suppressing required alerts', () => {
     expect(migration).toContain('service_filter_notification_recipients')
     expect(migration).toContain("target_message_type = 'call_off_supervisor_alert'")
-    expect(worker).toContain('await deliverJobs(generalJobs, {')
-    expect(worker).toContain('respectEmployeePreferences: true')
-    expect(worker).toContain('Suppressed - Employee Preference')
+    expect(worker).toContain('deliverJobs(generalJobs, true)')
+    expect(worker).toContain('Suppressed — Employee Preference')
     expect(page).toContain('Security and account notices')
     expect(page).toContain('cannot be disabled')
   })

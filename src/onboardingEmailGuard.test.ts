@@ -24,10 +24,7 @@ describe('MFA-aware onboarding email guardrails', () => {
     expect(worker).toContain("subject: 'Your SygShift Login Is Ready'")
     expect(worker).toContain("subject: 'Your SygShift Login Is Ready — Authenticator Setup Required'")
     expect(worker).toContain('if (target.requiresMfa)')
-    expect(worker).toContain('executeAdminLoginInstructionOperation(')
-    expect(worker).toContain("'hr-onboarding-account-setup'")
-    expect(worker).toContain("'welcome-email-delivery'")
-    expect(worker.match(/sendLoginInstructions\(environment, item, password, operation\.operationId, decision\)/g)?.length).toBe(2)
+    expect(worker.match(/sendLoginInstructions\(environment, target, result\.password\)/g)?.length).toBe(3)
   })
 
   it('explains authenticator setup without implying that codes arrive by email or SMS', () => {

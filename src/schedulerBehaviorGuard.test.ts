@@ -16,10 +16,6 @@ const manualScheduleNotificationMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260802103000_scheduler_manual_notifications_and_week_copy.sql'),
   'utf8',
 )
-const durableManualScheduleNotificationMigration = readFileSync(
-  join(root, 'supabase', 'migrations', '20261024172000_durable_manual_schedule_notifications.sql'),
-  'utf8',
-)
 const atomicWeekCopyMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260803183000_schedule_week_copy_atomic_replacement.sql'),
   'utf8',
@@ -83,14 +79,13 @@ describe('scheduler behavior guardrails', () => {
 
     expect(scheduleData).toContain('queue_schedule_published_notification')
     expect(schedulePage).toContain('notifyScheduleMutation')
-    expect(schedulePage).toContain('processNotificationBatch(queued.notificationId)')
+    expect(schedulePage).toContain('processNotificationBatch()')
     expect(schedulePage).toContain('Notify employees')
     expect(schedulePage).toContain('Send schedule notification')
     expect(publishDraftBlock).toContain("'notification_queued', false")
     expect(publishDraftBlock).not.toContain('private.notification_outbox')
-    expect(durableManualScheduleNotificationMigration).toContain('create function public.queue_schedule_published_notification')
-    expect(durableManualScheduleNotificationMigration).toContain('schedule-published-manual-operation:')
-    expect(durableManualScheduleNotificationMigration).not.toContain("to_char(clock_timestamp(), 'YYYYMMDDHH24MI')")
+    expect(manualScheduleNotificationMigration).toContain('create or replace function public.queue_schedule_published_notification')
+    expect(manualScheduleNotificationMigration).toContain('schedule-published-manual:')
   })
 
   it('atomically replaces a destination draft from the exact visible revision', () => {
@@ -164,25 +159,13 @@ describe('scheduler behavior guardrails', () => {
     expect(scheduleNameDisambiguationMigration).toContain('private.can_manage_schedule_drafts()')
   })
 
-  it('fails closed when supplemental scheduling facts cannot be verified', () => {
-    expect(scheduleData).toContain('Weekly schedule details could not be verified.')
-    expect(scheduleData).toContain('workTypeResult.error || assignmentTypeResult.error || coverageResult.error')
-    expect(schedulePage).toContain('Schedule editing tools unavailable')
-    expect(schedulePage).toContain('Employee availability unavailable')
-    expect(schedulePage).toContain('SygShift will not treat this as “available”')
-    expect(schedulePage).toContain('availabilityCheckPending')
-    expect(schedulePage).toContain('openShiftAvailabilityCheckPending')
-    expect(schedulePage).toContain("staffingSuggestionsQuery.isError ? 'Unavailable'")
-    expect(schedulePage).toContain('this is not confirmation that no employee is eligible')
-  })
-
   it('keeps historical schedule weeks visible without counting them as actionable openings', () => {
     expect(schedulePage).toContain('const isHistoricalSchedulerWeek = isSchedulerHome && weekEndKey < currentOperationalDateKey')
     expect(schedulePage).toContain('const shifts = activeRows.flatMap((row) => row.shifts)')
     expect(schedulePage).toContain('const actionableShifts = shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)')
     expect(schedulePage).toContain('{visibleScheduleSummary.shifts} shifts this week')
     expect(schedulePage).toContain("{isHistoricalSchedulerWeek ? 'Historical' : 'Covered'}")
-    expect(schedulePage).toContain('canEdit={canEditScheduler && builderOptionsReady && !isHistoricalSchedulerWeek}')
+    expect(schedulePage).toContain('canEdit={canEditScheduler && !isHistoricalSchedulerWeek}')
     expect(schedulePage).toContain('if (!canEditScheduler || isHistoricalSchedulerWeek) return')
   })
 })

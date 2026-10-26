@@ -88,26 +88,12 @@ const operationsReportSchema = z.object({
   })),
 })
 
-const notificationRecipientSummarySchema = z.object({
-  accepted: z.number().int().nonnegative(),
-  completionPending: z.number().int().nonnegative(),
-  suppressed: z.number().int().nonnegative(),
-  total: z.number().int().nonnegative(),
-  uncertain: z.number().int().nonnegative(),
-})
-
 const notificationProcessSchema = z.object({
   delivered: z.array(z.string().uuid()),
   failed: z.array(z.object({ id: z.string().uuid(), error: z.string() })),
-  outcomes: z.array(z.object({
-    id: z.string().uuid(),
-    recipients: notificationRecipientSummarySchema,
-    status: z.enum(['delivered', 'failed', 'pending', 'suppressed']),
-  })).default([]),
   processed: z.number().int().nonnegative(),
   requestId: z.string(),
   requestedBy: z.string(),
-  suppressed: z.array(z.string().uuid()).default([]),
 })
 
 const retryNotificationSchema = z.object({
@@ -158,7 +144,7 @@ export async function getOperationsReport(): Promise<OperationsReport> {
   return operationsReportSchema.parse(data)
 }
 
-export async function processNotificationBatch(notificationId?: string): Promise<NotificationProcessResult> {
+export async function processNotificationBatch(): Promise<NotificationProcessResult> {
   const response = await fetchWithIdentityVerification(async () => {
     const { data: sessionData, error: sessionError } = await getSupabaseClient().auth.getSession()
     const token = sessionData.session?.access_token
@@ -166,11 +152,7 @@ export async function processNotificationBatch(notificationId?: string): Promise
       throw new Error('Sign in with an MFA-verified operations account before sending queued emails.')
     }
     return fetch('/api/v1/admin/notifications/process', {
-      body: notificationId ? JSON.stringify({ notificationId }) : undefined,
-      headers: appendProtectedSessionHeaders({
-        authorization: `Bearer ${token}`,
-        ...(notificationId ? { 'content-type': 'application/json' } : {}),
-      }),
+      headers: appendProtectedSessionHeaders({ authorization: `Bearer ${token}` }),
       method: 'POST',
     })
   })

@@ -16,7 +16,7 @@ import {
 import {
   unwrapTransaction,
   validateGeneratedTransaction,
-} from './prepare-stability-durability-release.mjs'
+} from './sql-transaction-boundary.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 

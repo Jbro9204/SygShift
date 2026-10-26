@@ -51,18 +51,8 @@ export class SharedIdentitySessionRestoreError extends Error {
 const retryableRestoreStatuses = new Set([408, 425, 429])
 const sessionRecoveryBaseDelayMs = 2_000
 const sessionRecoveryMaximumDelayMs = 60_000
-const sharedIdentityLogoutDeadlineMs = 3_000
-// A failed HttpOnly-cookie cleanup must remain fail-closed across reloads. The
-// next restore attempt retries the cleanup; the long upper bound only prevents
-// abandoned browser metadata from becoming permanent when site data cannot be
-// managed normally.
-const sharedIdentityLogoutBarrierMs = 365 * 24 * 60 * 60 * 1_000
-const sharedIdentityLogoutBarrierKey = 'sygshift:shared-identity-logout-barrier:v1'
 
 let currentSession: SharedIdentitySession | null = null
-let pendingLogoutController: AbortController | null = null
-let pendingLogoutPromise: Promise<void> | null = null
-let inMemoryLogoutBarrier: { expiresAt: number; id: string } | null = null
 
 function purgeLegacySharedIdentityStorage(): void {
   if (typeof window === 'undefined') return
@@ -84,8 +74,8 @@ export function setSharedIdentitySession(
   expiresAt: string,
   persistent: boolean,
   scope: SharedIdentityScope = 'sygsphere',
-): boolean {
-  return replaceSharedIdentitySession({ expiresAt, persistent, scope, token })
+): void {
+  replaceSharedIdentitySession({ expiresAt, persistent, scope, token })
 }
 
 export function getSharedIdentitySessionToken(): string | null {
@@ -119,7 +109,6 @@ export function sharedIdentityRefreshDelayMs(accessToken: string, now = Date.now
 }
 
 export async function hydrateSharedIdentitySession(signal?: AbortSignal): Promise<HydratedSharedIdentitySession | null> {
-  await waitForSharedIdentityLogoutBarrier(signal)
   const response = await requestSharedIdentitySession(signal)
   if (response.status === 204 || response.status === 401 || response.status === 403) {
     clearSharedIdentitySession()
@@ -241,56 +230,9 @@ function replaceSharedIdentitySession(candidate: SharedIdentitySession): boolean
     || expiresAtMs <= Date.now()
     || !isSharedIdentityScope(candidate.scope)
   ) return false
-  if (sharedIdentityLogoutBarrierExpiresAt() > Date.now()) return false
   currentSession = candidate
   purgeLegacySharedIdentityStorage()
   return true
-}
-
-function sharedIdentityLogoutBarrierExpiresAt(): number {
-  const inMemoryExpiresAt = inMemoryLogoutBarrier?.expiresAt ?? 0
-  if (inMemoryExpiresAt <= Date.now()) inMemoryLogoutBarrier = null
-  if (typeof window === 'undefined') return inMemoryExpiresAt > Date.now() ? inMemoryExpiresAt : 0
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(sharedIdentityLogoutBarrierKey) ?? 'null') as { expiresAt?: unknown } | null
-    if (typeof parsed?.expiresAt !== 'number' || !Number.isFinite(parsed.expiresAt)) return inMemoryLogoutBarrier?.expiresAt ?? 0
-    if (parsed.expiresAt <= Date.now()) {
-      window.localStorage.removeItem(sharedIdentityLogoutBarrierKey)
-      return inMemoryLogoutBarrier?.expiresAt ?? 0
-    }
-    return Math.max(parsed.expiresAt, inMemoryLogoutBarrier?.expiresAt ?? 0)
-  } catch {
-    try { window.localStorage.removeItem(sharedIdentityLogoutBarrierKey) } catch { /* The in-memory barrier remains authoritative in this tab. */ }
-    return inMemoryLogoutBarrier?.expiresAt ?? 0
-  }
-}
-
-function writeSharedIdentityLogoutBarrier(id: string, expiresAt: number): void {
-  inMemoryLogoutBarrier = { expiresAt, id }
-  if (typeof window === 'undefined') return
-  try { window.localStorage.setItem(sharedIdentityLogoutBarrierKey, JSON.stringify({ expiresAt, id })) } catch { /* In-memory serialization still applies in this tab. */ }
-}
-
-function clearSharedIdentityLogoutBarrier(id: string): void {
-  if (inMemoryLogoutBarrier?.id === id) inMemoryLogoutBarrier = null
-  if (typeof window === 'undefined') return
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(sharedIdentityLogoutBarrierKey) ?? 'null') as { id?: unknown } | null
-    if (parsed?.id === id) window.localStorage.removeItem(sharedIdentityLogoutBarrierKey)
-  } catch {
-    try { window.localStorage.removeItem(sharedIdentityLogoutBarrierKey) } catch { /* The in-memory barrier was already cleared above. */ }
-  }
-}
-
-export async function waitForSharedIdentityLogoutBarrier(signal?: AbortSignal): Promise<void> {
-  if (pendingLogoutPromise) await pendingLogoutPromise
-  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-  if (sharedIdentityLogoutBarrierExpiresAt() <= Date.now()) return
-
-  // A previous tab may have cleared its in-memory state while the server-side
-  // HttpOnly cookie cleanup failed. Reconcile that cleanup before any restore
-  // request is allowed to recreate the signed-in identity.
-  await clearSharedIdentityServerSession()
 }
 
 function sharedIdentityResponseScope(payload: SharedIdentitySessionResponse | null): SharedIdentityScope | null {
@@ -308,48 +250,14 @@ function sharedIdentityResponseScope(payload: SharedIdentitySessionResponse | nu
 }
 
 export async function clearSharedIdentityServerSession(accessToken?: string): Promise<void> {
-  // Local bearer material must disappear synchronously. The remote cookie
-  // cleanup is required before a shared identity can be restored again. A
-  // failed cleanup leaves a persistent browser barrier and is retried before
-  // the next shared-session hydration.
-  clearSharedIdentitySession()
-  pendingLogoutController?.abort()
-  const controller = new AbortController()
-  pendingLogoutController = controller
-  const barrierId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
-  const barrierExpiresAt = Date.now() + sharedIdentityLogoutBarrierMs
-  writeSharedIdentityLogoutBarrier(barrierId, barrierExpiresAt)
-  const deadline = globalThis.setTimeout(() => controller.abort(), sharedIdentityLogoutDeadlineMs)
-  const remoteLogout = fetch('/api/v1/auth/shared-identity/session/logout', {
+  try {
+    await fetch('/api/v1/auth/shared-identity/session/logout', {
       cache: 'no-store',
-      credentials: 'same-origin',
       headers: accessToken ? { authorization: `Bearer ${accessToken}` } : undefined,
       keepalive: true,
       method: 'POST',
-      signal: controller.signal,
-    }).then((response) => {
-      if (!response.ok) {
-        throw new SharedIdentitySessionRestoreError(
-          'The shared sign-out cookie could not be cleared.',
-          { status: response.status, transient: response.status >= 500 || retryableRestoreStatuses.has(response.status) },
-        )
-      }
-    }).catch((error: unknown) => {
-      if (error instanceof SharedIdentitySessionRestoreError) throw error
-      throw new SharedIdentitySessionRestoreError(
-        'The shared sign-out cookie could not be cleared.',
-        { transient: true },
-      )
-    })
-  pendingLogoutPromise = remoteLogout
-  let cleanupConfirmed = false
-  try {
-    await remoteLogout
-    cleanupConfirmed = true
+    }).catch(() => undefined)
   } finally {
-    globalThis.clearTimeout(deadline)
-    if (pendingLogoutController === controller) pendingLogoutController = null
-    if (pendingLogoutPromise === remoteLogout) pendingLogoutPromise = null
-    if (cleanupConfirmed) clearSharedIdentityLogoutBarrier(barrierId)
+    clearSharedIdentitySession()
   }
 }

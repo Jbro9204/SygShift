@@ -36,7 +36,7 @@ describe('comprehensive Employee File guardrails', () => {
   it('uses the Employee File as one permission-aware record with audited field editors', () => {
     expect(data).toContain('moduleAccess: z.object')
     expect(employeeFile).toContain('No information is copied or maintained twice.')
-    expect(employeeFile).toContain("module.visible && Boolean(session) && canAccessRoute(module.path.split('?')[0], session)")
+    expect(employeeFile).toContain("module.visible && canAccessRoute(module.path.split('?')[0], sessionQuery.data)")
     expect(employeeFile).toContain('The Employee File owns core identity, employment, contact, emergency-contact, and protected pay-rate maintenance.')
     expect(employeeFile).toContain('employeeDocumentsPath')
     expect(employeeFile).toContain('Open employee files')

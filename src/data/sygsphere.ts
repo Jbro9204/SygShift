@@ -32,13 +32,7 @@ const mentionAlertSchema = z.object({
   messageId: z.string().uuid(), conversationId: z.string().uuid(), conversationName: z.string(), authorId: z.string().uuid(),
   parentId: z.string().uuid().nullable(), createdAt: z.string(),
 })
-const inboxSchema = z.object({
-  employeeId: z.string(),
-  soundEnabled: z.boolean(),
-  conversations: z.array(conversationSchema),
-  mentions: z.array(mentionAlertSchema).default([]),
-  mentionStatus: z.enum(['ready', 'unavailable']).optional(),
-})
+const inboxSchema = z.object({ employeeId: z.string(), soundEnabled: z.boolean(), conversations: z.array(conversationSchema), mentions: z.array(mentionAlertSchema).default([]) })
 export type SpherePerson = z.infer<typeof personSchema>
 export type SphereMention = z.infer<typeof mentionSchema>
 export type SphereMessage = z.infer<typeof messageSchema>
@@ -75,7 +69,6 @@ export async function sphereInbox() {
     ...base,
     conversations: base.conversations.map((item) => ({ ...item, avatar: byConversation.get(item.id) ?? null })),
     mentions: rawMentions,
-    mentionStatus: mentionResult.status === 'fulfilled' ? 'ready' : 'unavailable',
   })
 }
 export async function sphereDirectory(query: string) {

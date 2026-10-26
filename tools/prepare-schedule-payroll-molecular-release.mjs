@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import {
   unwrapTransaction,
   validateGeneratedTransaction,
-} from './prepare-stability-durability-release.mjs'
+} from './sql-transaction-boundary.mjs'
 
 export const migrationFiles = Object.freeze([
   '20261026141835_schedule_draft_timeout_repair.sql',

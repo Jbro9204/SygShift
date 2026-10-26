@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -39,14 +39,7 @@ import {
 } from '../data/hrisPeople'
 import { getSupervisionWorkspace } from '../data/supervision'
 import { formatOperationalDateTime } from '../lib/time'
-import { queryVerificationFailed, verifiedQueryData } from '../lib/verifiedQueryData'
 import { workforceRoleLabel } from '../lib/workforceRoleAssignment'
-import {
-  authorizedEmployeeProfileEditor,
-  canManageSupervisorAssignment,
-  type HrisEmployeeProfileEditor,
-  supervisorAssignmentLabel,
-} from './hrisEmployeeFileState'
 
 const labels: Record<string, string> = {
   active: 'Active', disabled: 'Disabled', inactive: 'Inactive', leave: 'On leave', not_created: 'Not created', onboarding: 'Onboarding', pending: 'Activation pending', separated: 'Separated',
@@ -78,7 +71,7 @@ function countLabel(count: number, singular: string, plural = `${singular}s`): s
 
 export function HrisEmployeeFilePage() {
   const { employeeId = '' } = useParams()
-  const [profileEditor, setProfileEditor] = useState<HrisEmployeeProfileEditor | null>(null)
+  const [profileEditor, setProfileEditor] = useState<'identity' | 'employment' | 'contacts' | null>(null)
   const [employmentDateEditorOpen, setEmploymentDateEditorOpen] = useState(false)
   const [employmentDateSaved, setEmploymentDateSaved] = useState(false)
   const [supervisorEditorOpen, setSupervisorEditorOpen] = useState(false)
@@ -106,41 +99,14 @@ export function HrisEmployeeFilePage() {
     queryFn: getSupervisionWorkspace,
     queryKey: ['supervision-workspace'],
   })
-  const recordQueryFailed = queryVerificationFailed(recordQuery)
-  const editorContextQueryFailed = queryVerificationFailed(editorContextQuery)
-  const employmentDateHistoryQueryFailed = queryVerificationFailed(employmentDateHistoryQuery)
-  const sessionQueryFailed = queryVerificationFailed(sessionQuery)
-  const supervisionQueryFailed = queryVerificationFailed(supervisionQuery)
-  const record = verifiedQueryData(recordQuery.data, recordQuery)
-  const editorContext = verifiedQueryData(editorContextQuery.data, editorContextQuery)
-  const employmentDateHistory = verifiedQueryData(employmentDateHistoryQuery.data, employmentDateHistoryQuery)
-  const session = verifiedQueryData(sessionQuery.data, sessionQuery)
-  const supervision = verifiedQueryData(supervisionQuery.data, supervisionQuery)
-  const supervisorAssignment = supervision?.assignments.find((assignment) => assignment.employeeId === employeeId) ?? null
-  const canManageSupervisor = canManageSupervisorAssignment({
-    canManage: supervision?.canManage,
-    error: supervisionQueryFailed,
-    pending: supervisionQuery.isPending,
-  })
-  const authorizedProfileEditor = authorizedEmployeeProfileEditor(profileEditor, {
-    canManageProfile: editorContext?.canManageProfile === true,
-    canManageRestricted: editorContext?.canManageRestricted === true,
-    hasRecord: Boolean(record),
-  })
-  const canOpenDocumentStudio = Boolean(session) && canAccessRoute('/hr/documents', session)
-  const canOpenConversations = Boolean(session) && canAccessRoute('/employee-conversations', session)
+  const record = recordQuery.data
+  const editorContext = editorContextQuery.data
+  const supervisorAssignment = supervisionQuery.data?.assignments.find((assignment) => assignment.employeeId === employeeId) ?? null
+  const canOpenDocumentStudio = canAccessRoute('/hr/documents', sessionQuery.data)
+  const canOpenConversations = canAccessRoute('/employee-conversations', sessionQuery.data)
   const employeeDocumentsPath = record
     ? `/hr/documents?employeeId=${encodeURIComponent(record.employeeId)}&employeeName=${encodeURIComponent(record.legalName)}`
     : '/hr/documents'
-
-  useEffect(() => {
-    if (profileEditor !== authorizedProfileEditor) setProfileEditor(authorizedProfileEditor)
-    if (!record || !employmentDateHistory?.canManage) {
-      setEmploymentDateEditorOpen(false)
-      setEmploymentDateSaved(false)
-    }
-    if (!record || !canManageSupervisor) setSupervisorEditorOpen(false)
-  }, [authorizedProfileEditor, canManageSupervisor, employmentDateHistory?.canManage, profileEditor, record])
 
   function openEmploymentDateEditor() {
     if (!record) return
@@ -153,7 +119,7 @@ export function HrisEmployeeFilePage() {
     { icon: CalendarCheck2, label: 'Availability', path: '/availability' },
     { icon: ClipboardCheck, label: 'Time Off', path: '/time-off' },
     { icon: KeyRound, label: 'User Accounts', path: '/users' },
-  ].filter((workspace) => Boolean(session) && canAccessRoute(workspace.path, session))
+  ].filter((workspace) => canAccessRoute(workspace.path, sessionQuery.data))
   const employeeFileGroups = record ? [
     {
       description: 'Required records and the work still needed to make this employee ready.',
@@ -265,7 +231,7 @@ export function HrisEmployeeFilePage() {
     },
   ].map((group) => ({
     ...group,
-    modules: group.modules.filter((module) => module.visible && Boolean(session) && canAccessRoute(module.path.split('?')[0], session)),
+    modules: group.modules.filter((module) => module.visible && canAccessRoute(module.path.split('?')[0], sessionQuery.data)),
   })).filter((group) => group.modules.length > 0) : []
 
   return (
@@ -273,7 +239,7 @@ export function HrisEmployeeFilePage() {
       <Link className="hr-file-back" to="/hr/people"><ArrowLeft aria-hidden="true" size={18} />Back to People</Link>
 
       {recordQuery.isPending ? <DataStatePanel icon={UserRound} title="Loading Employee File"><p>Checking the protected workforce record.</p></DataStatePanel> : null}
-      {recordQueryFailed ? <DataStatePanel icon={AlertTriangle} tone="error" title="Employee File unavailable"><p>{recordQuery.error instanceof Error ? recordQuery.error.message : 'The protected employee record could not be loaded.'}</p><button className="secondary-button" disabled={recordQuery.isFetching} onClick={() => void recordQuery.refetch()} type="button">Try again</button></DataStatePanel> : null}
+      {recordQuery.isError ? <DataStatePanel icon={AlertTriangle} tone="error" title="Employee File unavailable"><p>{recordQuery.error instanceof Error ? recordQuery.error.message : 'The protected employee record could not be loaded.'}</p></DataStatePanel> : null}
 
       {record ? (
         <>
@@ -312,17 +278,13 @@ export function HrisEmployeeFilePage() {
             </article>
 
             <article className="hr-file-card hr-file-employment-card">
-              <div className="hr-file-card__heading"><ClipboardCheck aria-hidden="true" /><div><p className="eyebrow">Employment</p><h2>Current relationship</h2></div><div className="hr-file-card__actions">{editorContext?.canManageProfile ? <button className="hr-file-card__edit" onClick={() => setProfileEditor('employment')} type="button"><PencilLine aria-hidden="true" size={16} />Edit employment</button> : null}{canManageSupervisor ? <button className="hr-file-card__edit" onClick={() => setSupervisorEditorOpen(true)} type="button"><UserRoundCog aria-hidden="true" size={16} />Assign supervisor</button> : null}{employmentDateHistory?.canManage ? <button className="hr-file-card__edit" onClick={openEmploymentDateEditor} type="button"><CalendarCheck2 aria-hidden="true" size={16} />Edit dates</button> : null}{editorContext?.canTerminate && session && session.employeeId !== record.employeeId ? <Link className="hr-file-card__edit hr-file-card__edit--danger" to={`/hr/offboarding?employee=${encodeURIComponent(record.employeeId)}`}><UserRoundX aria-hidden="true" size={16} />{record.status === 'separated' ? 'Start rehire case' : 'Start lifecycle case'}</Link> : null}</div></div>
-              <dl><div><dt>Work classification</dt><dd>{editorContext?.workClassification ? titleCase(editorContext.workClassification) : 'Not recorded'}</dd></div><div><dt>Pay &amp; timekeeping type</dt><dd>{titleCase(record.employmentType)}</dd></div><div><dt>Primary role</dt><dd>{workforceRoleLabel(record.primaryRole)}</dd></div><div><dt>Assigned supervisor</dt><dd>{supervisorAssignmentLabel({ error: supervisionQueryFailed, name: supervisorAssignment?.supervisorName, pending: supervisionQuery.isPending })}</dd></div><div><dt>Job title</dt><dd>{display(record.jobTitle)}</dd></div><div><dt>Start / hire date</dt><dd>{formatDate(record.hiredOn)}</dd></div><div><dt>Separation / termination date</dt><dd>{formatDate(record.separatedOn)}</dd></div></dl>
-              {supervisionQueryFailed ? <div className="inline-alert" role="alert"><strong>Supervisor assignment could not be verified.</strong><span>{supervisionQuery.error instanceof Error ? supervisionQuery.error.message : 'Try again before relying on this field.'}</span><button className="secondary-button secondary-button--small" disabled={supervisionQuery.isFetching} onClick={() => void supervisionQuery.refetch()} type="button">Retry supervisor check</button></div> : null}
-              {editorContextQueryFailed ? <div className="inline-alert" role="alert"><strong>Employee editing permissions could not be verified.</strong><span>Editing actions are unavailable until the protected profile check succeeds.</span><button className="secondary-button secondary-button--small" disabled={editorContextQuery.isFetching} onClick={() => void editorContextQuery.refetch()} type="button">Retry profile check</button></div> : null}
-              {employmentDateHistoryQueryFailed ? <div className="inline-alert" role="alert"><strong>Employment date history could not be verified.</strong><span>Date history and editing are unavailable until the check succeeds.</span><button className="secondary-button secondary-button--small" disabled={employmentDateHistoryQuery.isFetching} onClick={() => void employmentDateHistoryQuery.refetch()} type="button">Retry date check</button></div> : null}
-              {sessionQueryFailed ? <div className="inline-alert" role="alert"><strong>Your access could not be verified.</strong><span>Connected workspaces and lifecycle actions are unavailable until the session check succeeds.</span><button className="secondary-button secondary-button--small" disabled={sessionQuery.isFetching} onClick={() => void sessionQuery.refetch()} type="button">Retry access check</button></div> : null}
+              <div className="hr-file-card__heading"><ClipboardCheck aria-hidden="true" /><div><p className="eyebrow">Employment</p><h2>Current relationship</h2></div><div className="hr-file-card__actions">{editorContext?.canManageProfile ? <button className="hr-file-card__edit" onClick={() => setProfileEditor('employment')} type="button"><PencilLine aria-hidden="true" size={16} />Edit employment</button> : null}{supervisionQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={() => setSupervisorEditorOpen(true)} type="button"><UserRoundCog aria-hidden="true" size={16} />Assign supervisor</button> : null}{employmentDateHistoryQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={openEmploymentDateEditor} type="button"><CalendarCheck2 aria-hidden="true" size={16} />Edit dates</button> : null}{editorContext?.canTerminate && sessionQuery.data?.employeeId !== record.employeeId ? <Link className="hr-file-card__edit hr-file-card__edit--danger" to={`/hr/offboarding?employee=${encodeURIComponent(record.employeeId)}`}><UserRoundX aria-hidden="true" size={16} />{record.status === 'separated' ? 'Start rehire case' : 'Start lifecycle case'}</Link> : null}</div></div>
+              <dl><div><dt>Work classification</dt><dd>{editorContext?.workClassification ? titleCase(editorContext.workClassification) : 'Not recorded'}</dd></div><div><dt>Pay &amp; timekeeping type</dt><dd>{titleCase(record.employmentType)}</dd></div><div><dt>Primary role</dt><dd>{workforceRoleLabel(record.primaryRole)}</dd></div><div><dt>Assigned supervisor</dt><dd>{supervisionQuery.isPending ? 'Loading…' : supervisorAssignment?.supervisorName ?? 'Unassigned'}</dd></div><div><dt>Job title</dt><dd>{display(record.jobTitle)}</dd></div><div><dt>Start / hire date</dt><dd>{formatDate(record.hiredOn)}</dd></div><div><dt>Separation / termination date</dt><dd>{formatDate(record.separatedOn)}</dd></div></dl>
               {employmentDateSaved ? <div className="hr-file-employment-saved" role="status"><CalendarCheck2 aria-hidden="true" size={17} />Employment dates and audit history updated.</div> : null}
-              {employmentDateHistory?.items.length ? (
+              {employmentDateHistoryQuery.data?.items.length ? (
                 <details className="hr-file-employment-history">
-                  <summary><History aria-hidden="true" size={16} />Date history <span>{employmentDateHistory.items.length}</span></summary>
-                  <div>{employmentDateHistory.items.map((item) => <article key={item.id}><strong>{formatDate(item.hiredOn)} – {formatDate(item.separatedOn)}</strong><span>{hrisEmploymentDateSourceLabels[item.sourceType]} · {formatOperationalDateTime(item.authorizedAt)}</span><small>{item.reason}</small>{item.current ? <em>Current evidence</em> : null}</article>)}</div>
+                  <summary><History aria-hidden="true" size={16} />Date history <span>{employmentDateHistoryQuery.data.items.length}</span></summary>
+                  <div>{employmentDateHistoryQuery.data.items.map((item) => <article key={item.id}><strong>{formatDate(item.hiredOn)} – {formatDate(item.separatedOn)}</strong><span>{hrisEmploymentDateSourceLabels[item.sourceType]} · {formatOperationalDateTime(item.authorizedAt)}</span><small>{item.reason}</small>{item.current ? <em>Current evidence</em> : null}</article>)}</div>
                 </details>
               ) : null}
             </article>
@@ -387,17 +349,17 @@ export function HrisEmployeeFilePage() {
             </nav>
           </section>
 
-          {employmentDateEditorOpen && employmentDateHistory?.canManage ? <EmploymentDateEditorDialog employee={record} onClose={() => setEmploymentDateEditorOpen(false)} onSaved={() => setEmploymentDateSaved(true)} /> : null}
-          {authorizedProfileEditor === 'identity' && editorContext?.canManageProfile ? <EmployeeIdentityEditorDialog employee={record} onClose={() => setProfileEditor(null)} /> : null}
-          {authorizedProfileEditor === 'employment' && editorContext?.canManageProfile ? <EmployeeEmploymentEditorDialog context={editorContext} employee={record} onClose={() => setProfileEditor(null)} /> : null}
-          {authorizedProfileEditor === 'contacts' && editorContext?.canManageRestricted ? <EmployeeContactEditorDialog context={editorContext} employee={record} onClose={() => setProfileEditor(null)} /> : null}
-          {supervisorEditorOpen && canManageSupervisor && supervision ? (
+          {employmentDateEditorOpen ? <EmploymentDateEditorDialog employee={record} onClose={() => setEmploymentDateEditorOpen(false)} onSaved={() => setEmploymentDateSaved(true)} /> : null}
+          {profileEditor === 'identity' ? <EmployeeIdentityEditorDialog employee={record} onClose={() => setProfileEditor(null)} /> : null}
+          {profileEditor === 'employment' && editorContext ? <EmployeeEmploymentEditorDialog context={editorContext} employee={record} onClose={() => setProfileEditor(null)} /> : null}
+          {profileEditor === 'contacts' && editorContext ? <EmployeeContactEditorDialog context={editorContext} employee={record} onClose={() => setProfileEditor(null)} /> : null}
+          {supervisorEditorOpen && supervisionQuery.data ? (
             <SupervisorAssignmentDialog
               assignment={supervisorAssignment}
               employeeId={record.employeeId}
               employeeName={record.legalName}
               onClose={() => setSupervisorEditorOpen(false)}
-              supervisors={supervision.supervisors}
+              supervisors={supervisionQuery.data.supervisors}
             />
           ) : null}
         </>

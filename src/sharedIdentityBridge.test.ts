@@ -48,7 +48,6 @@ describe('Sygilant to SygSphere shared session bridge', () => {
     let authUserFailureStatus: number | null = null
     let expectedRefreshToken = 'refresh-token-value'
     let refreshCount = 0
-    let revokeSessionFailureStatus: number | null = null
     let scopedSessionFailureStatus: number | null = null
     vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {
       const url = String(input)
@@ -100,11 +99,7 @@ describe('Sygilant to SygSphere shared session bridge', () => {
           ? json({ code: 'PGRST003', message: 'Timed out acquiring connection from connection pool.' }, scopedSessionFailureStatus)
           : json(true)
       }
-      if (url.includes('/rest/v1/rpc/service_revoke_shared_identity_session')) {
-        return revokeSessionFailureStatus
-          ? json({ code: 'PGRST003', message: 'Timed out acquiring connection from connection pool.' }, revokeSessionFailureStatus)
-          : json(true)
-      }
+      if (url.includes('/rest/v1/rpc/service_revoke_shared_identity_session')) return json(true)
       return json({ error: 'unhandled' }, 500)
     }))
 
@@ -293,26 +288,6 @@ describe('Sygilant to SygSphere shared session bridge', () => {
     ), environment, requestId)
     expect(recoveredAfterPoolTimeout?.status).toBe(200)
 
-    revokeSessionFailureStatus = 503
-    const revocationUnavailable = await handleSharedIdentityRequest(new Request(
-      'https://app.sygilant.us/api/v1/auth/shared-identity/session/logout',
-      {
-        headers: {
-          cookie: `__Host-sygshift-shared-session=${activeSessionCookie}`,
-          origin: 'https://app.sygilant.us',
-        },
-        method: 'POST',
-      },
-    ), environment, requestId)
-    expect(revocationUnavailable?.status).toBe(503)
-    expect(revocationUnavailable?.headers.get('retry-after')).toBe('2')
-    const unavailableCookies = revocationUnavailable?.headers.get('set-cookie') ?? ''
-    expect(unavailableCookies).not.toContain('__Host-sygshift-shared-session=; Max-Age=0')
-    expect(unavailableCookies).toContain('__Host-sygshift-shared-bootstrap=; Max-Age=0')
-    expect(unavailableCookies).toContain('__Host-sygshift-shared-ticket=; Max-Age=0')
-    expect(unavailableCookies).toContain('__Host-sygshift-shared-launch=; Max-Age=0')
-
-    revokeSessionFailureStatus = null
     const loggedOut = await handleSharedIdentityRequest(new Request(
       'https://app.sygilant.us/api/v1/auth/shared-identity/session/logout',
       {
@@ -324,11 +299,7 @@ describe('Sygilant to SygSphere shared session bridge', () => {
       },
     ), environment, requestId)
     expect(loggedOut?.status).toBe(204)
-    const logoutCookies = loggedOut?.headers.get('set-cookie') ?? ''
-    expect(logoutCookies).toContain('__Host-sygshift-shared-session=; Max-Age=0')
-    expect(logoutCookies).toContain('__Host-sygshift-shared-bootstrap=; Max-Age=0')
-    expect(logoutCookies).toContain('__Host-sygshift-shared-ticket=; Max-Age=0')
-    expect(logoutCookies).toContain('__Host-sygshift-shared-launch=; Max-Age=0')
+    expect(loggedOut?.headers.get('set-cookie')).toContain('__Host-sygshift-shared-session=; Max-Age=0')
   })
 
   it('clears every bridge cookie when the integration is disabled during rollback', async () => {

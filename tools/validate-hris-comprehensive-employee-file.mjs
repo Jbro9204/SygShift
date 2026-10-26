@@ -48,10 +48,7 @@ requireValue(!migration.includes('amount_cents'), 'Employee File must never retu
 requireValue(!migration.includes('salary_amount'), 'Employee File must never return salary values.')
 requireValue(data.includes('moduleAccess: z.object'), 'Client schema does not validate server module access.')
 requireValue(employeeFile.includes('No information is copied or maintained twice.'), 'Employee File must explain its single-source record design.')
-requireValue(
-  employeeFile.includes("module.visible && Boolean(session) && canAccessRoute(module.path.split('?')[0], session)"),
-  'Employee File must enforce both server module access and verified client route access.',
-)
+requireValue(employeeFile.includes('module.visible && canAccessRoute(module.path, sessionQuery.data)'), 'Employee File must enforce both server module access and client route access.')
 requireValue(employeeFile.includes('Pay values remain restricted to the compensation workspace.'), 'Compensation privacy disclosure is missing.')
 requireValue(employeeFile.includes("label: 'Employee relations'"), 'Employee relations records are missing from Employee File.')
 requireValue(employeeFile.includes('The Employee File owns core identity, employment, contact, emergency-contact, and protected pay-rate maintenance.'), 'Employee File ownership disclosure is missing.')

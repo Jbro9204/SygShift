@@ -8,7 +8,6 @@ const worker = readFileSync('worker/index.ts', 'utf8')
 const page = readFileSync('src/pages/HrisOnboardingPage.tsx', 'utf8')
 const provisioning = readFileSync('supabase/migrations/20260831230000_hris_onboarding_account_provisioning.sql', 'utf8')
 const release = readFileSync('supabase/migrations/20260831233000_hris_onboarding_production_release.sql', 'utf8')
-const durableLoginInstructions = readFileSync('supabase/migrations/20261024171000_durable_admin_login_instructions.sql', 'utf8')
 
 describe('HR onboarding production release', () => {
   it('keeps the in-system HR suite enabled while external integration cutovers remain closed', () => {
@@ -39,17 +38,10 @@ describe('HR onboarding production release', () => {
   })
 
   it('keeps company welcome and account setup as separate audited deliveries', () => {
-    expect(worker).toContain("'service_claim_hr_onboarding_delivery_attempt'")
-    expect(worker).toContain("recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, attempt.attemptId, 'welcome'")
-    expect(worker).toContain("recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, attempt.attemptId, 'account_setup'")
-    expect(worker).toContain('await sendWelcomeEmail(environment, target, attempt.attemptId)')
-    expect(worker).toContain("'hr-onboarding-account-setup'")
-    expect(worker).toContain("attempt.attemptId,\n          target.employeeId")
-    expect(worker).toContain('await executeAdminLoginInstructionOperation(')
-    expect(worker).toContain("'onboarding_delivery_finalization_pending'")
-    expect(durableLoginInstructions).toContain('welcome_package_attempt_id')
-    expect(durableLoginInstructions).toContain("welcome_package_attempt_state = 'failed'")
-    expect(durableLoginInstructions).toContain('Claimed a durable welcome-package delivery attempt.')
+    expect(worker).toContain("recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, 'welcome'")
+    expect(worker).toContain("recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, 'account_setup'")
+    expect(worker).toContain('await sendWelcomeEmail(environment, target)')
+    expect(worker).toContain('await sendLoginInstructions(environment, target, result.password)')
     expect(page).toContain('Separate communications')
     expect(page).toContain('Company welcome')
     expect(page).toContain('Account setup')

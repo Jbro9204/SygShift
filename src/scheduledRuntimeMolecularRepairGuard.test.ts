@@ -38,6 +38,7 @@ const regression = readFileSync(
   'utf8',
 )
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
+const webPush = readFileSync(join(root, 'worker', 'webPush.ts'), 'utf8')
 const automationBaselineMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260826100000_auto_clock_out_revision_continuity.sql'),
   'utf8',
@@ -178,5 +179,13 @@ describe('scheduled-runtime molecular repair', () => {
     expect(worker).toContain('{ target_full_reconciliation: attendanceFullReconciliation }')
     expect(worker).toContain('{ target_full_reconciliation: operationalAlertFullReconciliation }')
     expect(worker).toContain('fullReconciliation: attendanceFullReconciliation')
+  })
+
+  it('does not couple the molecular release to the unactivated durability database contract', () => {
+    for (const source of [worker, webPush]) {
+      expect(source).not.toContain('service_reconcile_employee_push_provider_outcomes')
+      expect(source).not.toContain('service_mark_employee_push_provider_state')
+      expect(source).not.toContain('provider_state')
+    }
   })
 })

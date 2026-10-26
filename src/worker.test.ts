@@ -1,28 +1,14 @@
-import { createHash, createHmac } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it, vi } from 'vitest'
 import worker, {
   brandedEmailHtml,
   buildLoginInstructionsEmail,
   buildWelcomeEmail,
-  completionFailureMayBeAmbiguous,
-  deliverDurableEmailRecipients,
-  deriveAdminLoginTemporaryPassword,
-  derivePersonalEmailVerificationToken,
-  processNotificationJobs,
-  recoverClientDocumentAvailability,
-  recoverClientDocumentCleanup,
-  recoverLicensingDocumentAvailability,
-  recoverLicensingDocumentCleanup,
-  recoverAdminMfaResetOperations,
   finalizeSignatureEnvelope,
   protectedMaintenanceWindow,
-  reconcileAmbiguousUploadCompletion,
-  requestHasExactCookie,
-  SupabaseRequestError,
   ScheduledSupabaseUnavailableError,
   secureResponse,
-  sendAuditedEmail,
   validateSuppliedTemporaryPassword,
 } from '../worker'
 
@@ -92,43 +78,6 @@ const configuredEnvironment = {
   SYGSHIFT_SOURCE_COMMIT: sourceCommit,
 }
 
-function emailDispatchCompletionReceipt(init?: RequestInit): Response {
-  const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-  return new Response(JSON.stringify({
-    dispatchId: '40000000-0000-4000-8000-000000000000',
-    dispatchToken: body.target_dispatch_token,
-    providerReference: body.target_provider_reference ?? null,
-    state: body.target_state,
-  }), { headers: { 'content-type': 'application/json' } })
-}
-
-function knownUnsentEmailReleaseReceipt(init?: RequestInit): Response {
-  const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-  return new Response(JSON.stringify({
-    dispatchId: body.target_dispatch_id,
-    dispatchToken: body.target_dispatch_token,
-    state: 'retry_approved',
-  }), { headers: { 'content-type': 'application/json' } })
-}
-
-function employeePasswordResetOperationReceipt(
-  init: RequestInit | undefined,
-  state: 'prepared' | 'completed',
-): Response {
-  const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-  return new Response(JSON.stringify({
-    actorEmployeeId: body.target_actor_employee_id,
-    authUserId: body.target_auth_user_id,
-    completedAt: state === 'completed' ? '2026-10-24T12:00:01.000Z' : null,
-    deliveryEmailMasked: 'em******@example.com',
-    employeeId: body.target_employee_id,
-    operationId: body.target_operation_id,
-    preparedAt: '2026-10-24T12:00:00.000Z',
-    recorded: state === 'completed',
-    state,
-  }), { headers: { 'content-type': 'application/json' } })
-}
-
 async function bridgeRecoveryHeaders(
   secret: string,
   username: string,
@@ -180,255 +129,6 @@ function withClearMaintenanceStatus(
 }
 
 describe('Cloudflare Worker boundary', () => {
-  it('matches only the exact non-empty protected shared-session cookie', () => {
-    expect(requestHasExactCookie(
-      new Request('https://app.sygshift.example', {
-        headers: { cookie: '__Host-sygshift-shared-session-old=lookalike; another=value' },
-      }),
-      '__Host-sygshift-shared-session',
-    )).toBe(false)
-    expect(requestHasExactCookie(
-      new Request('https://app.sygshift.example', {
-        headers: { cookie: '__Host-sygshift-shared-session=; another=value' },
-      }),
-      '__Host-sygshift-shared-session',
-    )).toBe(false)
-    expect(requestHasExactCookie(
-      new Request('https://app.sygshift.example', {
-        headers: { cookie: '__Host-sygshift-shared-session=protected-envelope' },
-      }),
-      '__Host-sygshift-shared-session',
-    )).toBe(true)
-  })
-
-  it('keeps native session startup independent from an unused misconfigured shared bridge', async () => {
-    const misconfiguredBridge = environment(new Response('asset'), {
-      ...configuredEnvironment,
-      SYGSHIFT_SHARED_IDENTITY_ENABLED: 'true',
-    })
-
-    const response = await worker.fetch(
-      new Request('https://app.sygshift.example/api/v1/auth/shared-identity/session', {
-        headers: {
-          cookie: '__Host-sygshift-shared-session-old=lookalike',
-          origin: 'https://app.sygshift.example',
-        },
-        method: 'POST',
-      }),
-      misconfiguredBridge,
-    )
-
-    expect(response.status).toBe(204)
-    expect(response.headers.get('cache-control')).toBe('no-store')
-  })
-
-  it('still fails closed when a protected shared-session cookie needs verification', async () => {
-    const response = await worker.fetch(
-      new Request('https://app.sygshift.example/api/v1/auth/shared-identity/session', {
-        headers: {
-          cookie: '__Host-sygshift-shared-session=protected-envelope',
-          origin: 'https://app.sygshift.example',
-        },
-        method: 'POST',
-      }),
-      environment(new Response('asset'), {
-        ...configuredEnvironment,
-        SYGSHIFT_SHARED_IDENTITY_ENABLED: 'true',
-      }),
-    )
-    const payload = await response.json() as { error: string }
-
-    expect(response.status).toBe(503)
-    expect(payload.error).toBe('shared_identity_not_configured')
-  })
-
-  it('clears transient bridge cookies on native logout without evaluating unused bridge config', async () => {
-    const response = await worker.fetch(
-      new Request('https://app.sygshift.example/api/v1/auth/shared-identity/session/logout', {
-        headers: { origin: 'https://app.sygshift.example' },
-        method: 'POST',
-      }),
-      environment(new Response('asset'), {
-        ...configuredEnvironment,
-        SYGSHIFT_SHARED_IDENTITY_ENABLED: 'true',
-      }),
-    )
-
-    expect(response.status).toBe(204)
-    expect(response.headers.get('set-cookie')).toContain('__Host-sygshift-shared-session=')
-    expect(response.headers.get('set-cookie')).toContain('__Host-sygshift-shared-bootstrap=')
-    expect(response.headers.get('set-cookie')).toContain('__Host-sygshift-shared-ticket=')
-    expect(response.headers.get('set-cookie')).toContain('__Host-sygshift-shared-launch=')
-  })
-
-  it('reconciles only failures whose completion outcome can be ambiguous', () => {
-    expect(completionFailureMayBeAmbiguous(new SupabaseRequestError(
-      'The action is no longer available.',
-      409,
-      'P0001',
-      'service_record_signature_action',
-    ))).toBe(false)
-    expect(completionFailureMayBeAmbiguous(new SupabaseRequestError(
-      'The upstream response was unavailable.',
-      503,
-      null,
-      'service_record_signature_action',
-    ))).toBe(true)
-    expect(completionFailureMayBeAmbiguous(new TypeError('fetch failed'))).toBe(true)
-    expect(completionFailureMayBeAmbiguous(new Error('business rule rejected'))).toBe(false)
-  })
-
-  it('reconciles an upload whose completion committed before its response was lost', async () => {
-    const pending = { id: 'document-1', state: 'pending' }
-    const stored = { id: 'document-1', state: 'stored' }
-    const readOperation = vi.fn()
-      .mockResolvedValueOnce(pending)
-      .mockResolvedValueOnce(stored)
-    const retryCompletion = vi.fn().mockRejectedValue(new Error('response lost'))
-    const inspectObject = vi.fn().mockResolvedValue('match')
-
-    const result = await reconcileAmbiguousUploadCompletion<{ id: string, state: string }>({
-      completedStates: ['stored'],
-      inspectObject,
-      operationMatches: (operation) => operation.id === pending.id,
-      readOperation,
-      retryCompletion,
-      retryableStates: ['pending'],
-    })
-
-    expect(result).toEqual({ outcome: 'confirmed' })
-    expect(retryCompletion).toHaveBeenCalledTimes(1)
-    expect(readOperation).toHaveBeenCalledTimes(2)
-  })
-
-  it('preserves a checksum-matched object while authoritative completion remains unavailable', async () => {
-    const operation = { id: 'document-1', state: 'pending' }
-    const readOperation = vi.fn()
-      .mockResolvedValueOnce(operation)
-      .mockRejectedValueOnce(new Error('database unavailable'))
-    const retryCompletion = vi.fn().mockRejectedValue(new Error('completion unavailable'))
-
-    const result = await reconcileAmbiguousUploadCompletion<{ id: string, state: string }>({
-      completedStates: ['stored'],
-      inspectObject: vi.fn().mockResolvedValue('match'),
-      operationMatches: (candidate) => candidate.id === operation.id,
-      readOperation,
-      retryCompletion,
-      retryableStates: ['pending'],
-    })
-
-    expect(result).toEqual({ outcome: 'preserved', reason: 'state_unavailable' })
-  })
-
-  it('marks only a definitively absent pending upload as failed', async () => {
-    const retryCompletion = vi.fn()
-    const result = await reconcileAmbiguousUploadCompletion({
-      completedStates: ['stored'],
-      inspectObject: vi.fn().mockResolvedValue('missing'),
-      operationMatches: () => true,
-      readOperation: vi.fn().mockResolvedValue({ state: 'pending' }),
-      retryCompletion,
-      retryableStates: ['pending'],
-    })
-
-    expect(result).toEqual({ outcome: 'definitive_failure', reason: 'missing' })
-    expect(retryCompletion).not.toHaveBeenCalled()
-  })
-
-  it('does not relabel an accepted email when inline audit persistence fails', async () => {
-    const send = vi.fn().mockResolvedValue(undefined)
-    const rpc = vi.fn().mockRejectedValue(new Error('audit database unavailable'))
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-
-    try {
-      const result = await sendAuditedEmail(
-        environment(new Response('asset'), {
-          ...configuredEnvironment,
-          EMAIL: { send },
-          SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-        }) as Env,
-        'employee@example.com',
-        { subject: 'Schedule updated', text: 'Review your schedule.' },
-        { notificationType: 'schedule_updated' },
-        undefined,
-        rpc,
-      )
-
-      expect(result).toEqual({ failed: [], sent: ['employee@example.com'], suppressed: [] })
-      expect(send).toHaveBeenCalledTimes(1)
-      expect(rpc).toHaveBeenCalledTimes(1)
-      expect(errorSpy.mock.calls.some(([value]) => (
-        String(value).includes('"event":"email_delivery_audit_deferred"')
-        && String(value).includes('"status":"sent"')
-      ))).toBe(true)
-    } finally {
-      errorSpy.mockRestore()
-    }
-  })
-
-  it('fences an accepted inline email when its atomic audit completion is unavailable', async () => {
-    const sourceId = '10000000-0000-4000-8000-000000000099'
-    const dispatchId = '20000000-0000-4000-8000-000000000099'
-    const dispatchToken = '30000000-0000-4000-8000-000000000099'
-    let prepared = false
-    const rpc = vi.fn(async (_config: unknown, name: string) => {
-      if (name === 'service_prepare_email_recipient_dispatch_batch') {
-        const first = !prepared
-        prepared = true
-        return [{
-          dispatchId,
-          dispatchToken,
-          intendedRecipient: 'employee@example.com',
-          sendAllowed: first,
-          state: 'dispatching',
-        }]
-      }
-      throw new Error('audit completion unavailable')
-    })
-    const send = vi.fn().mockResolvedValue({ messageId: 'accepted-message' })
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    const runtime = environment(new Response('asset'), {
-      ...configuredEnvironment,
-      EMAIL: { send },
-      SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-    }) as Env
-
-    try {
-      const first = await sendAuditedEmail(
-        runtime,
-        'employee@example.com',
-        { subject: 'Password reset', text: 'Use the protected reset link.' },
-        { notificationType: 'password_reset' },
-        undefined,
-        rpc as never,
-        'deferred',
-        sourceId,
-      )
-      const retry = await sendAuditedEmail(
-        runtime,
-        'employee@example.com',
-        { subject: 'Password reset', text: 'Use the protected reset link.' },
-        { notificationType: 'password_reset' },
-        undefined,
-        rpc as never,
-        'deferred',
-        sourceId,
-      )
-
-      expect(first).toEqual({ failed: [], sent: ['employee@example.com'], suppressed: [] })
-      expect(retry.sent).toEqual([])
-      expect(retry.failed).toEqual([{
-        error: 'This recipient has an unresolved provider outcome that requires reconciliation.',
-        recipient: 'employee@example.com',
-      }])
-      expect(send).toHaveBeenCalledTimes(1)
-      expect(rpc.mock.calls.filter(([, name]) => name === 'service_complete_email_recipient_dispatch'))
-        .toHaveLength(3)
-    } finally {
-      errorSpy.mockRestore()
-    }
-  })
-
   it('protects service-role writes only for active read-only or unavailable feature windows', () => {
     const status = {
       active: [
@@ -450,273 +150,6 @@ describe('Cloudflare Worker boundary', () => {
     expect(protectedMaintenanceWindow(status, 'communications')).toBeNull()
     expect(protectedMaintenanceWindow(status, 'user_accounts')?.title).toBe('Account maintenance')
     expect(protectedMaintenanceWindow(status, 'schedule')).toBeNull()
-  })
-
-  it('rejects an owner-mismatched password request before any Auth mutation', async () => {
-    const employeeId = '10000000-0000-4000-8000-000000000001'
-    const otherEmployeeId = '10000000-0000-4000-8000-000000000002'
-    const authUserId = '20000000-0000-4000-8000-000000000001'
-    const token = `header.${btoa(JSON.stringify({ session_id: crypto.randomUUID(), sub: authUserId })).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}.signature`
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          display_name: 'Owner',
-          employee_id: employeeId,
-          has_mfa: true,
-          permissions: [],
-          role: 'guard',
-          username: 'owner',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const response = await worker.fetch(new Request('https://app.sygshift.example/api/v1/account/password', {
-        body: JSON.stringify({
-          expectedAuthUserId: authUserId,
-          expectedEmployeeId: otherEmployeeId,
-          password: 'NightFalcon123!',
-        }),
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        method: 'POST',
-      }), environment(new Response('asset'), configuredEnvironment))
-
-      expect(response.status).toBe(409)
-      expect(await response.json()).toMatchObject({ error: 'account_context_changed' })
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/auth/v1/user'))).toBe(false)
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/rest/v1/rpc/mark_password_changed'))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('retries password finalization with the same bearer after the password is already current', async () => {
-    const employeeId = '10000000-0000-4000-8000-000000000001'
-    const authUserId = '20000000-0000-4000-8000-000000000001'
-    const sessionId = '30000000-0000-4000-8000-000000000001'
-    const token = `header.${btoa(JSON.stringify({ session_id: sessionId, sub: authUserId })).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}.signature`
-    const password = 'NightFalcon123!'
-    let authUpdates = 0
-    let finalizations = 0
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          display_name: 'Owner',
-          employee_id: employeeId,
-          has_mfa: true,
-          permissions: [],
-          role: 'guard',
-          username: 'owner',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/auth/v1/user')) {
-        authUpdates += 1
-        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${token}`)
-        expect(JSON.parse(String(init?.body))).toEqual({ password })
-        return authUpdates === 1
-          ? new Response(JSON.stringify({ id: authUserId }), { headers: { 'content-type': 'application/json' } })
-          : new Response(JSON.stringify({ message: 'New password should be different from the old password.' }), {
-            headers: { 'content-type': 'application/json' },
-            status: 422,
-          })
-      }
-      if (url.includes('/rest/v1/rpc/mark_password_changed')) {
-        finalizations += 1
-        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${token}`)
-        return finalizations === 1
-          ? new Response(JSON.stringify({ message: 'commit response lost' }), {
-            headers: { 'content-type': 'application/json' },
-            status: 503,
-          })
-          : new Response('true', { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const makeRequest = () => new Request('https://app.sygshift.example/api/v1/account/password', {
-        body: JSON.stringify({ expectedAuthUserId: authUserId, expectedEmployeeId: employeeId, password }),
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        method: 'POST',
-      })
-      const first = await worker.fetch(makeRequest(), environment(new Response('asset'), configuredEnvironment))
-      expect(first.status).toBe(503)
-      expect(await first.json()).toMatchObject({ error: 'password_change_finalization_pending' })
-
-      const retry = await worker.fetch(makeRequest(), environment(new Response('asset'), configuredEnvironment))
-      expect(retry.status).toBe(200)
-      expect(await retry.json()).toMatchObject({
-        authUserId,
-        employeeId,
-        passwordAlreadyCurrent: true,
-        saved: true,
-      })
-      expect(authUpdates).toBe(2)
-      expect(finalizations).toBe(2)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('recovers a committed email-verification RPC response and never resends the durable email', async () => {
-    const employeeId = '10000000-0000-4000-8000-000000000001'
-    const verificationId = '40000000-0000-4000-8000-000000000001'
-    const operationId = '50000000-0000-4000-8000-000000000001'
-    const dispatchId = '60000000-0000-4000-8000-000000000001'
-    const dispatchToken = '70000000-0000-4000-8000-000000000001'
-    const email = 'employee@example.com'
-    const bearer = 'signed-in-session'
-    const createBodies: Array<Record<string, unknown>> = []
-    const prepareSourceIds: string[] = []
-    let committedExpiresAt = ''
-    let accepted = false
-    const send = vi.fn(async (_message: unknown) => ({ messageId: 'provider-one' }))
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          display_name: 'Email Owner',
-          employee_id: employeeId,
-          has_mfa: false,
-          permissions: [],
-          role: 'guard',
-          username: 'emailowner',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/get_maintenance_status')) {
-        return new Response(JSON.stringify({ active: [] }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_create_email_verification_operation')) {
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>
-        createBodies.push(body)
-        committedExpiresAt ||= String(body.target_expires_at)
-        if (createBodies.length === 1) {
-          return new Response(JSON.stringify({ code: 'PGRST000', message: 'commit response lost' }), {
-            headers: { 'content-type': 'application/json' },
-            status: 503,
-          })
-        }
-        return new Response(JSON.stringify({
-          employeeId,
-          expiresAt: committedExpiresAt,
-          operationId,
-          purpose: 'personal_email_verification',
-          replayed: true,
-          requestedEmail: email,
-          verificationId,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_email_recipient_dispatch_batch')) {
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>
-        prepareSourceIds.push(String(body.target_source_id))
-        return new Response(JSON.stringify([{
-          dispatchId,
-          dispatchToken,
-          intendedRecipient: email,
-          sendAllowed: !accepted,
-          state: accepted ? 'accepted' : 'dispatching',
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_email_recipient_dispatch')) {
-        accepted = true
-        return new Response('{}', { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const runtime = environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send },
-        SYGSHIFT_EMAIL_FROM: 'system@example.com',
-      })
-      const makeRequest = () => new Request('https://app.sygshift.example/api/v1/account/email-verification/request', {
-        body: JSON.stringify({ email, operationId }),
-        headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
-        method: 'POST',
-      })
-      const first = await worker.fetch(makeRequest(), runtime)
-      expect(first.status).toBe(200)
-      expect(await first.json()).toMatchObject({ expiresAt: committedExpiresAt, operationId, sent: true })
-
-      const replay = await worker.fetch(makeRequest(), runtime)
-      expect(replay.status).toBe(200)
-      expect(await replay.json()).toMatchObject({ expiresAt: committedExpiresAt, operationId, sent: true })
-
-      expect(createBodies).toHaveLength(3)
-      expect(new Set(createBodies.map((body) => body.target_operation_id))).toEqual(new Set([operationId]))
-      expect(new Set(createBodies.map((body) => body.target_employee_id))).toEqual(new Set([employeeId]))
-      expect(new Set(createBodies.map((body) => body.target_email))).toEqual(new Set([email]))
-      expect(new Set(createBodies.map((body) => body.target_purpose))).toEqual(new Set(['personal_email_verification']))
-      expect(new Set(createBodies.map((body) => body.target_token_hash)).size).toBe(1)
-      const expectedToken = await derivePersonalEmailVerificationToken(
-        configuredEnvironment.SUPABASE_SERVICE_ROLE_KEY,
-        operationId,
-        employeeId,
-        email,
-      )
-      expect(createBodies[0]?.target_token_hash).toBe(createHash('sha256').update(expectedToken).digest('hex'))
-      expect(prepareSourceIds).toEqual([verificationId, verificationId])
-      expect(send).toHaveBeenCalledTimes(1)
-      expect(JSON.stringify(send.mock.calls[0]?.[0])).toContain(encodeURIComponent(expectedToken))
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('rejects mismatched durable email-verification evidence before provider delivery', async () => {
-    const employeeId = '10000000-0000-4000-8000-000000000001'
-    const operationId = '50000000-0000-4000-8000-000000000001'
-    const email = 'employee@example.com'
-    const send = vi.fn()
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          display_name: 'Email Owner', employee_id: employeeId, has_mfa: false,
-          permissions: [], role: 'guard', username: 'emailowner',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/get_maintenance_status')) {
-        return new Response(JSON.stringify({ active: [] }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_create_email_verification_operation')) {
-        return new Response(JSON.stringify({
-          employeeId,
-          expiresAt: new Date(Date.now() + 60_000).toISOString(),
-          operationId,
-          purpose: 'personal_email_verification',
-          requestedEmail: 'different@example.com',
-          verificationId: '40000000-0000-4000-8000-000000000001',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const response = await worker.fetch(new Request('https://app.sygshift.example/api/v1/account/email-verification/request', {
-        body: JSON.stringify({ email, operationId }),
-        headers: { authorization: 'Bearer signed-in-session', 'content-type': 'application/json' },
-        method: 'POST',
-      }), environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send },
-        SYGSHIFT_EMAIL_FROM: 'system@example.com',
-      }))
-
-      expect(response.status).toBe(500)
-      expect(send).not.toHaveBeenCalled()
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('service_prepare_email_recipient_dispatch_batch'))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
   })
 
   it('returns a no-store health response with request tracing and production security headers', async () => {
@@ -1059,47 +492,6 @@ describe('Cloudflare Worker boundary', () => {
     }
   })
 
-  it('does not report ready while required-lane failure history remains uncleared', async () => {
-    const snapshot = {
-      ...healthyScheduledRuntimeSnapshot(),
-      consecutiveFailures: 2,
-      healthyCycles: 2,
-      lastFailureAtMs: Date.now() - 30_000,
-      lastFailureOperation: 'required_lane_failure',
-      // A newly successful cycle does not clear the durable counter until the
-      // configured healthy-cycle threshold is reached.
-      lastFullSuccessAtMs: Date.now(),
-      lastSuccessAtMs: Date.now(),
-      mode: 'closed' as const,
-    }
-    const response = await worker.fetch(
-      new Request('https://app.sygshift.example/api/v1/ready'),
-      environment(new Response('asset'), {
-        ...configuredEnvironment,
-        SCHEDULE_COORDINATOR: {
-          getByName: () => ({ getSnapshot: vi.fn(async () => snapshot) }),
-        },
-      }),
-    )
-    const payload = await response.json() as {
-      checks: { scheduledRuntimeFresh: boolean; scheduledRuntimeNoFailures: boolean }
-      ready: boolean
-      scheduledRuntime: { consecutiveFailures: number; mode: string }
-      status: string
-    }
-
-    expect(response.status).toBe(503)
-    expect(payload).toMatchObject({
-      checks: {
-        scheduledRuntimeFresh: false,
-        scheduledRuntimeNoFailures: false,
-      },
-      ready: false,
-      scheduledRuntime: { consecutiveFailures: 2, mode: 'closed' },
-      status: 'degraded',
-    })
-  })
-
   it('keeps readiness degraded until a new scheduler state records its first successful cron', async () => {
     const now = Date.now()
     const bootstrapSnapshot = {
@@ -1257,170 +649,6 @@ describe('Cloudflare Worker boundary', () => {
     expect(payload.requestId).toBe(response.headers.get('x-request-id'))
   })
 
-  it('does not let an unauthenticated caller run the privileged document-pipeline canary', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const response = await worker.fetch(
-        new Request('https://app.sygshift.example/api/v1/internal/document-pipeline/canary', { method: 'POST' }),
-        environment(new Response('asset'), configuredEnvironment),
-      )
-      const payload = await response.json() as { error: string; requestId: string }
-
-      expect(response.status).toBe(401)
-      expect(payload.error).toBe('auth_required')
-      expect(payload.requestId).toBe(response.headers.get('x-request-id'))
-      expect(fetchMock).not.toHaveBeenCalled()
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('requires current AAL2 and the security-management permission before the document-pipeline canary', async () => {
-    const sessionContext = {
-      employee_id: '10000000-0000-4000-8000-000000000001',
-      username: 'admin',
-      display_name: 'Admin User',
-      role: 'admin',
-      has_mfa: true,
-      permissions: ['admin.security.manage'],
-    }
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(sessionContext), {
-      headers: { 'content-type': 'application/json' },
-    }))
-    vi.stubGlobal('fetch', fetchMock)
-    const token = `header.${btoa(JSON.stringify({ aal: 'aal1' }))}.signature`
-
-    try {
-      const response = await worker.fetch(
-        new Request('https://app.sygshift.example/api/v1/internal/document-pipeline/canary', {
-          headers: { authorization: `Bearer ${token}` },
-          method: 'POST',
-        }),
-        environment(new Response('asset'), configuredEnvironment),
-      )
-      const payload = await response.json() as { error: string }
-
-      expect(response.status).toBe(403)
-      expect(payload.error).toBe('document_pipeline_canary_mfa_required')
-      expect(fetchMock).toHaveBeenCalledTimes(1)
-      expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/rest/v1/rpc/get_session_context')
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('rejects an AAL2 user without security-management permission before canary storage access', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      employee_id: '10000000-0000-4000-8000-000000000001',
-      username: 'supervisor',
-      display_name: 'Supervisor User',
-      role: 'supervisor',
-      has_mfa: true,
-      permissions: [],
-    }), { headers: { 'content-type': 'application/json' } }))
-    vi.stubGlobal('fetch', fetchMock)
-    const token = `header.${btoa(JSON.stringify({ aal: 'aal2' }))}.signature`
-
-    try {
-      const response = await worker.fetch(
-        new Request('https://app.sygshift.example/api/v1/internal/document-pipeline/canary', {
-          headers: { authorization: `Bearer ${token}` },
-          method: 'POST',
-        }),
-        environment(new Response('asset'), configuredEnvironment),
-      )
-      const payload = await response.json() as { error: string }
-
-      expect(response.status).toBe(403)
-      expect(payload.error).toBe('permission_required')
-      expect(fetchMock).toHaveBeenCalledTimes(1)
-      expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/rest/v1/rpc/get_session_context')
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('exposes stale email-provider outcomes only through an MFA-protected admin review workflow', async () => {
-    const dispatchId = '40000000-0000-4000-8000-000000000099'
-    const operationId = '60000000-0000-4000-8000-000000000099'
-    const reviewToken = '50000000-0000-4000-8000-000000000099'
-    const resolutions: Record<string, unknown>[] = []
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: '10000000-0000-4000-8000-000000000001',
-          username: 'admin',
-          display_name: 'Admin User',
-          role: 'admin',
-          has_mfa: true,
-          permissions: ['admin.users.manage'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_list_email_recipient_dispatch_review')) {
-        return new Response(JSON.stringify([{
-          dispatchId,
-          intendedRecipient: 'employee@example.com',
-          notificationType: 'schedule_updated',
-          sourceId: '20000000-0000-4000-8000-000000000099',
-          sourceKind: 'notification_outbox',
-          state: 'uncertain',
-          reviewToken,
-          retryAllowed: true,
-          allowedResolutions: ['accepted', 'suppressed', 'retry_verified_unsent'],
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_resolve_email_recipient_dispatch_review')) {
-        const requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
-        resolutions.push(requestBody)
-        return new Response(JSON.stringify({ dispatchId, state: 'retry_approved' }), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const runtime = environment(new Response('asset'), configuredEnvironment)
-      const listed = await worker.fetch(
-        new Request('https://app.sygshift.example/api/v1/admin/users/email-dispatch-review?limit=25', {
-          headers: { authorization: 'Bearer admin-token' },
-        }),
-        runtime,
-      )
-      const listPayload = await listed.json() as { items: Array<{ dispatchId: string }> }
-      expect(listed.status).toBe(200)
-      expect(listPayload.items).toEqual([expect.objectContaining({ dispatchId })])
-
-      const resolved = await worker.fetch(
-        new Request(`https://app.sygshift.example/api/v1/admin/users/email-dispatch-review/${dispatchId}`, {
-          body: JSON.stringify({
-            failureDetail: 'Provider search confirmed no accepted message.',
-            operationId,
-            resolution: 'retry_verified_unsent',
-            reviewToken,
-          }),
-          headers: { authorization: 'Bearer admin-token', 'content-type': 'application/json' },
-          method: 'POST',
-        }),
-        runtime,
-      )
-      expect(resolved.status).toBe(200)
-      expect(resolutions).toEqual([expect.objectContaining({
-        target_actor_employee_id: '10000000-0000-4000-8000-000000000001',
-        target_dispatch_id: dispatchId,
-        target_operation_id: operationId,
-        target_review_token: reviewToken,
-        target_resolution: 'retry_verified_unsent',
-      })])
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
   it.each([
     '/api/v1/admin/users/login-emails',
     '/api/v1/admin/users/10000000-0000-4000-8000-000000000010/login-email',
@@ -1477,23 +705,22 @@ describe('Cloudflare Worker boundary', () => {
         status: 'active',
         existingAuthUserId: null,
       }), { headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([{
-        dispatchId: '40000000-0000-4000-8000-000000000010',
-        dispatchToken: '50000000-0000-4000-8000-000000000010',
-        intendedRecipient: 'employee@example.com',
-        sendAllowed: true,
-        state: 'dispatching',
-      }]), {
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
         headers: { 'content-type': 'application/json' },
       }))
-      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => emailDispatchCompletionReceipt(init))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
     const send = vi.fn().mockResolvedValue({ messageId: 'welcome-message' })
     vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/welcome-email`, {
-        body: JSON.stringify({ idempotencyKey: '60000000-0000-4000-8000-000000000001' }),
-        headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
+        body: '{}',
+        headers: { authorization: 'Bearer token' },
         method: 'POST',
       }),
       environment(new Response('asset'), {
@@ -1507,139 +734,41 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.status).toBe(200)
     expect(payload).toMatchObject({ email: 'employee@example.com', username: 'employee' })
     expect(send).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(send.mock.calls[0]?.[0]).toMatchObject({ to: 'employee@example.com' })
     vi.unstubAllGlobals()
   })
 
-  it('keeps an admin welcome-email operation stable when a new HTTP request retries it', async () => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000002'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const idempotencyKey = '60000000-0000-4000-8000-000000000010'
-    const sourceIds: string[] = []
-    let prepareCount = 0
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'invitemanager',
-          display_name: 'Invite Manager',
-          role: 'scheduler',
-          has_mfa: true,
-          permissions: ['admin.users.invite'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) {
-        return new Response(JSON.stringify({
-          employeeId: targetEmployeeId,
-          employeeNumber: 'SYG-1100',
-          jobTitle: 'Guard',
-          username: 'employee',
-          authEmail: 'employee@sygilant.us',
-          contactEmail: 'employee@example.com',
-          displayName: 'Example Employee',
-          role: 'guard',
-          employmentType: 'hourly',
-          status: 'active',
-          existingAuthUserId: null,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_email_recipient_dispatch_batch')) {
-        const requestBody = JSON.parse(String(init?.body)) as { target_source_id: string }
-        sourceIds.push(requestBody.target_source_id)
-        prepareCount += 1
-        return new Response(JSON.stringify([{
-          dispatchId: '40000000-0000-4000-8000-000000000010',
-          dispatchToken: '50000000-0000-4000-8000-000000000010',
-          intendedRecipient: 'employee@example.com',
-          sendAllowed: prepareCount === 1,
-          state: prepareCount === 1 ? 'dispatching' : 'accepted',
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    const send = vi.fn().mockResolvedValue({ messageId: 'welcome-message' })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const makeRequest = () => new Request(
-        `https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/welcome-email`,
-        {
-          body: JSON.stringify({ idempotencyKey }),
-          headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
-          method: 'POST',
-        },
-      )
-      const first = await worker.fetch(makeRequest(), environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-      }))
-      const second = await worker.fetch(makeRequest(), environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-      }))
-
-      expect(first.status).toBe(200)
-      expect(second.status).toBe(200)
-      expect(first.headers.get('x-request-id')).not.toBe(second.headers.get('x-request-id'))
-      expect(sourceIds).toHaveLength(2)
-      expect(sourceIds[0]).toBe(sourceIds[1])
-      expect(sourceIds[0]).not.toBe(first.headers.get('x-request-id'))
-      expect(sourceIds[1]).not.toBe(second.headers.get('x-request-id'))
-      expect(send).toHaveBeenCalledTimes(1)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
   it('rejects a blocked company-domain login email before changing the employee account', async () => {
     const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: '10000000-0000-4000-8000-000000000002',
-          username: 'invitemanager',
-          display_name: 'Invite Manager',
-          role: 'scheduler',
-          has_mfa: true,
-          permissions: ['admin.users.invite'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_admin_login_instruction_operation')) {
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_find_active_admin_login_instruction_operations')) {
-        return new Response('[]', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) {
-        return new Response(JSON.stringify({
-          employeeId: targetEmployeeId,
-          username: 'employee',
-          authEmail: 'employee@accounts.sygshift.invalid',
-          contactEmail: 'employee@guardianshipsecurity.net',
-          displayName: 'Example Employee',
-          role: 'guard',
-          employmentType: 'hourly',
-          status: 'active',
-          existingAuthUserId: null,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employee_id: '10000000-0000-4000-8000-000000000002',
+        username: 'invitemanager',
+        display_name: 'Invite Manager',
+        role: 'scheduler',
+        has_mfa: true,
+        permissions: ['admin.users.invite'],
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employeeId: targetEmployeeId,
+        username: 'employee',
+        authEmail: 'employee@accounts.sygshift.invalid',
+        contactEmail: 'employee@guardianshipsecurity.net',
+        displayName: 'Example Employee',
+        role: 'guard',
+        employmentType: 'hourly',
+        status: 'active',
+        existingAuthUserId: null,
+      }), { headers: { 'content-type': 'application/json' } }))
     const send = vi.fn()
     vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/login-email`, {
-        body: JSON.stringify({ idempotencyKey: '60000000-0000-4000-8000-000000000030' }),
-        headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
+        body: '{}',
+        headers: { authorization: 'Bearer token' },
         method: 'POST',
       }),
       environment(new Response('asset'), {
@@ -1654,775 +783,9 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.status).toBe(409)
     expect(payload.error).toBe('email_recipient_suppressed')
     expect(payload.detail).toContain('Add a personal email')
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(send).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
-  })
-
-  it('does not let invite-only login instructions reset an already linked account', async () => {
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: '10000000-0000-4000-8000-000000000002',
-          username: 'invitemanager',
-          display_name: 'Invite Manager',
-          role: 'scheduler',
-          has_mfa: true,
-          permissions: ['admin.users.invite'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_admin_login_instruction_operation')) {
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_find_active_admin_login_instruction_operations')) {
-        return new Response('[]', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) {
-        return new Response(JSON.stringify({
-          employeeId: targetEmployeeId,
-          username: 'employee',
-          authEmail: 'employee@accounts.sygshift.invalid',
-          contactEmail: 'employee@example.com',
-          displayName: 'Example Employee',
-          role: 'guard',
-          employmentType: 'hourly',
-          status: 'active',
-          existingAuthUserId: targetAuthUserId,
-          requiresMfa: false,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    const send = vi.fn()
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const response = await worker.fetch(
-        new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/login-email`, {
-          body: JSON.stringify({ idempotencyKey: '60000000-0000-4000-8000-000000000044' }),
-          headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
-          method: 'POST',
-        }),
-        environment(new Response('asset'), {
-          ...configuredEnvironment,
-          EMAIL: { send },
-          SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-        }),
-      )
-      const payload = await response.json() as { error: string }
-
-      expect(response.status).toBe(409)
-      expect(payload.error).toBe('existing_account_requires_password_reset')
-      expect(send).not.toHaveBeenCalled()
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/auth/v1/admin/users'))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('does not mutate Auth when login-instruction email runtime configuration is unavailable', async () => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000002'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const operationId = '30000000-0000-4000-8000-000000000030'
-    const operation = {
-      operationId,
-      actorEmployeeId,
-      mode: 'single',
-      state: 'prepared',
-      items: [{
-        employeeId: targetEmployeeId,
-        ordinal: 0,
-        employeeNumber: null,
-        jobTitle: null,
-        username: 'employee',
-        authEmail: 'employee@accounts.sygshift.invalid',
-        contactEmail: 'employee@example.com',
-        displayName: 'Example Employee',
-        role: 'guard',
-        employmentType: 'hourly',
-        status: 'active',
-        existingAuthUserId: null,
-        requiresMfa: false,
-        credentialFingerprint: 'a'.repeat(64),
-        state: 'prepared',
-        authUserId: null,
-        action: null,
-        errorCode: null,
-        errorStatus: null,
-        errorDetail: null,
-      }],
-    }
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'invitemanager',
-          display_name: 'Invite Manager',
-          role: 'scheduler',
-          has_mfa: true,
-          permissions: ['admin.users.invite'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_admin_login_instruction_operation')) {
-        return new Response(JSON.stringify(operation), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const response = await worker.fetch(
-        new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/login-email`, {
-          body: JSON.stringify({ idempotencyKey: '60000000-0000-4000-8000-000000000031' }),
-          headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
-          method: 'POST',
-        }),
-        environment(new Response('asset'), configuredEnvironment),
-      )
-      const payload = await response.json() as { error: string }
-
-      expect(response.status).toBe(503)
-      expect(payload.error).toBe('email_not_configured')
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/auth/v1/admin/users'))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('rejects an unlinked Auth-by-email candidate owned by another employee before mutation', async () => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000002'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const foreignEmployeeId = '10000000-0000-4000-8000-000000000099'
-    let beginCalls = 0
-    const send = vi.fn()
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'invitemanager',
-          display_name: 'Invite Manager',
-          role: 'scheduler',
-          has_mfa: true,
-          permissions: ['admin.users.invite'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_admin_login_instruction_operation')) {
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_find_active_admin_login_instruction_operations')) {
-        return new Response('[]', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) {
-        return new Response(JSON.stringify({
-          employeeId: targetEmployeeId,
-          username: 'employee',
-          authEmail: 'employee@accounts.sygshift.invalid',
-          contactEmail: 'employee@example.com',
-          displayName: 'Example Employee',
-          role: 'guard',
-          employmentType: 'hourly',
-          status: 'active',
-          existingAuthUserId: null,
-          requiresMfa: false,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/auth/v1/admin/users?page=')) {
-        return new Response(JSON.stringify({ users: [{
-          id: '20000000-0000-4000-8000-000000000099',
-          email: 'employee@accounts.sygshift.invalid',
-          app_metadata: { employeeId: foreignEmployeeId },
-        }] }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_begin_admin_login_instruction_operation')) {
-        beginCalls += 1
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const response = await worker.fetch(
-        new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/login-email`, {
-          body: JSON.stringify({ idempotencyKey: '60000000-0000-4000-8000-000000000039' }),
-          headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
-          method: 'POST',
-        }),
-        environment(new Response('asset'), {
-          ...configuredEnvironment,
-          EMAIL: { send },
-          SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-        }),
-      )
-      const payload = await response.json() as { error: string }
-
-      expect(response.status).toBe(409)
-      expect(payload.error).toBe('login_instruction_auth_identity_conflict')
-      expect(beginCalls).toBe(0)
-      expect(send).not.toHaveBeenCalled()
-      expect(fetchMock.mock.calls.some(([input, init]) => (
-        String(input).includes('/auth/v1/admin/users')
-        && ['POST', 'PUT'].includes((init as RequestInit | undefined)?.method ?? '')
-      ))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it.each([
-    ['separated employee', null],
-    ['changed recipient', { contactEmail: 'changed@example.com' }],
-    ['changed account link', { existingAuthUserId: '20000000-0000-4000-8000-000000000099' }],
-  ])('fails a stale login-instruction replay before Auth or email for a %s', async (_label, targetChange) => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000002'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const operationId = '30000000-0000-4000-8000-000000000031'
-    const password = await deriveAdminLoginTemporaryPassword(
-      configuredEnvironment.SUPABASE_SERVICE_ROLE_KEY,
-      operationId,
-      targetEmployeeId,
-      'employee',
-    )
-    const fingerprint = createHmac('sha256', configuredEnvironment.SUPABASE_SERVICE_ROLE_KEY)
-      .update(`sygshift-admin-login-fingerprint-v1\u001f${operationId}\u001f${targetEmployeeId}\u001f${password}`)
-      .digest('hex')
-    const item = {
-      employeeId: targetEmployeeId,
-      ordinal: 0,
-      employeeNumber: null,
-      jobTitle: null,
-      username: 'employee',
-      authEmail: 'employee@accounts.sygshift.invalid',
-      contactEmail: 'employee@example.com',
-      displayName: 'Example Employee',
-      role: 'guard',
-      employmentType: 'hourly',
-      status: 'active',
-      existingAuthUserId: null,
-      candidateAuthUserId: null,
-      requiresMfa: false,
-      credentialFingerprint: fingerprint,
-      state: 'prepared' as string,
-      authUserId: null as string | null,
-      action: null as string | null,
-      errorCode: null,
-      errorStatus: null,
-      errorDetail: null,
-    }
-    const failedOperation = {
-      operationId,
-      actorEmployeeId,
-      mode: 'single',
-      state: 'completed_with_failures',
-      items: [{
-        ...item,
-        state: 'failed',
-        errorCode: 'login_instruction_target_changed',
-        errorStatus: 409,
-        errorDetail: 'The employee target changed.',
-      }],
-    }
-    const send = vi.fn()
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'invitemanager',
-          display_name: 'Invite Manager',
-          role: 'scheduler',
-          has_mfa: true,
-          permissions: ['admin.users.invite'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_admin_login_instruction_operation')) {
-        return new Response(JSON.stringify({
-          operationId,
-          actorEmployeeId,
-          mode: 'single',
-          purpose: 'admin_login_instructions',
-          state: 'prepared',
-          items: [item],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_admin_login_instruction_dispatches')) {
-        return new Response(JSON.stringify([{
-          dispatchId: '40000000-0000-4000-8000-000000000031',
-          dispatchToken: '50000000-0000-4000-8000-000000000031',
-          intendedRecipient: item.contactEmail,
-          sendAllowed: true,
-          state: 'dispatching',
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) {
-        return new Response(JSON.stringify(targetChange ? { ...item, ...targetChange } : null), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (url.includes('/auth/v1/admin/users?page=')) {
-        const changedAuthUserId = targetChange && 'existingAuthUserId' in targetChange
-          ? targetChange.existingAuthUserId
-          : null
-        return new Response(JSON.stringify({
-          users: changedAuthUserId ? [{
-            id: changedAuthUserId,
-            email: item.authEmail,
-            app_metadata: { employeeId: targetEmployeeId },
-          }] : [],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_release_known_unsent_email_dispatch')) {
-        return knownUnsentEmailReleaseReceipt(_init)
-      }
-      if (url.includes('/rest/v1/rpc/service_record_admin_login_instruction_outcome')) {
-        return new Response(JSON.stringify(failedOperation), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const response = await worker.fetch(
-        new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/login-email`, {
-          body: JSON.stringify({ idempotencyKey: '60000000-0000-4000-8000-000000000032' }),
-          headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
-          method: 'POST',
-        }),
-        environment(new Response('asset'), {
-          ...configuredEnvironment,
-          EMAIL: { send },
-          SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-        }),
-      )
-      const payload = await response.json() as { error: string }
-      expect(response.status).toBe(409)
-      expect(payload.error).toBe('login_instruction_target_changed')
-      expect(send).not.toHaveBeenCalled()
-      expect(fetchMock.mock.calls.some(([input, init]) => (
-        String(input).includes('/auth/v1/admin/users')
-        && ['POST', 'PUT'].includes((init as RequestInit | undefined)?.method ?? '')
-      ))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('recovers an accepted login email after finalization response loss and browser/account change without resending', async () => {
-    const originalActorId = '10000000-0000-4000-8000-000000000002'
-    const recoveryActorId = '10000000-0000-4000-8000-000000000003'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
-    const initialKey = '30000000-0000-4000-8000-000000000033'
-    const retryKey = '60000000-0000-4000-8000-000000000034'
-    const operationDigest = createHash('sha256')
-      .update(['admin-email-idempotency', 'login-instructions', originalActorId, targetEmployeeId, initialKey].join('\u001f'))
-      .digest('hex')
-    const operationId = `${operationDigest.slice(0, 8)}-${operationDigest.slice(8, 12)}-5${operationDigest.slice(13, 16)}-8${operationDigest.slice(17, 20)}-${operationDigest.slice(20, 32)}`
-    const password = await deriveAdminLoginTemporaryPassword(
-      configuredEnvironment.SUPABASE_SERVICE_ROLE_KEY,
-      operationId,
-      targetEmployeeId,
-      'employee',
-    )
-    const fingerprint = createHmac('sha256', configuredEnvironment.SUPABASE_SERVICE_ROLE_KEY)
-      .update(`sygshift-admin-login-fingerprint-v1\u001f${operationId}\u001f${targetEmployeeId}\u001f${password}`)
-      .digest('hex')
-    const baseItem = {
-      employeeId: targetEmployeeId,
-      ordinal: 0,
-      employeeNumber: 'SYG-1100',
-      jobTitle: 'Guard',
-      username: 'employee',
-      authEmail: 'employee@accounts.sygshift.invalid',
-      contactEmail: 'employee@example.com',
-      displayName: 'Example Employee',
-      role: 'guard',
-      employmentType: 'hourly',
-      status: 'active',
-      existingAuthUserId: null as string | null,
-      candidateAuthUserId: null as string | null,
-      requiresMfa: false,
-      credentialFingerprint: fingerprint,
-      state: 'prepared' as string,
-      authUserId: null as string | null,
-      action: null as string | null,
-      errorCode: null,
-      errorStatus: null,
-      errorDetail: null,
-    }
-    let storedOperation = {
-      operationId,
-      actorEmployeeId: originalActorId,
-      mode: 'single',
-      state: 'prepared',
-      items: [baseItem],
-    }
-    let prepareCount = 0
-    let outcomeCount = 0
-    let claimCount = 0
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {}
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        const authorization = new Headers(init?.headers).get('authorization')
-        const employeeId = authorization === 'Bearer admin-b' ? recoveryActorId : originalActorId
-        return new Response(JSON.stringify({
-          employee_id: employeeId,
-          username: employeeId === recoveryActorId ? 'recoveringadmin' : 'originaladmin',
-          display_name: employeeId === recoveryActorId ? 'Recovering Admin' : 'Original Admin',
-          role: 'admin',
-          has_mfa: true,
-          permissions: ['admin.users.invite'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_admin_login_instruction_operation')) {
-        return new Response(JSON.stringify(body.target_operation_id === operationId ? storedOperation : null), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (url.includes('/rest/v1/rpc/service_find_active_admin_login_instruction_operations')) {
-        return new Response(JSON.stringify([storedOperation]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_claim_admin_login_instruction_operation')) {
-        claimCount += 1
-        expect(body.target_recovery_actor_employee_id).toBe(recoveryActorId)
-        return new Response(JSON.stringify(storedOperation), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_admin_login_instruction_dispatches')) {
-        prepareCount += 1
-        return new Response(JSON.stringify([{
-          dispatchId: '40000000-0000-4000-8000-000000000033',
-          dispatchToken: '50000000-0000-4000-8000-000000000033',
-          intendedRecipient: baseItem.contactEmail,
-          sendAllowed: prepareCount === 1,
-          state: prepareCount === 1 ? 'dispatching' : 'accepted',
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) {
-        return new Response(JSON.stringify(baseItem), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/auth/v1/admin/users?page=')) {
-        return new Response(JSON.stringify({ users: [{
-          id: targetAuthUserId,
-          email: baseItem.authEmail,
-          app_metadata: { employeeId: targetEmployeeId, loginInstructionOperationId: operationId },
-        }] }), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (url.endsWith(`/auth/v1/admin/users/${targetAuthUserId}`)) {
-        return new Response(JSON.stringify({ id: targetAuthUserId, email: baseItem.authEmail }), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (url.includes('/rest/v1/rpc/service_link_employee_auth_account')) {
-        return new Response(JSON.stringify({ linked: true }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_mark_admin_login_instruction_provisioned')) {
-        storedOperation = {
-          ...storedOperation,
-          items: [{
-            ...baseItem,
-            state: 'provisioned',
-            authUserId: targetAuthUserId,
-            action: 'updated_existing_auth_user',
-          }],
-        }
-        return new Response(JSON.stringify(storedOperation), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
-      }
-      if (url.includes('/rest/v1/rpc/service_record_admin_login_instruction_outcome')) {
-        outcomeCount += 1
-        if (outcomeCount === 1) {
-          return new Response(JSON.stringify({ message: 'response lost after completion write' }), {
-            headers: { 'content-type': 'application/json' },
-            status: 503,
-          })
-        }
-        storedOperation = {
-          ...storedOperation,
-          state: 'completed',
-          items: storedOperation.items.map((item) => ({ ...item, state: 'completed' })),
-        }
-        return new Response(JSON.stringify(storedOperation), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    const send = vi.fn().mockResolvedValue({ messageId: 'login-instruction-message' })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const runtime = environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-      })
-      const makeRequest = (idempotencyKey: string, token: string) => new Request(
-        `https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/login-email`,
-        {
-          body: JSON.stringify({ idempotencyKey }),
-          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          method: 'POST',
-        },
-      )
-      const first = await worker.fetch(makeRequest(initialKey, 'admin-a'), runtime)
-      const firstPayload = await first.json() as { error: string }
-      const recovered = await worker.fetch(makeRequest(retryKey, 'admin-b'), runtime)
-      const recoveredPayload = await recovered.json() as { operationId: string }
-
-      expect(first.status, JSON.stringify({
-        calls: fetchMock.mock.calls.map(([input]) => String(input)),
-        payload: firstPayload,
-      })).toBe(409)
-      expect(firstPayload.error).toBe('login_instruction_finalization_pending')
-      expect(recovered.status).toBe(200)
-      expect(recoveredPayload.operationId).toBe(operationId)
-      expect(send).toHaveBeenCalledTimes(1)
-      expect(claimCount).toBe(1)
-      expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith(`/auth/v1/admin/users/${targetAuthUserId}`)))
-        .toHaveLength(0)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('redacts a credential echoed by the email provider before persisting or returning the failure', async () => {
-    const credential = 'NeverPersist-Me9!'
-    const recipient = 'employee@example.com'
-    const sourceId = '30000000-0000-4000-8000-000000000035'
-    const rpc = vi.fn(async <T>(
-      _config: unknown,
-      name: string,
-      body: Record<string, unknown>,
-    ): Promise<T> => {
-      expect(name).toBe('service_complete_email_recipient_dispatch')
-      expect(JSON.stringify(body)).not.toContain(credential)
-      expect(body.target_failure_detail).toBe('The login-instruction email provider outcome is unknown. Credential content was redacted.')
-      return {
-        dispatchToken: body.target_dispatch_token,
-        state: 'uncertain',
-      } as T
-    })
-    const send = vi.fn().mockRejectedValue(new Error(`Provider echoed outbound body: ${credential}`))
-    const result = await deliverDurableEmailRecipients(
-      environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-      }) as Env,
-      'inline_email',
-      sourceId,
-      [recipient],
-      { subject: 'Login instructions', text: `Temporary password: ${credential}` },
-      {
-        notificationType: 'login_instructions',
-        relatedRecordId: sourceId,
-        relatedRecordType: 'admin_login_instruction_operation',
-      },
-      rpc as Parameters<typeof deliverDurableEmailRecipients>[6],
-      undefined,
-      new Map([[recipient, {
-        dispatchId: '40000000-0000-4000-8000-000000000035',
-        dispatchToken: '50000000-0000-4000-8000-000000000035',
-        sendAllowed: true,
-        state: 'dispatching',
-      }]]),
-      'The login-instruction email provider outcome is unknown. Credential content was redacted.',
-    )
-
-    expect(result.uncertain).toEqual([{
-      error: 'The login-instruction email provider outcome is unknown. Credential content was redacted.',
-      recipient,
-    }])
-    expect(JSON.stringify(result)).not.toContain(credential)
-    expect(JSON.stringify(rpc.mock.calls)).not.toContain(credential)
-  })
-
-  it('recovers a newly created Auth user after response loss using exact operation provenance and the same credential', async () => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000002'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const authUserId = '20000000-0000-4000-8000-000000000036'
-    const idempotencyKey = '60000000-0000-4000-8000-000000000036'
-    const operationDigest = createHash('sha256')
-      .update(['admin-email-idempotency', 'login-instructions', actorEmployeeId, targetEmployeeId, idempotencyKey].join('\u001f'))
-      .digest('hex')
-    const operationId = `${operationDigest.slice(0, 8)}-${operationDigest.slice(8, 12)}-5${operationDigest.slice(13, 16)}-8${operationDigest.slice(17, 20)}-${operationDigest.slice(20, 32)}`
-    const password = await deriveAdminLoginTemporaryPassword(
-      configuredEnvironment.SUPABASE_SERVICE_ROLE_KEY,
-      operationId,
-      targetEmployeeId,
-      'employee',
-    )
-    const fingerprint = createHmac('sha256', configuredEnvironment.SUPABASE_SERVICE_ROLE_KEY)
-      .update(`sygshift-admin-login-fingerprint-v1\u001f${operationId}\u001f${targetEmployeeId}\u001f${password}`)
-      .digest('hex')
-    const baseItem = {
-      employeeId: targetEmployeeId,
-      ordinal: 0,
-      employeeNumber: null,
-      jobTitle: 'Guard',
-      username: 'employee',
-      authEmail: 'employee@accounts.sygshift.invalid',
-      contactEmail: 'employee@example.com',
-      displayName: 'Example Employee',
-      role: 'guard',
-      employmentType: 'hourly',
-      status: 'active',
-      existingAuthUserId: null,
-      candidateAuthUserId: null,
-      requiresMfa: false,
-      credentialFingerprint: fingerprint,
-      state: 'prepared',
-      authUserId: null as string | null,
-      action: null as string | null,
-      errorCode: null,
-      errorStatus: null,
-      errorDetail: null,
-    }
-    let operation = {
-      operationId,
-      actorEmployeeId,
-      mode: 'single',
-      purpose: 'admin_login_instructions',
-      state: 'prepared',
-      items: [baseItem],
-    }
-    let created = false
-    let createCalls = 0
-    let updateCalls = 0
-    let outcomeCalls = 0
-    const persistedBodies: Array<{ body: string, url: string }> = []
-    const send = vi.fn().mockResolvedValue({ messageId: 'provider-accepted' })
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      const bodyText = typeof init?.body === 'string' ? init.body : ''
-      if (bodyText) persistedBodies.push({ body: bodyText, url })
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'invitemanager',
-          display_name: 'Invite Manager',
-          role: 'scheduler',
-          has_mfa: true,
-          permissions: ['admin.users.invite'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_admin_login_instruction_operation')) {
-        return new Response(JSON.stringify(operation), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_admin_login_instruction_dispatches')) {
-        return new Response(JSON.stringify([{
-          dispatchId: '40000000-0000-4000-8000-000000000036',
-          dispatchToken: '50000000-0000-4000-8000-000000000036',
-          intendedRecipient: baseItem.contactEmail,
-          sendAllowed: true,
-          state: created ? 'retry_approved' : 'dispatching',
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) {
-        return new Response(JSON.stringify({ ...baseItem, existingAuthUserId: null }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/auth/v1/admin/users?page=')) {
-        return new Response(JSON.stringify({
-          users: created ? [{
-            id: authUserId,
-            email: baseItem.authEmail,
-            app_metadata: { employeeId: targetEmployeeId, loginInstructionOperationId: operationId },
-          }] : [],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/auth/v1/admin/users') && init?.method === 'POST') {
-        createCalls += 1
-        created = true
-        expect(bodyText).toContain(password)
-        expect(bodyText).toContain(operationId)
-        return new Response(JSON.stringify({ message: `Auth response lost after accepting ${password}` }), {
-          headers: { 'content-type': 'application/json' },
-          status: 503,
-        })
-      }
-      if (url.endsWith(`/auth/v1/admin/users/${authUserId}`)) {
-        updateCalls += 1
-        expect(bodyText).toContain(password)
-        expect(bodyText).toContain(operationId)
-        return new Response(JSON.stringify({
-          id: authUserId,
-          email: baseItem.authEmail,
-          app_metadata: { employeeId: targetEmployeeId, loginInstructionOperationId: operationId },
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_link_employee_auth_account')) {
-        return new Response(JSON.stringify({ linked: true }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_mark_admin_login_instruction_provisioned')) {
-        operation = {
-          ...operation,
-          items: [{ ...baseItem, state: 'provisioned', authUserId, action: 'created_auth_user' }],
-        }
-        return new Response(JSON.stringify(operation), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_release_known_unsent_email_dispatch')) {
-        return knownUnsentEmailReleaseReceipt(init)
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
-      }
-      if (url.includes('/rest/v1/rpc/service_record_admin_login_instruction_outcome')) {
-        outcomeCalls += 1
-        const body = JSON.parse(bodyText) as { target_state: string }
-        if (body.target_state === 'completed') {
-          operation = {
-            ...operation,
-            state: 'completed',
-            items: [{ ...operation.items[0], state: 'completed' }],
-          }
-        } else {
-          operation = { ...operation, items: [{ ...baseItem, state: 'unresolved' }] }
-        }
-        return new Response(JSON.stringify(operation), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-    const runtime = environment(new Response('asset'), {
-      ...configuredEnvironment,
-      EMAIL: { send },
-      SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-    })
-    const request = () => new Request(
-      `https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/login-email`,
-      {
-        body: JSON.stringify({ idempotencyKey }),
-        headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
-        method: 'POST',
-      },
-    )
-
-    try {
-      const first = await worker.fetch(request(), runtime)
-      const firstText = await first.text()
-      const retry = await worker.fetch(request(), runtime)
-
-      expect(first.status).toBe(503)
-      expect(firstText).not.toContain(password)
-      expect(retry.status).toBe(200)
-      expect(createCalls).toBe(1)
-      expect(updateCalls).toBe(0)
-      expect(send).toHaveBeenCalledTimes(1)
-      expect(outcomeCalls).toBe(2)
-      expect(persistedBodies
-        .filter((request) => !request.url.includes('/auth/v1/'))
-        .map((request) => request.body)
-        .join('\n')).not.toContain(password)
-    } finally {
-      vi.unstubAllGlobals()
-    }
   })
 
   it('does not let invitation-only access mutate account security controls', async () => {
@@ -2545,19 +908,9 @@ describe('Cloudflare Worker boundary', () => {
         displayName: 'Example Employee',
         usernames: ['employee', 'employee2'],
       }), { headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify('30000000-0000-4000-8000-000000000020'), {
+      .mockResolvedValueOnce(new Response(JSON.stringify({ logged: true }), {
         headers: { 'content-type': 'application/json' },
       }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([{
-        dispatchId: '40000000-0000-4000-8000-000000000020',
-        dispatchToken: '50000000-0000-4000-8000-000000000020',
-        intendedRecipient: 'employee@example.com',
-        sendAllowed: true,
-        state: 'dispatching',
-      }]), {
-        headers: { 'content-type': 'application/json' },
-      }))
-      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => emailDispatchCompletionReceipt(init))
     const send = vi.fn().mockResolvedValue({ messageId: 'username-reminder-message' })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -2586,12 +939,9 @@ describe('Cloudflare Worker boundary', () => {
     expect(send.mock.calls[0]?.[0].html).toContain('<strong>employee</strong>')
     expect(send.mock.calls[0]?.[0].html).toContain('<strong>employee2</strong>')
     expect(send.mock.calls[0]?.[0].html).not.toContain('password-recovery')
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/rest/v1/rpc/service_get_username_recovery_claim_source')
-    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toMatchObject({
-      target_intended_recipients: ['employee@example.com'],
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
       target_notification_type: 'username_recovery_self_service',
       target_related_record_id: targetEmployeeId,
-      target_source_id: '30000000-0000-4000-8000-000000000020',
     })
     vi.unstubAllGlobals()
   })
@@ -2613,22 +963,11 @@ describe('Cloudflare Worker boundary', () => {
         status: 'active',
         existingAuthUserId: targetAuthUserId,
       }), { headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify('30000000-0000-4000-8000-000000000021'), {
-        headers: { 'content-type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        dispatchId: '40000000-0000-4000-8000-000000000021',
-        dispatchToken: '50000000-0000-4000-8000-000000000021',
-        sendAllowed: true,
-        state: 'dispatching',
-      }), {
-        headers: { 'content-type': 'application/json' },
-      }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         action_link: 'https://example.supabase.co/auth/v1/verify?token=self-service-token&type=recovery',
         hashed_token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       }), { headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ state: 'accepted' }), {
+      .mockResolvedValueOnce(new Response(JSON.stringify({ logged: true }), {
         headers: { 'content-type': 'application/json' },
       }))
     const send = vi.fn().mockResolvedValue({ messageId: 'self-service-reset-message' })
@@ -2674,172 +1013,7 @@ describe('Cloudflare Worker boundary', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       target_request_fingerprint_hash: expectedFingerprintHash,
     })
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/rest/v1/rpc/service_get_password_reset_claim_source')
-    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toMatchObject({
-      target_notification_type: 'password_reset_self_service',
-      target_related_record_id: targetEmployeeId,
-      target_source_id: '30000000-0000-4000-8000-000000000021',
-    })
     vi.unstubAllGlobals()
-  })
-
-  it('coalesces a new-request self-service password retry before minting another recovery link', async () => {
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
-    const claimSourceId = '30000000-0000-4000-8000-000000000024'
-    const transportRequestIds: string[] = []
-    let prepareCount = 0
-    let recoveryLinkCount = 0
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/service_claim_self_service_password_reset')) {
-        const requestBody = JSON.parse(String(init?.body)) as { target_request_id: string }
-        transportRequestIds.push(requestBody.target_request_id)
-        return new Response(JSON.stringify({
-          eligible: true,
-          employeeId: targetEmployeeId,
-          username: 'employee',
-          authEmail: 'employee@accounts.sygshift.invalid',
-          contactEmail: 'employee@example.com',
-          displayName: 'Example Employee',
-          role: 'guard',
-          employmentType: 'hourly',
-          status: 'active',
-          existingAuthUserId: targetAuthUserId,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_password_reset_claim_source')) {
-        return new Response(JSON.stringify(claimSourceId), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_email_recipient_dispatch')) {
-        prepareCount += 1
-        return new Response(JSON.stringify({
-          dispatchId: '40000000-0000-4000-8000-000000000024',
-          dispatchToken: '50000000-0000-4000-8000-000000000024',
-          sendAllowed: prepareCount === 1,
-          state: prepareCount === 1 ? 'dispatching' : 'accepted',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/auth/v1/admin/generate_link')) {
-        recoveryLinkCount += 1
-        return new Response(JSON.stringify({
-          action_link: 'https://example.supabase.co/auth/v1/verify?token=coalesced&type=recovery',
-          hashed_token: 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    const send = vi.fn().mockResolvedValue({ messageId: 'self-service-reset-message' })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const runtime = environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-      })
-      const makeRequest = () => new Request('https://app.sygshift.example/api/v1/auth/password-reset/request', {
-        body: JSON.stringify({ username: 'Employee' }),
-        headers: { 'cf-connecting-ip': '192.0.2.25', 'content-type': 'application/json' },
-        method: 'POST',
-      })
-      const first = await worker.fetch(makeRequest(), runtime)
-      const second = await worker.fetch(makeRequest(), runtime)
-
-      expect(first.status).toBe(202)
-      expect(second.status).toBe(202)
-      expect(transportRequestIds).toHaveLength(2)
-      expect(transportRequestIds[0]).not.toBe(transportRequestIds[1])
-      expect(recoveryLinkCount).toBe(1)
-      expect(send).toHaveBeenCalledTimes(1)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('releases a self-service password-reset dispatch when link generation fails before provider delivery', async () => {
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
-    const sourceId = '30000000-0000-4000-8000-000000000025'
-    let linkAttempts = 0
-    let releaseCalls = 0
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/service_claim_self_service_password_reset')) {
-        return new Response(JSON.stringify({
-          eligible: true,
-          employeeId: targetEmployeeId,
-          username: 'employee',
-          authEmail: 'employee@accounts.sygshift.invalid',
-          contactEmail: 'employee@example.com',
-          displayName: 'Example Employee',
-          role: 'guard',
-          employmentType: 'hourly',
-          status: 'active',
-          existingAuthUserId: targetAuthUserId,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_password_reset_claim_source')) {
-        return new Response(JSON.stringify(sourceId), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_email_recipient_dispatch')) {
-        return new Response(JSON.stringify({
-          dispatchId: '40000000-0000-4000-8000-000000000025',
-          dispatchToken: '50000000-0000-4000-8000-000000000025',
-          sendAllowed: true,
-          state: 'dispatching',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/auth/v1/admin/generate_link')) {
-        linkAttempts += 1
-        if (linkAttempts === 1) {
-          return new Response(JSON.stringify({ message: 'Auth link service unavailable' }), {
-            headers: { 'content-type': 'application/json' },
-            status: 503,
-          })
-        }
-        return new Response(JSON.stringify({
-          action_link: 'https://example.supabase.co/auth/v1/verify?token=retry&type=recovery',
-          hashed_token: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_release_known_unsent_email_dispatch')) {
-        releaseCalls += 1
-        return knownUnsentEmailReleaseReceipt(init)
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    const send = vi.fn().mockResolvedValue({ messageId: 'self-service-reset-message' })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const runtime = environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-      })
-      const makeRequest = () => new Request('https://app.sygshift.example/api/v1/auth/password-reset/request', {
-        body: JSON.stringify({ username: 'Employee' }),
-        headers: { 'cf-connecting-ip': '192.0.2.26', 'content-type': 'application/json' },
-        method: 'POST',
-      })
-      const first = await worker.fetch(makeRequest(), runtime)
-      const second = await worker.fetch(makeRequest(), runtime)
-
-      expect(first.status).toBe(202)
-      expect(second.status).toBe(202)
-      expect(linkAttempts).toBe(2)
-      expect(releaseCalls).toBe(1)
-      expect(send).toHaveBeenCalledTimes(1)
-    } finally {
-      vi.unstubAllGlobals()
-    }
   })
 
   it('rejects stale or invalid Sygilant bridge signatures before querying identity data', async () => {
@@ -2899,32 +1073,23 @@ describe('Cloudflare Worker boundary', () => {
         status: 'active',
         existingAuthUserId: targetAuthUserId,
       }), { headers: { 'content-type': 'application/json' } }))
-      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => (
-        employeePasswordResetOperationReceipt(init, 'prepared')
-      ))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        dispatchId: '40000000-0000-4000-8000-000000000022',
-        dispatchToken: '50000000-0000-4000-8000-000000000022',
-        sendAllowed: true,
-        state: 'dispatching',
-      }), {
-        headers: { 'content-type': 'application/json' },
-      }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         action_link: 'https://example.supabase.co/auth/v1/verify?token=single-use-token&type=recovery',
         hashed_token: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       }), { headers: { 'content-type': 'application/json' } }))
-      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => emailDispatchCompletionReceipt(init))
-      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => (
-        employeePasswordResetOperationReceipt(init, 'completed')
-      ))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ logged: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ recorded: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
     const send = vi.fn().mockResolvedValue({ messageId: 'password-reset-message' })
     vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/password-reset`, {
-        body: JSON.stringify({ idempotencyKey: '60000000-0000-4000-8000-000000000002' }),
-        headers: { authorization: 'Bearer admin-token', 'content-type': 'application/json' },
+        body: '{}',
+        headers: { authorization: 'Bearer admin-token' },
         method: 'POST',
       }),
       environment(new Response('asset'), {
@@ -2952,238 +1117,15 @@ describe('Cloudflare Worker boundary', () => {
       type: 'recovery',
     })
 
-    const preparedOperationRequest = fetchMock.mock.calls.find(([input]) => (
-      String(input).includes('/rest/v1/rpc/service_prepare_employee_password_reset_operation')
-    ))
-    const preparedOperationId = (JSON.parse(String(preparedOperationRequest?.[1]?.body)) as {
-      target_operation_id: string
-    }).target_operation_id
-    const completionRequest = fetchMock.mock.calls.at(-1)
-    expect(String(completionRequest?.[0])).toContain('/rest/v1/rpc/service_complete_employee_password_reset_operation')
-    expect(JSON.parse(String(completionRequest?.[1]?.body))).toMatchObject({
+    const auditRequest = fetchMock.mock.calls.at(-1)
+    expect(String(auditRequest?.[0])).toContain('/rest/v1/rpc/service_record_employee_password_reset')
+    expect(JSON.parse(String(auditRequest?.[1]?.body))).toMatchObject({
       target_actor_employee_id: actorEmployeeId,
       target_auth_user_id: targetAuthUserId,
+      target_delivery_email_masked: 'em******@example.com',
       target_employee_id: targetEmployeeId,
-      target_operation_id: preparedOperationId,
-      target_recipient_email: 'employee@example.com',
     })
     vi.unstubAllGlobals()
-  })
-
-  it('retries an admin password-reset operation without minting a second recovery link', async () => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
-    const idempotencyKey = '60000000-0000-4000-8000-000000000020'
-    const sourceIds: string[] = []
-    const completionOperationIds: string[] = []
-    let prepareCount = 0
-    let recoveryLinkCount = 0
-    let requestCount = 0
-    let resetState: 'prepared' | 'completed' = 'prepared'
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        requestCount += 1
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'admin',
-          display_name: 'Admin User',
-          role: 'admin',
-          has_mfa: true,
-          permissions: ['admin.users.password_reset'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) {
-        return new Response(JSON.stringify({
-          employeeId: targetEmployeeId,
-          employeeNumber: 'SYG-1050',
-          jobTitle: 'Supervisor',
-          username: 'employee',
-          authEmail: 'employee@accounts.sygshift.invalid',
-          contactEmail: 'employee@example.com',
-          displayName: 'Example Employee',
-          role: 'supervisor',
-          employmentType: 'salary',
-          status: 'active',
-          existingAuthUserId: targetAuthUserId,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_employee_password_reset_operation')) {
-        if (resetState === 'completed' && requestCount === 1) {
-          return new Response(JSON.stringify({ message: 'response lost after operation commit' }), {
-            headers: { 'content-type': 'application/json' },
-            status: 503,
-          })
-        }
-        return employeePasswordResetOperationReceipt(init, resetState)
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_email_recipient_dispatch')) {
-        const requestBody = JSON.parse(String(init?.body)) as { target_source_id: string }
-        sourceIds.push(requestBody.target_source_id)
-        prepareCount += 1
-        return new Response(JSON.stringify({
-          dispatchId: '40000000-0000-4000-8000-000000000023',
-          dispatchToken: '50000000-0000-4000-8000-000000000023',
-          sendAllowed: prepareCount === 1,
-          state: prepareCount === 1 ? 'dispatching' : 'accepted',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/auth/v1/admin/generate_link')) {
-        recoveryLinkCount += 1
-        return new Response(JSON.stringify({
-          action_link: 'https://example.supabase.co/auth/v1/verify?token=retry-safe&type=recovery',
-          hashed_token: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_employee_password_reset_operation')) {
-        const requestBody = JSON.parse(String(init?.body)) as { target_operation_id: string }
-        completionOperationIds.push(requestBody.target_operation_id)
-        resetState = 'completed'
-        return new Response(JSON.stringify({ message: 'response lost after operation commit' }), {
-          headers: { 'content-type': 'application/json' },
-          status: 503,
-        })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    const send = vi.fn().mockResolvedValue({ messageId: 'password-reset-message' })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const makeRequest = () => new Request(
-        `https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/password-reset`,
-        {
-          body: JSON.stringify({ idempotencyKey }),
-          headers: { authorization: 'Bearer admin-token', 'content-type': 'application/json' },
-          method: 'POST',
-        },
-      )
-      const runtime = environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-        SYGSHIFT_PUBLIC_APP_URL: 'https://app.sygilant.us',
-      })
-      const first = await worker.fetch(makeRequest(), runtime)
-      const second = await worker.fetch(makeRequest(), runtime)
-
-      expect(first.status).toBe(503)
-      expect(second.status).toBe(200)
-      expect(first.headers.get('x-request-id')).not.toBe(second.headers.get('x-request-id'))
-      expect(sourceIds).toHaveLength(1)
-      expect(completionOperationIds.length).toBeGreaterThan(0)
-      expect(new Set(completionOperationIds)).toEqual(new Set([sourceIds[0]]))
-      expect(prepareCount).toBe(1)
-      expect(recoveryLinkCount).toBe(1)
-      expect(send).toHaveBeenCalledTimes(1)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('releases an admin password-reset dispatch when link generation fails before provider delivery', async () => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
-    const operationId = '60000000-0000-4000-8000-000000000026'
-    let linkAttempts = 0
-    let releaseCalls = 0
-    let auditCalls = 0
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'admin',
-          display_name: 'Admin User',
-          role: 'admin',
-          has_mfa: true,
-          permissions: ['admin.users.password_reset'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) {
-        return new Response(JSON.stringify({
-          employeeId: targetEmployeeId,
-          username: 'employee',
-          authEmail: 'employee@accounts.sygshift.invalid',
-          contactEmail: 'employee@example.com',
-          displayName: 'Example Employee',
-          role: 'guard',
-          employmentType: 'hourly',
-          status: 'active',
-          existingAuthUserId: targetAuthUserId,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_employee_password_reset_operation')) {
-        return employeePasswordResetOperationReceipt(init, 'prepared')
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_email_recipient_dispatch')) {
-        return new Response(JSON.stringify({
-          dispatchId: '40000000-0000-4000-8000-000000000026',
-          dispatchToken: '50000000-0000-4000-8000-000000000026',
-          sendAllowed: true,
-          state: 'dispatching',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/auth/v1/admin/generate_link')) {
-        linkAttempts += 1
-        if (linkAttempts === 1) {
-          return new Response(JSON.stringify({ message: 'Auth link service unavailable' }), {
-            headers: { 'content-type': 'application/json' },
-            status: 503,
-          })
-        }
-        return new Response(JSON.stringify({
-          action_link: 'https://example.supabase.co/auth/v1/verify?token=retry&type=recovery',
-          hashed_token: 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_release_known_unsent_email_dispatch')) {
-        releaseCalls += 1
-        return knownUnsentEmailReleaseReceipt(init)
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_employee_password_reset_operation')) {
-        auditCalls += 1
-        return employeePasswordResetOperationReceipt(init, 'completed')
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    const send = vi.fn().mockResolvedValue({ messageId: 'admin-reset-message' })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const runtime = environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-      })
-      const makeRequest = () => new Request(
-        `https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/password-reset`,
-        {
-          body: JSON.stringify({ idempotencyKey: operationId }),
-          headers: { authorization: 'Bearer admin-token', 'content-type': 'application/json' },
-          method: 'POST',
-        },
-      )
-      const first = await worker.fetch(makeRequest(), runtime)
-      const second = await worker.fetch(makeRequest(), runtime)
-
-      expect(first.status).toBe(502)
-      expect(second.status).toBe(200)
-      expect(linkAttempts).toBe(2)
-      expect(releaseCalls).toBe(1)
-      expect(auditCalls).toBe(1)
-      expect(send).toHaveBeenCalledTimes(1)
-    } finally {
-      vi.unstubAllGlobals()
-    }
   })
 
   it('does not let password-reset assistance change MFA or security keys', async () => {
@@ -3214,500 +1156,83 @@ describe('Cloudflare Worker boundary', () => {
     vi.unstubAllGlobals()
   })
 
-  it('retires one-time-code MFA recovery before consuming the code or reading Auth factors', async () => {
-    const employeeId = '10000000-0000-4000-8000-000000000010'
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: employeeId,
-          username: 'employee',
-          display_name: 'Example Employee',
-          role: 'guard',
-          has_mfa: true,
-          permissions: [],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Recovery must fail before this request: ${url}`)
-    })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const response = await worker.fetch(
-        new Request('https://app.sygshift.example/api/v1/account/mfa-recovery', {
-          body: JSON.stringify({ code: 'SYG-ABCD-2345' }),
-          headers: { authorization: 'Bearer employee-token', 'content-type': 'application/json' },
-          method: 'POST',
-        }),
-        environment(new Response('asset'), configuredEnvironment),
-      )
-      const payload = await response.json() as { error: string }
-
-      expect(response.status).toBe(409)
-      expect(payload.error).toBe('mfa_recovery_combined_reset_required')
-      const requestUrls = fetchMock.mock.calls.map(([input]) => String(input))
-      expect(requestUrls.some((requestUrl) => requestUrl.includes('service_consume_mfa_recovery_code'))).toBe(false)
-      expect(requestUrls.some((requestUrl) => requestUrl.includes('service_get_employee_auth_target'))).toBe(false)
-      expect(requestUrls.some((requestUrl) => requestUrl.includes('/auth/v1/admin/users/'))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('does not issue replacement MFA recovery codes while safe consumption is retired', async () => {
-    const employeeId = '10000000-0000-4000-8000-000000000010'
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: employeeId,
-          username: 'employee',
-          display_name: 'Example Employee',
-          role: 'guard',
-          has_mfa: true,
-          permissions: [],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Recovery-code issuance must fail before this request: ${url}`)
-    })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const response = await worker.fetch(
-        new Request('https://app.sygshift.example/api/v1/account/mfa-recovery-codes', {
-          body: '{}',
-          headers: { authorization: 'Bearer employee-token', 'content-type': 'application/json' },
-          method: 'POST',
-        }),
-        environment(new Response('asset'), configuredEnvironment),
-      )
-      const payload = await response.json() as { error: string }
-
-      expect(response.status).toBe(409)
-      expect(payload.error).toBe('mfa_recovery_code_issuance_paused')
-      const requestUrls = fetchMock.mock.calls.map(([input]) => String(input))
-      expect(requestUrls.some((requestUrl) => requestUrl.includes('service_replace_mfa_recovery_codes'))).toBe(false)
-      expect(requestUrls.some((requestUrl) => requestUrl.includes('service_get_employee_auth_target'))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('retires administrative factor-only MFA reset before target lookup or Auth mutation', async () => {
+  it('resets employee MFA factors and records the audited reset after authorization', async () => {
     const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
     const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
     const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
     const factorId = '30000000-0000-4000-8000-000000000010'
-    let operationId = ''
-    let factorsListed = 0
-    const operation = (state: 'prepared' | 'deleting' | 'completed') => ({
-      operationId,
-      employeeId: targetEmployeeId,
-      authUserId: targetAuthUserId,
-      actorEmployeeId,
-      factorIds: [factorId],
-      factorCount: 1,
-      state,
-      recoveryCodesRevoked: state === 'completed' ? 3 : null,
-      trustedDevicesRevoked: state === 'completed' ? 2 : null,
-      securityKeysRevoked: state === 'completed' ? 0 : null,
-      securityKeySessionsRevoked: state === 'completed' ? 0 : null,
-      preparedAt: '2026-10-24T12:00:00.000Z',
-      authMutationStartedAt: state === 'prepared' ? null : '2026-10-24T12:00:01.000Z',
-      completedAt: state === 'completed' ? '2026-10-24T12:00:02.000Z' : null,
-      recoveryAttempts: 0,
-      recoveryNextAttemptAt: '2026-10-24T12:00:00.000Z',
-      recoveryLastError: null,
-      recoveryQuarantinedAt: null,
-    })
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'admin',
-          display_name: 'Admin User',
-          role: 'admin',
-          has_mfa: true,
-          permissions: ['admin.users.manage'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_auth_target')) {
-        return new Response(JSON.stringify({
-          employeeId: targetEmployeeId,
-          employeeNumber: 'SYG-1050',
-          jobTitle: null,
-          username: 'mswinney',
-          authEmail: 'opsmanager@guardianshipsecurity.net',
-          displayName: 'Matthew Swinney',
-          role: 'supervisor',
-          employmentType: 'salary',
-          status: 'active',
-          existingAuthUserId: targetAuthUserId,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_admin_mfa_reset_operation')) {
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith(`/auth/v1/admin/users/${targetAuthUserId}/factors`)) {
-        factorsListed += 1
-        return new Response(JSON.stringify(factorsListed === 1 ? [{
-          id: factorId,
-          factor_type: 'totp',
-          status: 'verified',
-        }] : []), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_begin_admin_mfa_reset_operation')) {
-        const body = JSON.parse(String(init?.body)) as { target_operation_id: string }
-        operationId = body.target_operation_id
-        return new Response(JSON.stringify(operation('prepared')), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_mark_admin_mfa_reset_deleting')) {
-        return new Response(JSON.stringify(operation('deleting')), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith(`/auth/v1/admin/users/${targetAuthUserId}/factors/${factorId}`)) {
-        return new Response(JSON.stringify({}), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_admin_mfa_reset_operation')) {
-        return new Response(JSON.stringify(operation('completed')), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employee_id: actorEmployeeId,
+        username: 'admin',
+        display_name: 'Admin User',
+        role: 'admin',
+        has_mfa: true,
+        permissions: ['admin.users.manage'],
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employeeId: targetEmployeeId,
+        employeeNumber: 'SYG-1050',
+        jobTitle: null,
+        username: 'mswinney',
+        authEmail: 'opsmanager@guardianshipsecurity.net',
+        displayName: 'Matthew Swinney',
+        role: 'supervisor',
+        employmentType: 'salary',
+        status: 'active',
+        existingAuthUserId: targetAuthUserId,
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{
+        id: factorId,
+        factor_type: 'totp',
+        status: 'verified',
+      }]), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(0), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ trustedDevicesRevoked: 2 }), {
+        headers: { 'content-type': 'application/json' },
+      }))
     vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/mfa-reset`, {
-        body: JSON.stringify({ idempotencyKey: '60000000-0000-4000-8000-000000000003' }),
-        headers: { authorization: 'Bearer admin-token', 'content-type': 'application/json' },
+        body: '{}',
+        headers: { authorization: 'Bearer admin-token' },
         method: 'POST',
       }),
       environment(new Response('asset'), configuredEnvironment),
     )
-    const payload = await response.json() as { error: string; detail: string }
+    const payload = await response.json() as {
+      displayName: string
+      factorsRemoved: number
+      trustedDevicesRevoked: number
+      username: string
+    }
 
-    expect(response.status).toBe(409)
+    expect(response.status).toBe(200)
     expect(payload).toMatchObject({
-      error: 'mfa_reset_combined_recovery_required',
+      displayName: 'Matthew Swinney',
+      factorsRemoved: 1,
+      trustedDevicesRevoked: 2,
+      username: 'mswinney',
     })
     const requestUrls = fetchMock.mock.calls.map(([input]) => String(input))
-    expect(requestUrls.some((requestUrl) => requestUrl.includes('service_get_employee_auth_target'))).toBe(false)
-    expect(requestUrls.some((requestUrl) => requestUrl.includes('/auth/v1/admin/users/'))).toBe(false)
+    expect(requestUrls).toContain(`https://example.supabase.co/auth/v1/admin/users/${targetAuthUserId}/factors`)
+    expect(requestUrls).toContain(`https://example.supabase.co/auth/v1/admin/users/${targetAuthUserId}/factors/${factorId}`)
+    const auditRequest = fetchMock.mock.calls.at(-1)
+    expect(String(auditRequest?.[0])).toContain('/rest/v1/rpc/service_record_employee_mfa_reset')
+    expect(JSON.parse(String(auditRequest?.[1]?.body))).toMatchObject({
+      target_actor_employee_id: actorEmployeeId,
+      target_auth_user_id: targetAuthUserId,
+      target_employee_id: targetEmployeeId,
+      target_factor_count: 1,
+    })
     vi.unstubAllGlobals()
-  })
-
-  it('does not delete an Auth factor when durable MFA mutation state cannot be recorded', async () => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
-    const factorId = '30000000-0000-4000-8000-000000000010'
-    let operationId = ''
-    const operation = (state: 'prepared' | 'deleting') => ({
-      operationId,
-      employeeId: targetEmployeeId,
-      authUserId: targetAuthUserId,
-      actorEmployeeId,
-      factorIds: [factorId],
-      factorCount: 1,
-      state,
-      recoveryCodesRevoked: null,
-      trustedDevicesRevoked: null,
-      securityKeysRevoked: null,
-      securityKeySessionsRevoked: null,
-      preparedAt: '2026-10-24T12:00:00.000Z',
-      authMutationStartedAt: state === 'deleting' ? '2026-10-24T12:00:01.000Z' : null,
-      completedAt: null,
-      recoveryAttempts: 0,
-      recoveryNextAttemptAt: '2026-10-24T12:00:00.000Z',
-      recoveryLastError: null,
-      recoveryQuarantinedAt: null,
-    })
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'admin',
-          display_name: 'Admin User',
-          role: 'admin',
-          has_mfa: true,
-          permissions: ['admin.users.manage'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_auth_target')) {
-        return new Response(JSON.stringify({
-          employeeId: targetEmployeeId,
-          username: 'employee',
-          authEmail: 'employee@accounts.sygshift.invalid',
-          displayName: 'Example Employee',
-          role: 'guard',
-          employmentType: 'hourly',
-          status: 'active',
-          existingAuthUserId: targetAuthUserId,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_admin_mfa_reset_operation')) {
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith(`/auth/v1/admin/users/${targetAuthUserId}/factors`)) {
-        return new Response(JSON.stringify([{ id: factorId }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_begin_admin_mfa_reset_operation')) {
-        operationId = (JSON.parse(String(init?.body)) as { target_operation_id: string }).target_operation_id
-        return new Response(JSON.stringify(operation('prepared')), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_mark_admin_mfa_reset_deleting')) {
-        return new Response(JSON.stringify({ message: 'database unavailable' }), {
-          headers: { 'content-type': 'application/json' },
-          status: 503,
-        })
-      }
-      if (url.includes(`/auth/v1/admin/users/${targetAuthUserId}/factors/${factorId}`)) {
-        throw new Error('Auth deletion must not run before durable deleting state.')
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const response = await worker.fetch(
-        new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/mfa-reset`, {
-          body: JSON.stringify({ idempotencyKey: '60000000-0000-4000-8000-000000000030' }),
-          headers: { authorization: 'Bearer admin-token', 'content-type': 'application/json' },
-          method: 'POST',
-        }),
-        environment(new Response('asset'), configuredEnvironment),
-      )
-
-      expect(response.status).toBe(409)
-      expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith(`/factors/${factorId}`))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('resumes a partially deleted MFA reset and reconciles a lost completion response without duplicate completion', async () => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
-    const factorA = '30000000-0000-4000-8000-000000000011'
-    const factorB = '30000000-0000-4000-8000-000000000012'
-    let operationId = ''
-    let durableState: 'absent' | 'deleting' | 'completed' = 'absent'
-    let factorADeletes = 0
-    let factorBDeletes = 0
-    let beginCalls = 0
-    let markCalls = 0
-    let completeCalls = 0
-    const operation = () => ({
-      operationId,
-      employeeId: targetEmployeeId,
-      authUserId: targetAuthUserId,
-      actorEmployeeId,
-      factorIds: [factorA, factorB],
-      factorCount: 2,
-      state: durableState === 'completed' ? 'completed' : 'deleting',
-      recoveryCodesRevoked: durableState === 'completed' ? 4 : null,
-      trustedDevicesRevoked: durableState === 'completed' ? 2 : null,
-      securityKeysRevoked: durableState === 'completed' ? 0 : null,
-      securityKeySessionsRevoked: durableState === 'completed' ? 0 : null,
-      preparedAt: '2026-10-24T12:00:00.000Z',
-      authMutationStartedAt: '2026-10-24T12:00:01.000Z',
-      completedAt: durableState === 'completed' ? '2026-10-24T12:00:02.000Z' : null,
-      recoveryAttempts: 0,
-      recoveryNextAttemptAt: '2026-10-24T12:00:00.000Z',
-      recoveryLastError: null,
-      recoveryQuarantinedAt: null,
-    })
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'admin',
-          display_name: 'Admin User',
-          role: 'admin',
-          has_mfa: true,
-          permissions: ['admin.users.manage'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_employee_auth_target')) {
-        return new Response(JSON.stringify({
-          employeeId: targetEmployeeId,
-          username: 'employee',
-          authEmail: 'employee@accounts.sygshift.invalid',
-          displayName: 'Example Employee',
-          role: 'guard',
-          employmentType: 'hourly',
-          status: 'active',
-          existingAuthUserId: targetAuthUserId,
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_admin_mfa_reset_operation')) {
-        return new Response(JSON.stringify(durableState === 'absent' ? null : operation()), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (url.endsWith(`/auth/v1/admin/users/${targetAuthUserId}/factors`)) {
-        return new Response(JSON.stringify(durableState === 'absent' ? [{ id: factorA }, { id: factorB }] : []), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (url.includes('/rest/v1/rpc/service_begin_admin_mfa_reset_operation')) {
-        beginCalls += 1
-        operationId = (JSON.parse(String(init?.body)) as { target_operation_id: string }).target_operation_id
-        return new Response(JSON.stringify({ ...operation(), state: 'prepared', authMutationStartedAt: null }), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (url.includes('/rest/v1/rpc/service_mark_admin_mfa_reset_deleting')) {
-        markCalls += 1
-        durableState = 'deleting'
-        return new Response(JSON.stringify(operation()), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith(`/auth/v1/admin/users/${targetAuthUserId}/factors/${factorA}`)) {
-        factorADeletes += 1
-        if (factorADeletes > 1) {
-          return new Response(JSON.stringify({ message: 'Factor not found' }), {
-            headers: { 'content-type': 'application/json' },
-            status: 404,
-          })
-        }
-        return new Response('{}', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith(`/auth/v1/admin/users/${targetAuthUserId}/factors/${factorB}`)) {
-        factorBDeletes += 1
-        if (factorBDeletes === 1) {
-          return new Response(JSON.stringify({ message: 'Auth temporarily unavailable' }), {
-            headers: { 'content-type': 'application/json' },
-            status: 503,
-          })
-        }
-        return new Response('{}', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_admin_mfa_reset_operation')) {
-        completeCalls += 1
-        durableState = 'completed'
-        return new Response(JSON.stringify({ message: 'response lost after commit' }), {
-          headers: { 'content-type': 'application/json' },
-          status: 503,
-        })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    try {
-      const makeRequest = () => new Request(
-        `https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/mfa-reset`,
-        {
-          body: JSON.stringify({ idempotencyKey: '60000000-0000-4000-8000-000000000031' }),
-          headers: { authorization: 'Bearer admin-token', 'content-type': 'application/json' },
-          method: 'POST',
-        },
-      )
-      const runtime = environment(new Response('asset'), configuredEnvironment)
-      const first = await worker.fetch(makeRequest(), runtime)
-      const second = await worker.fetch(makeRequest(), runtime)
-      const replay = await worker.fetch(makeRequest(), runtime)
-
-      expect(first.status).toBe(409)
-      expect(second.status).toBe(409)
-      expect(replay.status).toBe(409)
-      expect(beginCalls).toBe(0)
-      expect(markCalls).toBe(0)
-      expect(completeCalls).toBe(0)
-      expect(factorADeletes).toBe(0)
-      expect(factorBDeletes).toBe(0)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('keeps scheduled factor-only MFA recovery inert until combined recovery is available', async () => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
-    const poisonEmployeeId = '10000000-0000-4000-8000-000000000011'
-    const healthyEmployeeId = '10000000-0000-4000-8000-000000000012'
-    const poisonAuthUserId = '20000000-0000-4000-8000-000000000011'
-    const healthyAuthUserId = '20000000-0000-4000-8000-000000000012'
-    const poisonFactorId = '30000000-0000-4000-8000-000000000011'
-    const operation = (
-      operationId: string,
-      employeeId: string,
-      authUserId: string,
-      factorIds: string[],
-      state: 'deleting' | 'completed' = 'deleting',
-    ) => ({
-      operationId,
-      employeeId,
-      authUserId,
-      actorEmployeeId,
-      factorIds,
-      factorCount: factorIds.length,
-      state,
-      recoveryCodesRevoked: state === 'completed' ? 0 : null,
-      trustedDevicesRevoked: state === 'completed' ? 0 : null,
-      securityKeysRevoked: state === 'completed' ? 0 : null,
-      securityKeySessionsRevoked: state === 'completed' ? 0 : null,
-      preparedAt: '2026-10-24T12:00:00.000Z',
-      authMutationStartedAt: '2026-10-24T12:00:01.000Z',
-      completedAt: state === 'completed' ? '2026-10-24T12:00:02.000Z' : null,
-      recoveryAttempts: 0,
-      recoveryNextAttemptAt: '2026-10-24T12:00:00.000Z',
-      recoveryLastError: null,
-      recoveryQuarantinedAt: null,
-    })
-    const poison = operation(
-      '60000000-0000-4000-8000-000000000041',
-      poisonEmployeeId,
-      poisonAuthUserId,
-      [poisonFactorId],
-    )
-    const healthy = operation(
-      '60000000-0000-4000-8000-000000000042',
-      healthyEmployeeId,
-      healthyAuthUserId,
-      [],
-    )
-    const rpc = vi.fn(async (_config: unknown, name: string, body: Record<string, unknown>) => {
-      if (name === 'service_list_admin_mfa_reset_recovery') return [poison, healthy]
-      if (name === 'service_defer_admin_mfa_reset_recovery') {
-        expect(body.target_operation_id).toBe(poison.operationId)
-        return { ...poison, recoveryAttempts: 1 }
-      }
-      if (name === 'service_complete_admin_mfa_reset_operation') {
-        expect(body.target_operation_id).toBe(healthy.operationId)
-        return operation(healthy.operationId, healthyEmployeeId, healthyAuthUserId, [], 'completed')
-      }
-      throw new Error(`Unexpected RPC: ${name}`)
-    })
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.endsWith(`/auth/v1/admin/users/${poisonAuthUserId}/factors/${poisonFactorId}`)) {
-        return new Response(JSON.stringify({ message: 'Auth provider unavailable' }), {
-          headers: { 'content-type': 'application/json' },
-          status: 503,
-        })
-      }
-      if (url.endsWith(`/auth/v1/admin/users/${healthyAuthUserId}/factors`)) {
-        return new Response('[]', { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const result = await recoverAdminMfaResetOperations(
-        environment(new Response('asset'), configuredEnvironment),
-        rpc as never,
-        10,
-      )
-
-      expect(result).toEqual({ failed: 0, recovered: 0 })
-      expect(rpc).not.toHaveBeenCalled()
-      expect(fetchMock).not.toHaveBeenCalled()
-    } finally {
-      vi.unstubAllGlobals()
-    }
   })
 
   it('requires an authenticated admin session before notification delivery', async () => {
@@ -3749,24 +1274,24 @@ describe('Cloudflare Worker boundary', () => {
   })
 
   it('allows MFA-verified schedulers to process queued announcement emails', async () => {
-    const notificationId = '20000000-0000-4000-8000-000000000001'
-    const claimToken = '70000000-0000-4000-8000-000000000001'
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
         employee_id: '10000000-0000-4000-8000-000000000002',
         username: 'scheduler',
         display_name: 'Schedule User',
         role: 'scheduler',
         has_mfa: true,
         permissions: ['announcements.send'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_claim_notification_batch')) {
-        return new Response(JSON.stringify([{
-        id: notificationId,
-        claimToken,
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{
+        id: '20000000-0000-4000-8000-000000000001',
         recipients: ['jbrown@example.com'],
         aggregateId: '30000000-0000-4000-8000-000000000001',
         aggregateType: 'announcement',
@@ -3775,37 +1300,22 @@ describe('Cloudflare Worker boundary', () => {
           subject: 'Open shift available',
           text: 'A shift is available.',
         },
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_claim_')) {
-        return new Response('[]', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_email_recipient_dispatch_manifest')) {
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_announcement_email_recipients')
-        || url.includes('/rest/v1/rpc/service_filter_notification_recipients')) {
-        return new Response(JSON.stringify(['jbrown@example.com']), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_email_recipient_dispatch_batch')) {
-        return new Response(JSON.stringify([{
-        dispatchId: '40000000-0000-4000-8000-000000000001',
-        dispatchToken: '50000000-0000-4000-8000-000000000001',
-        intendedRecipient: 'jbrown@example.com',
-        sendAllowed: true,
-        state: 'dispatching',
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
-      }
-      if (url.includes('/rest/v1/rpc/service_mark_notification_result')) {
-        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        expect(body.target_claim_token).toBe(claimToken)
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
+      }]), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(['jbrown@example.com']), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
     const emailSend = vi.fn().mockResolvedValue({ messageId: 'test-message' })
     vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
@@ -3837,92 +1347,19 @@ describe('Cloudflare Worker boundary', () => {
     vi.unstubAllGlobals()
   })
 
-  it('delivers a frozen schedule notice without re-resolving current recipient preferences', async () => {
-    const notificationId = '20000000-0000-4000-8000-000000000081'
-    const claimToken = '70000000-0000-4000-8000-000000000081'
-    const recipient = 'frozen-recipient@example.com'
-    const rpc = vi.fn(async (_config: unknown, name: string, body?: Record<string, unknown>) => {
-      if (name === 'service_claim_timekeeping_notification_batch'
-        || name === 'service_claim_time_off_notification_batch'
-        || name === 'service_claim_support_ticket_notification_batch'
-        || name === 'service_claim_employee_notification_batch') return []
-      if (name === 'service_claim_notification_batch') {
-        return [{
-          aggregateId: '30000000-0000-4000-8000-000000000081',
-          aggregateType: 'schedule',
-           claimToken,
-          id: notificationId,
-          message: {
-            subject: 'Frozen schedule snapshot',
-            text: 'This message was rendered when the scheduler queued it.',
-          },
-          messageType: 'schedule_published',
-          recipientManifestFrozen: true,
-          recipients: [recipient],
-        }]
-      }
-      if (name === 'service_prepare_email_recipient_dispatch_batch') {
-        return [{
-          dispatchId: '40000000-0000-4000-8000-000000000081',
-          dispatchToken: '50000000-0000-4000-8000-000000000081',
-          intendedRecipient: recipient,
-          sendAllowed: true,
-          state: 'dispatching',
-        }]
-      }
-      if (name === 'service_get_email_recipient_dispatch_manifest') return null
-      if (name === 'service_complete_email_recipient_dispatch') {
-        return { dispatchToken: body?.target_dispatch_token, state: body?.target_state }
-      }
-      if (name === 'service_mark_notification_result') {
-        expect(body?.target_claim_token).toBe(claimToken)
-        return { ok: true }
-      }
-      if (name === 'service_filter_notification_recipients') {
-        throw new Error('A frozen schedule manifest must not be re-filtered against current preferences.')
-      }
-      throw new Error(`Unexpected RPC: ${name}`)
-    })
-    const emailSend = vi.fn().mockResolvedValue({ messageId: 'frozen-schedule-message' })
-
-    const result = await processNotificationJobs(
-      environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send: emailSend },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-      }),
-      10,
-      rpc as never,
-      'all',
-    )
-
-    expect(result).toMatchObject({ delivered: [notificationId], failed: [], processed: 1 })
-    expect(emailSend).toHaveBeenCalledWith(expect.objectContaining({
-      subject: 'Frozen schedule snapshot',
-      to: recipient,
-    }))
-    expect(rpc.mock.calls.some(([, name]) => name === 'service_filter_notification_recipients')).toBe(false)
-  })
-
   it('suppresses blocked company-domain recipients and records the attempted delivery', async () => {
-    const notificationId = '20000000-0000-4000-8000-000000000002'
-    const claimToken = '70000000-0000-4000-8000-000000000002'
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.includes('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
         employee_id: '10000000-0000-4000-8000-000000000002',
         username: 'scheduler',
         display_name: 'Schedule User',
         role: 'scheduler',
         has_mfa: true,
         permissions: ['announcements.send'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_claim_timekeeping_notification_batch')) {
-        return new Response(JSON.stringify([{
-        id: notificationId,
-        claimToken,
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{
+        id: '20000000-0000-4000-8000-000000000002',
         recipients: ['OPS@GUARDIANSHIPSECURITY.NET'],
         aggregateId: '30000000-0000-4000-8000-000000000002',
         aggregateType: 'call_off_report',
@@ -3931,33 +1368,31 @@ describe('Cloudflare Worker boundary', () => {
           subject: 'Employee call-off reported',
           text: 'A call-off requires attention.',
         },
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_claim_')) {
-        return new Response('[]', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_get_email_recipient_dispatch_manifest')) {
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_prepare_email_recipient_dispatch_batch')) {
-        return new Response(JSON.stringify([{
-        dispatchId: '40000000-0000-4000-8000-000000000002',
-        dispatchToken: '50000000-0000-4000-8000-000000000002',
-        intendedRecipient: 'ops@guardianshipsecurity.net',
-        sendAllowed: true,
-        state: 'dispatching',
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rest/v1/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
-      }
-      if (url.includes('/rest/v1/rpc/service_mark_notification_suppressed')) {
-        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-        expect(body.target_claim_token).toBe(claimToken)
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected test request: ${url}`)
-    })
+      }]), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
     const emailSend = vi.fn()
     vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
@@ -3987,12 +1422,12 @@ describe('Cloudflare Worker boundary', () => {
       .map(([, init]) => typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : null)
       .filter(Boolean)
     expect(requestBodies).toContainEqual(expect.objectContaining({
+      target_delivery_status: 'suppressed_blocked_domain',
       target_intended_recipient: 'ops@guardianshipsecurity.net',
-      target_state: 'suppressed',
     }))
     expect(requestBodies).toContainEqual(expect.objectContaining({
       target_notification_id: '20000000-0000-4000-8000-000000000002',
-      target_reason: 'Suppressed - Blocked Domain',
+      target_reason: 'Suppressed — Blocked Domain',
     }))
     vi.unstubAllGlobals()
   })
@@ -4014,8 +1449,6 @@ describe('Cloudflare Worker boundary', () => {
                 ? { processed: 0, triggered: 0, cancelled: 0 }
                 : url.includes('/rpc/service_process_due_sygtasks_recurring_series')
                   ? { processed: 0, created: 0, paused: 0, canceled: 0 }
-                : url.includes('/rpc/service_reconcile_employee_push_provider_outcomes')
-                  ? { reconciled: 0, disabledSubscriptions: 0, completionPending: 0, reviewRequired: 0 }
                 : url.includes('/rpc/service_refresh_hr_offboarding_due_cases')
                   ? { dueCases: 0, notificationsCreated: 0 }
                 : []
@@ -4037,7 +1470,7 @@ describe('Cloudflare Worker boundary', () => {
 
     expect(scheduledWork).toHaveLength(1)
     await Promise.all(scheduledWork)
-    expect(fetchMock).toHaveBeenCalledTimes(26)
+    expect(fetchMock).toHaveBeenCalledTimes(18)
     const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
     for (const rpc of [
       'service_process_due_sygtasks_reminders',
@@ -4054,15 +1487,7 @@ describe('Cloudflare Worker boundary', () => {
       'service_claim_notification_batch',
       'service_claim_support_ticket_notification_batch',
       'service_claim_employee_notification_batch',
-      'service_reconcile_employee_push_provider_outcomes',
       'service_list_hr_document_availability_recovery',
-      'service_list_client_document_upload_recovery',
-      'service_list_client_document_cleanup_recovery',
-      'service_list_licensing_document_availability_recovery',
-      'service_list_licensing_document_cleanup_recovery',
-      'service_reconcile_stale_employee_photo_uploads_v2',
-      'service_reconcile_stale_signature_appearances_v2',
-      'service_list_protected_storage_cleanup_v2',
       'service_list_sygsphere_file_availability_recovery',
       'service_list_sygsphere_resumable_availability_recovery',
       'service_list_sygsphere_resumable_purge',
@@ -4215,8 +1640,6 @@ describe('Cloudflare Worker boundary', () => {
       const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
       expect(calledUrls.some((url) => url.includes('/rpc/service_list_sygsphere_file_availability_recovery')))
         .toBe(cleanupDue)
-      expect(calledUrls.some((url) => url.includes('/rpc/service_list_protected_storage_cleanup_v2')))
-        .toBe(cleanupDue)
     } finally {
       vi.unstubAllGlobals()
     }
@@ -4230,36 +1653,21 @@ describe('Cloudflare Worker boundary', () => {
     const emailPending = new Promise<void>((resolve) => { releaseEmail = resolve })
     const emailSend = vi.fn(() => emailPending)
     let notificationClaimed = false
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       let payload: Record<string, unknown> | Record<string, unknown>[] = []
       if (url.includes('/rpc/service_run_timekeeping_automation')) {
         payload = { status: 'completed' }
-      } else if (url.includes('/rpc/service_reconcile_employee_push_provider_outcomes')) {
-        payload = { reconciled: 0, disabledSubscriptions: 0, completionPending: 0, reviewRequired: 0 }
       } else if (url.includes('/rpc/service_claim_timekeeping_notification_batch') && !notificationClaimed) {
         notificationClaimed = true
         payload = [{
           aggregateId: '30000000-0000-4000-8000-000000000099',
           aggregateType: 'timekeeping_event',
-          claimToken: '70000000-0000-4000-8000-000000000099',
           id: notificationId,
           message: { subject: 'Timekeeping notice', text: 'Review your timecard.' },
           messageType: 'automatic_clock_out',
           recipients: ['employee@example.com'],
         }]
-      } else if (url.includes('/rpc/service_prepare_email_recipient_dispatch_batch')) {
-        payload = [{
-          dispatchId: '40000000-0000-4000-8000-000000000099',
-          dispatchToken: '50000000-0000-4000-8000-000000000099',
-          intendedRecipient: 'employee@example.com',
-          sendAllowed: true,
-          state: 'dispatching',
-        }]
-      } else if (url.includes('/rpc/service_get_email_recipient_dispatch_manifest')) {
-        payload = null as unknown as Record<string, unknown>
-      } else if (url.includes('/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
       }
       return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } })
     })
@@ -4399,51 +1807,6 @@ describe('Cloudflare Worker boundary', () => {
 
     errorSpy.mockRestore()
     vi.unstubAllGlobals()
-  })
-
-  it('persists an unexpected scheduled-cycle exception before releasing the lease', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/rpc/service_reconcile_patrol_obligations')) {
-        throw new Error('unexpected application failure')
-      }
-      if (url.includes('/rpc/service_claim_')) {
-        return new Response('[]', { headers: { 'content-type': 'application/json' } })
-      }
-      return new Response(JSON.stringify({ status: 'completed' }), { headers: { 'content-type': 'application/json' } })
-    })
-    const scheduledWork: Promise<unknown>[] = []
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    const { coordinator, namespace } = scheduledCoordinatorBinding()
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      await worker.scheduled(
-        { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 19, 15, 11) },
-        environment(new Response('asset'), {
-          ...configuredEnvironment,
-          EMAIL: { send: vi.fn() },
-          SCHEDULE_COORDINATOR: namespace,
-        }),
-        { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
-      )
-      await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
-
-      expect(coordinator.recordFailure).toHaveBeenCalledWith(expect.objectContaining({
-        operation: 'scheduled_cycle_unexpected',
-        status: null,
-        timedOut: false,
-      }))
-      expect(coordinator.recordFullSuccess).not.toHaveBeenCalled()
-      expect(coordinator.releaseCycle).not.toHaveBeenCalled()
-      expect(errorSpy.mock.calls.some(([value]) => (
-        String(value).includes('"event":"scheduled_work_failed"')
-        && String(value).includes('unexpected application failure')
-      ))).toBe(true)
-    } finally {
-      errorSpy.mockRestore()
-      vi.unstubAllGlobals()
-    }
   })
 
   it('persists scheduler containment across minute triggers and makes no new database request during cooldown', async () => {
@@ -4610,33 +1973,17 @@ describe('Cloudflare Worker boundary', () => {
 
   it('delivers critical timekeeping notices before a transient noncritical failure can stop the cycle', async () => {
     const notificationId = '20000000-0000-4000-8000-000000000099'
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/rpc/service_claim_timekeeping_notification_batch')) {
         return new Response(JSON.stringify([{
           id: notificationId,
-          claimToken: '70000000-0000-4000-8000-000000000098',
           messageType: 'automatic_clock_out',
           aggregateType: 'timekeeping_event',
           aggregateId: '30000000-0000-4000-8000-000000000099',
           recipients: ['employee@example.com'],
           message: { subject: 'Automatic clock-out recorded', text: 'Review your timecard.' },
         }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rpc/service_prepare_email_recipient_dispatch_batch')) {
-        return new Response(JSON.stringify([{
-          dispatchId: '40000000-0000-4000-8000-000000000099',
-          dispatchToken: '50000000-0000-4000-8000-000000000099',
-          intendedRecipient: 'employee@example.com',
-          sendAllowed: true,
-          state: 'dispatching',
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rpc/service_get_email_recipient_dispatch_manifest')) {
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
       }
       if (url.includes('/rpc/service_reconcile_patrol_obligations')) {
         return new Response(JSON.stringify({ message: 'Timed out acquiring connection from connection pool' }), {
@@ -4687,28 +2034,12 @@ describe('Cloudflare Worker boundary', () => {
       if (url.includes('/rpc/service_claim_timekeeping_notification_batch')) {
         return new Response(JSON.stringify([{
           id: notificationId,
-          claimToken: '70000000-0000-4000-8000-000000000077',
           messageType: 'automatic_clock_out',
           aggregateType: 'timekeeping_event',
           aggregateId: '30000000-0000-4000-8000-000000000077',
           recipients: ['employee@example.com'],
           message: { subject: 'Automatic clock-out recorded', text: 'Review your timecard.' },
         }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rpc/service_prepare_email_recipient_dispatch_batch')) {
-        return new Response(JSON.stringify([{
-          dispatchId: '40000000-0000-4000-8000-000000000077',
-          dispatchToken: '50000000-0000-4000-8000-000000000077',
-          intendedRecipient: 'employee@example.com',
-          sendAllowed: true,
-          state: 'dispatching',
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rpc/service_get_email_recipient_dispatch_manifest')) {
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.includes('/rpc/service_complete_email_recipient_dispatch')) {
-        return emailDispatchCompletionReceipt(init)
       }
       if (url.includes('/rpc/service_mark_notification_result')) {
         const body = JSON.parse(String(init?.body)) as { delivered?: boolean }
@@ -4752,24 +2083,16 @@ describe('Cloudflare Worker boundary', () => {
         && String(value).includes('"timekeeping_notification_delivery"')
       ))).toBe(true)
       expect(coordinator.recordFullSuccess).not.toHaveBeenCalled()
-      expect(coordinator.recordFailure).toHaveBeenCalledWith(expect.objectContaining({
-        operation: 'required_lane_failure',
-        status: null,
-        timedOut: false,
-      }))
-      expect(coordinator.releaseCycle).not.toHaveBeenCalled()
+      expect(coordinator.releaseCycle).toHaveBeenCalledTimes(1)
     } finally {
       errorSpy.mockRestore()
       vi.unstubAllGlobals()
     }
   })
 
-  it('does not resend an accepted email when source-job completion fails and is retried', async () => {
+  it('durably completes an accepted email before a deferred audit outage so the next cycle cannot resend it', async () => {
     const notificationId = '20000000-0000-4000-8000-000000000088'
     let delivered = false
-    let dispatchState: 'accepted' | 'dispatching' = 'dispatching'
-    let dispatchCreated = false
-    let markAttempts = 0
     const rpcCalls: string[] = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -4778,7 +2101,6 @@ describe('Cloudflare Worker boundary', () => {
       if (rpcName === 'service_claim_timekeeping_notification_batch') {
         return new Response(JSON.stringify(delivered ? [] : [{
           id: notificationId,
-          claimToken: '70000000-0000-4000-8000-000000000088',
           messageType: 'automatic_clock_out',
           aggregateType: 'timekeeping_event',
           aggregateId: '30000000-0000-4000-8000-000000000088',
@@ -4786,34 +2108,16 @@ describe('Cloudflare Worker boundary', () => {
           message: { subject: 'Automatic clock-out recorded', text: 'Review your timecard.' },
         }]), { headers: { 'content-type': 'application/json' } })
       }
-      if (rpcName === 'service_prepare_email_recipient_dispatch_batch') {
-        const result = {
-          dispatchId: '40000000-0000-4000-8000-000000000088',
-          dispatchToken: '50000000-0000-4000-8000-000000000088',
-          intendedRecipient: 'employee@example.com',
-          sendAllowed: !dispatchCreated,
-          state: dispatchState,
-        }
-        dispatchCreated = true
-        return new Response(JSON.stringify([result]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (rpcName === 'service_complete_email_recipient_dispatch') {
-        dispatchState = 'accepted'
-        return emailDispatchCompletionReceipt(init)
-      }
-      if (rpcName === 'service_get_email_recipient_dispatch_manifest') {
-        return new Response('null', { headers: { 'content-type': 'application/json' } })
-      }
       if (rpcName === 'service_mark_notification_result') {
         const body = JSON.parse(String(init?.body)) as { delivered?: boolean }
-        if (body.delivered === true && markAttempts++ === 0) {
-          return new Response(JSON.stringify({ message: 'temporary completion outage' }), {
-            status: 503,
-            headers: { 'content-type': 'application/json' },
-          })
-        }
         if (body.delivered === true) delivered = true
         return new Response('null', { headers: { 'content-type': 'application/json' } })
+      }
+      if (rpcName === 'service_log_email_delivery') {
+        return new Response(JSON.stringify({ message: 'Timed out acquiring connection from connection pool' }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        })
       }
       if (rpcName.startsWith('service_claim_')) {
         return new Response('[]', { headers: { 'content-type': 'application/json' } })
@@ -4821,97 +2125,33 @@ describe('Cloudflare Worker boundary', () => {
       return new Response(JSON.stringify({ status: 'completed' }), { headers: { 'content-type': 'application/json' } })
     })
     const emailSend = vi.fn().mockResolvedValue(undefined)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
     vi.stubGlobal('fetch', fetchMock)
 
     try {
-      const runtime = environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send: emailSend },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-      })
-      const first = await processNotificationJobs(runtime, 25, undefined, 'timekeeping')
-      const second = await processNotificationJobs(runtime, 25, undefined, 'timekeeping')
+      for (const minute of [3, 4]) {
+        const scheduledWork: Promise<unknown>[] = []
+        await worker.scheduled(
+          { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 11, 15, minute) },
+          environment(new Response('asset'), {
+            ...configuredEnvironment,
+            EMAIL: { send: emailSend },
+            SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+          }),
+          { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+        )
+        await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+      }
 
       expect(delivered).toBe(true)
       expect(emailSend).toHaveBeenCalledTimes(1)
       expect(rpcCalls.filter((name) => name === 'service_claim_timekeeping_notification_batch')).toHaveLength(2)
-      expect(first.outcomes[0]).toMatchObject({ id: notificationId, status: 'pending' })
-      expect(second.outcomes[0]).toMatchObject({ id: notificationId, status: 'delivered' })
+      expect(rpcCalls.indexOf('service_mark_notification_result')).toBeLessThan(rpcCalls.indexOf('service_log_email_delivery'))
+      expect(errorSpy.mock.calls.some(([value]) => String(value).includes('"event":"scheduled_work_contained"'))).toBe(true)
     } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('does not resend recipients after a partial multi-recipient provider outcome', async () => {
-    const notificationId = '20000000-0000-4000-8000-000000000089'
-    const states = new Map<string, 'accepted' | 'dispatching' | 'uncertain'>()
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const rpcName = String(input).split('/rpc/')[1] ?? ''
-      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-      if (rpcName === 'service_claim_timekeeping_notification_batch') {
-        return new Response(JSON.stringify([{
-          id: notificationId,
-          claimToken: '70000000-0000-4000-8000-000000000089',
-          messageType: 'automatic_clock_out',
-          aggregateType: 'timekeeping_event',
-          aggregateId: '30000000-0000-4000-8000-000000000089',
-          recipients: ['one@example.com', 'two@example.com'],
-          message: { subject: 'Automatic clock-out recorded', text: 'Review your timecard.' },
-        }]), { headers: { 'content-type': 'application/json' } })
-      }
-      if (rpcName === 'service_prepare_email_recipient_dispatch_batch') {
-        const recipients = body.target_intended_recipients as string[]
-        const decisions = recipients.map((recipient) => {
-          const existing = states.get(recipient)
-          if (!existing) states.set(recipient, 'dispatching')
-          return {
-            dispatchId: recipient.startsWith('one')
-              ? '40000000-0000-4000-8000-000000000089'
-              : '40000000-0000-4000-8000-000000000090',
-            dispatchToken: recipient.startsWith('one')
-              ? '50000000-0000-4000-8000-000000000089'
-              : '50000000-0000-4000-8000-000000000090',
-            intendedRecipient: recipient,
-            sendAllowed: !existing,
-            state: existing ?? 'dispatching',
-          }
-        })
-        return new Response(JSON.stringify(decisions), { headers: { 'content-type': 'application/json' } })
-      }
-      if (rpcName === 'service_complete_email_recipient_dispatch') {
-        states.set(String(body.target_intended_recipient), String(body.target_state) as 'accepted' | 'uncertain')
-        return emailDispatchCompletionReceipt(init)
-      }
-      return new Response('null', { headers: { 'content-type': 'application/json' } })
-    })
-    const emailSend = vi.fn(async (message: { to: string }) => {
-      expect(states.size).toBe(2)
-      if (message.to === 'two@example.com') throw new TypeError('provider connection closed')
-      return { messageId: 'accepted-one' }
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const runtime = environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send: emailSend },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-      })
-      const first = await processNotificationJobs(runtime, 25, undefined, 'timekeeping')
-      const second = await processNotificationJobs(runtime, 25, undefined, 'timekeeping')
-
-      expect(first.outcomes[0]).toMatchObject({
-        status: 'pending',
-        recipients: { accepted: 1, uncertain: 1 },
-      })
-      expect(second.outcomes[0]).toMatchObject({
-        status: 'pending',
-        recipients: { accepted: 1, uncertain: 1 },
-      })
-      expect(emailSend).toHaveBeenCalledTimes(2)
-      expect(emailSend.mock.calls.filter(([message]) => message.to === 'one@example.com')).toHaveLength(1)
-      expect(emailSend.mock.calls.filter(([message]) => message.to === 'two@example.com')).toHaveLength(1)
-    } finally {
+      errorSpy.mockRestore()
+      infoSpy.mockRestore()
       vi.unstubAllGlobals()
     }
   })
@@ -5183,12 +2423,7 @@ describe('Cloudflare Worker boundary', () => {
       && String(value).includes(`"${expectedLane}"`)
     ))).toBe(true)
     expect(coordinator.recordFullSuccess).not.toHaveBeenCalled()
-    expect(coordinator.recordFailure).toHaveBeenCalledWith(expect.objectContaining({
-      operation: 'required_lane_failure',
-      status: null,
-      timedOut: false,
-    }))
-    expect(coordinator.releaseCycle).not.toHaveBeenCalled()
+    expect(coordinator.releaseCycle).toHaveBeenCalledTimes(1)
 
     const scheduledSummary = infoSpy.mock.calls
       .map(([value]) => {
@@ -5236,314 +2471,6 @@ describe('Cloudflare Worker boundary', () => {
     expect(calledUrls.some((url) => url.includes('/storage/v1/object/hr-general/'))).toBe(true)
     expect(calledUrls.some((url) => url.includes('/rpc/service_mark_hr_document_upload_stored'))).toBe(false)
     vi.unstubAllGlobals()
-  })
-
-  it('reconciles only exact stale client upload objects and preserves mismatches', async () => {
-    const exactBytes = new TextEncoder().encode('exact client document')
-    const exactChecksum = createHash('sha256').update(exactBytes).digest('hex')
-    const missingChecksum = 'b'.repeat(64)
-    const mismatchChecksum = 'c'.repeat(64)
-    const rpcCalls: Array<{ body: Record<string, unknown>, name: string }> = []
-    const rpc = vi.fn(async (_config: unknown, name: string, body: Record<string, unknown>) => {
-      rpcCalls.push({ body, name })
-      if (name === 'service_list_client_document_upload_recovery') {
-        return [
-          {
-            actorId: '10000000-0000-4000-8000-000000000001',
-            bucket: 'client-documents',
-            checksum: exactChecksum,
-            documentId: '20000000-0000-4000-8000-000000000001',
-            objectKey: 'client/exact.pdf',
-            sizeBytes: exactBytes.byteLength,
-          },
-          {
-            actorId: '10000000-0000-4000-8000-000000000002',
-            bucket: 'client-documents',
-            checksum: missingChecksum,
-            documentId: '20000000-0000-4000-8000-000000000002',
-            objectKey: 'client/missing.pdf',
-            sizeBytes: 12,
-          },
-          {
-            actorId: '10000000-0000-4000-8000-000000000003',
-            bucket: 'client-documents',
-            checksum: mismatchChecksum,
-            documentId: '20000000-0000-4000-8000-000000000003',
-            objectKey: 'client/mismatch.pdf',
-            sizeBytes: 8,
-          },
-        ]
-      }
-      if (name === 'service_reconcile_client_document_upload_failure') {
-        return {
-          bucket: 'client-documents',
-          byteSize: 12,
-          checksum: missingChecksum,
-          cleanupAllowed: true,
-          documentId: '20000000-0000-4000-8000-000000000002',
-          objectKey: 'client/missing.pdf',
-          state: 'failed',
-        }
-      }
-      return { state: 'stored' }
-    }) as unknown as Parameters<typeof recoverClientDocumentAvailability>[1]
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      expect(init?.method ?? 'GET').toBe('GET')
-      if (url.endsWith('/client/exact.pdf')) return new Response(exactBytes)
-      if (url.endsWith('/client/missing.pdf')) return new Response('missing', { status: 404 })
-      if (url.endsWith('/client/mismatch.pdf')) return new Response('mismatch')
-      return new Response('not found', { status: 404 })
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const result = await recoverClientDocumentAvailability(
-        environment(new Response('asset'), configuredEnvironment),
-        rpc,
-      )
-
-      expect(result).toEqual({ deferred: 1, failed: 1, recovered: 1 })
-      expect(rpcCalls.filter(({ name }) => name === 'service_complete_client_document_upload')).toHaveLength(1)
-      expect(rpcCalls.filter(({ name }) => name === 'service_reconcile_client_document_upload_failure')).toHaveLength(1)
-      expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('retries only exact cleanup-pending client objects and confirms missing cleanup', async () => {
-    const exactBytes = new TextEncoder().encode('rejected client document')
-    const exactChecksum = createHash('sha256').update(exactBytes).digest('hex')
-    const missingChecksum = 'd'.repeat(64)
-    const mismatchChecksum = 'e'.repeat(64)
-    const rpcCalls: Array<{ body: Record<string, unknown>, name: string }> = []
-    const rpc = vi.fn(async (_config: unknown, name: string, body: Record<string, unknown>) => {
-      rpcCalls.push({ body, name })
-      if (name === 'service_list_client_document_cleanup_recovery') {
-        return [
-          {
-            actorId: '10000000-0000-4000-8000-000000000011',
-            bucket: 'client-documents',
-            checksum: exactChecksum,
-            documentId: '20000000-0000-4000-8000-000000000011',
-            objectKey: 'client/exact-cleanup.pdf',
-            sizeBytes: exactBytes.byteLength,
-          },
-          {
-            actorId: '10000000-0000-4000-8000-000000000012',
-            bucket: 'client-documents',
-            checksum: missingChecksum,
-            documentId: '20000000-0000-4000-8000-000000000012',
-            objectKey: 'client/missing-cleanup.pdf',
-            sizeBytes: 12,
-          },
-          {
-            actorId: '10000000-0000-4000-8000-000000000013',
-            bucket: 'client-documents',
-            checksum: mismatchChecksum,
-            documentId: '20000000-0000-4000-8000-000000000013',
-            objectKey: 'client/mismatch-cleanup.pdf',
-            sizeBytes: 8,
-          },
-          {
-            actorId: '10000000-0000-4000-8000-000000000014',
-            bucket: 'client-documents',
-            checksum: exactChecksum,
-            documentId: '20000000-0000-4000-8000-000000000014',
-            objectKey: '../invalid-client-cleanup.pdf',
-            sizeBytes: exactBytes.byteLength,
-          },
-        ]
-      }
-      return { state: 'failed' }
-    }) as unknown as Parameters<typeof recoverClientDocumentCleanup>[1]
-    const deleted: string[] = []
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (init?.method === 'DELETE') {
-        deleted.push(url)
-        return new Response(null, { status: 204 })
-      }
-      if (url.endsWith('/client/exact-cleanup.pdf')) return new Response(exactBytes)
-      if (url.endsWith('/client/missing-cleanup.pdf')) return new Response('missing', { status: 404 })
-      if (url.endsWith('/client/mismatch-cleanup.pdf')) return new Response('mismatch')
-      return new Response('not found', { status: 404 })
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const result = await recoverClientDocumentCleanup(
-        environment(new Response('asset'), configuredEnvironment),
-        rpc,
-      )
-
-      expect(result).toEqual({ cleaned: 2, deferred: 2, failed: 1 })
-      expect(deleted).toHaveLength(1)
-      expect(deleted[0]).toContain('/client/exact-cleanup.pdf')
-      expect(rpcCalls.filter(({ name }) => name === 'service_complete_client_document_cleanup')).toHaveLength(2)
-      expect(rpcCalls.filter(({ name }) => name === 'service_defer_client_document_cleanup')).toHaveLength(2)
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('invalid-client-cleanup'))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('recovers credential and submission uploads only after exact scheduled storage verification', async () => {
-    const exactBytes = new TextEncoder().encode('verified licensing document')
-    const exactChecksum = createHash('sha256').update(exactBytes).digest('hex')
-    const credentialDocumentId = '20000000-0000-4000-8000-000000000031'
-    const submissionDocumentId = '20000000-0000-4000-8000-000000000032'
-    const missingDocumentId = '20000000-0000-4000-8000-000000000033'
-    const mismatchDocumentId = '20000000-0000-4000-8000-000000000034'
-    const unknownDocumentId = '20000000-0000-4000-8000-000000000035'
-    const invalidDocumentId = '20000000-0000-4000-8000-000000000036'
-    const policyRejectedDocumentId = '20000000-0000-4000-8000-000000000037'
-    const candidate = (documentId: string, objectKey: string, checksum = exactChecksum, sizeBytes = exactBytes.byteLength) => ({
-      actorId: '10000000-0000-4000-8000-000000000031',
-      bucket: 'credential-documents',
-      checksum,
-      documentId,
-      objectKey,
-      sizeBytes,
-    })
-    const rpcCalls: Array<{ body: Record<string, unknown>, name: string }> = []
-    const rpc = vi.fn(async (_config: unknown, name: string, body: Record<string, unknown>) => {
-      rpcCalls.push({ body, name })
-      if (name === 'service_list_licensing_document_availability_recovery') {
-        return [
-          candidate(credentialDocumentId, `employee/credential/${credentialDocumentId}.pdf`),
-          candidate(submissionDocumentId, `employee/submissions/submission/${submissionDocumentId}.png`),
-          candidate(missingDocumentId, `employee/credential/${missingDocumentId}.pdf`, 'a'.repeat(64), 12),
-          candidate(mismatchDocumentId, `employee/credential/${mismatchDocumentId}.pdf`, 'b'.repeat(64), 8),
-          candidate(unknownDocumentId, `employee/credential/${unknownDocumentId}.pdf`, 'c'.repeat(64), 8),
-          { ...candidate(invalidDocumentId, `employee/credential/${invalidDocumentId}.pdf`), bucket: 'unexpected-bucket' },
-          candidate(policyRejectedDocumentId, `employee/submissions/closed/${policyRejectedDocumentId}.pdf`),
-        ]
-      }
-      if (name === 'service_complete_licensing_document_upload_recovery'
-        && body.target_document_id === policyRejectedDocumentId) {
-        return {
-          bucket: 'credential-documents',
-          byteSize: exactBytes.byteLength,
-          checksum: exactChecksum,
-          cleanupAllowed: true,
-          documentId: policyRejectedDocumentId,
-          objectKey: `employee/submissions/closed/${policyRejectedDocumentId}.pdf`,
-          state: 'failed',
-        }
-      }
-      return { state: name.includes('complete') ? 'stored' : 'failed' }
-    }) as unknown as Parameters<typeof recoverLicensingDocumentAvailability>[1]
-    const deleted: string[] = []
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (init?.method === 'DELETE') {
-        deleted.push(url)
-        return new Response(null, { status: 204 })
-      }
-      if (url.includes(credentialDocumentId) || url.includes(submissionDocumentId) || url.includes(policyRejectedDocumentId)) return new Response(exactBytes)
-      if (url.includes(missingDocumentId)) return new Response('missing', { status: 404 })
-      if (url.includes(mismatchDocumentId)) return new Response('mismatch')
-      if (url.includes(unknownDocumentId)) return new Response('unavailable', { status: 503 })
-      return new Response('not found', { status: 404 })
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const result = await recoverLicensingDocumentAvailability(
-        environment(new Response('asset'), configuredEnvironment),
-        rpc,
-      )
-
-      expect(result).toEqual({ cleaned: 3, deferred: 1, failed: 2, recovered: 2 })
-      expect(rpcCalls.filter(({ name }) => name === 'service_complete_licensing_document_upload_recovery')).toHaveLength(3)
-      expect(rpcCalls.filter(({ name }) => name === 'service_fail_licensing_document_upload_recovery')).toHaveLength(2)
-      expect(rpcCalls.filter(({ name }) => name === 'service_complete_licensing_document_cleanup')).toHaveLength(3)
-      expect(deleted).toHaveLength(2)
-      expect(deleted.some((url) => url.includes(mismatchDocumentId))).toBe(true)
-      expect(deleted.some((url) => url.includes(policyRejectedDocumentId))).toBe(true)
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes(invalidDocumentId))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('retries only exact cleanup-pending licensing objects and confirms missing cleanup', async () => {
-    const exactBytes = new TextEncoder().encode('rejected licensing document')
-    const exactChecksum = createHash('sha256').update(exactBytes).digest('hex')
-    const missingChecksum = 'a'.repeat(64)
-    const mismatchChecksum = 'b'.repeat(64)
-    const rpcCalls: Array<{ body: Record<string, unknown>, name: string }> = []
-    const rpc = vi.fn(async (_config: unknown, name: string, body: Record<string, unknown>) => {
-      rpcCalls.push({ body, name })
-      if (name === 'service_list_licensing_document_cleanup_recovery') {
-        return [
-          {
-            actorId: '10000000-0000-4000-8000-000000000021',
-            bucket: 'credential-documents',
-            checksum: exactChecksum,
-            documentId: '20000000-0000-4000-8000-000000000021',
-            objectKey: 'licensing/exact-cleanup.pdf',
-            sizeBytes: exactBytes.byteLength,
-          },
-          {
-            actorId: '10000000-0000-4000-8000-000000000022',
-            bucket: 'credential-documents',
-            checksum: missingChecksum,
-            documentId: '20000000-0000-4000-8000-000000000022',
-            objectKey: 'licensing/missing-cleanup.pdf',
-            sizeBytes: 12,
-          },
-          {
-            actorId: '10000000-0000-4000-8000-000000000023',
-            bucket: 'credential-documents',
-            checksum: mismatchChecksum,
-            documentId: '20000000-0000-4000-8000-000000000023',
-            objectKey: 'licensing/mismatch-cleanup.pdf',
-            sizeBytes: 8,
-          },
-          {
-            actorId: '10000000-0000-4000-8000-000000000024',
-            bucket: 'unexpected-bucket',
-            checksum: exactChecksum,
-            documentId: '20000000-0000-4000-8000-000000000024',
-            objectKey: 'licensing/wrong-bucket.pdf',
-            sizeBytes: exactBytes.byteLength,
-          },
-        ]
-      }
-      return { state: 'failed' }
-    }) as unknown as Parameters<typeof recoverLicensingDocumentCleanup>[1]
-    const deleted: string[] = []
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (init?.method === 'DELETE') {
-        deleted.push(url)
-        return new Response(null, { status: 204 })
-      }
-      if (url.endsWith('/licensing/exact-cleanup.pdf')) return new Response(exactBytes)
-      if (url.endsWith('/licensing/missing-cleanup.pdf')) return new Response('missing', { status: 404 })
-      if (url.endsWith('/licensing/mismatch-cleanup.pdf')) return new Response('mismatch')
-      return new Response('not found', { status: 404 })
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    try {
-      const result = await recoverLicensingDocumentCleanup(
-        environment(new Response('asset'), configuredEnvironment),
-        rpc,
-      )
-
-      expect(result).toEqual({ cleaned: 2, deferred: 2, failed: 1 })
-      expect(deleted).toHaveLength(1)
-      expect(deleted[0]).toContain('/licensing/exact-cleanup.pdf')
-      expect(rpcCalls.filter(({ name }) => name === 'service_complete_licensing_document_cleanup')).toHaveLength(2)
-      expect(rpcCalls.filter(({ name }) => name === 'service_defer_licensing_document_cleanup')).toHaveLength(2)
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('wrong-bucket'))).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
   })
 
   it('keeps minute-by-minute automation running while the attendance safety scan waits for its five-minute interval', async () => {

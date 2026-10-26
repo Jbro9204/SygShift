@@ -1,18 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AUTH_EMAIL_DOMAIN,
   authSessionIdFromAccessToken,
   getSessionContext,
   getSessionContextWithSignal,
-  hasLocalSignOutBarrier,
   isTransientSessionContextError,
   isValidUsername,
   normalizeUsername,
   recordCompletedSignIn,
   recordCompletedSignInWithRetry,
   signOut,
-  LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY,
-  TOTP_SETUP_STORAGE_KEY,
   usernameToAuthEmail,
   validatePassword,
   verifyPasswordRecoveryToken,
@@ -34,36 +31,10 @@ const supabaseMock = vi.hoisted(() => ({
   },
 }))
 
-const signOutDependencyMock = vi.hoisted(() => ({
-  clearPushSession: vi.fn(async () => undefined),
-  clearSharedIdentityServerSession: vi.fn(async () => undefined),
-  clearSharedIdentitySession: vi.fn(),
-  getSharedIdentitySessionScope: vi.fn(() => null as null | 'platform' | 'sygsphere'),
-  publishSharedIdentityBrowserEvent: vi.fn(),
-}))
-
 vi.mock('../lib/supabase', () => ({
   deactivateSharedIdentitySupabaseSession: supabaseMock.deactivateSharedIdentitySupabaseSession,
   getSupabaseClient: () => supabaseMock.client,
 }))
-
-vi.mock('./pushNotifications', () => ({
-  clearPushSession: signOutDependencyMock.clearPushSession,
-}))
-
-vi.mock('../lib/sharedIdentitySession', () => ({
-  clearSharedIdentityServerSession: signOutDependencyMock.clearSharedIdentityServerSession,
-  clearSharedIdentitySession: signOutDependencyMock.clearSharedIdentitySession,
-  getSharedIdentitySessionScope: signOutDependencyMock.getSharedIdentitySessionScope,
-}))
-
-vi.mock('../lib/sharedIdentityBrowserSync', () => ({
-  publishSharedIdentityBrowserEvent: signOutDependencyMock.publishSharedIdentityBrowserEvent,
-}))
-
-afterEach(() => {
-  vi.useRealTimers()
-})
 
 describe('auth helpers', () => {
   it('normalizes directory usernames before creating Supabase auth identifiers', () => {
@@ -86,88 +57,16 @@ describe('auth helpers', () => {
 })
 
 describe('signOut', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    vi.useRealTimers()
-    supabaseMock.client.auth.signOut.mockReset()
-    signOutDependencyMock.getSharedIdentitySessionScope.mockReturnValue(null)
-    signOutDependencyMock.clearPushSession.mockResolvedValue(undefined)
-    signOutDependencyMock.clearSharedIdentityServerSession.mockResolvedValue(undefined)
-    localStorage.removeItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY)
-  })
-
   it('keeps remembered-device trust available for the next login', async () => {
     localStorage.setItem('sygshift:trusted-device-token:v1', 'remembered-device-token')
     sessionStorage.setItem('sygshift:view-date-selections:v1', JSON.stringify({ ownerId: 'employee-a', selections: {} }))
-    sessionStorage.setItem('sygshift:personal-email-verification-intent:v1', JSON.stringify({ operationId: 'pending' }))
-    sessionStorage.setItem(TOTP_SETUP_STORAGE_KEY, JSON.stringify({ secret: 'private-enrollment-secret' }))
     supabaseMock.client.auth.signOut.mockResolvedValueOnce({ error: null })
 
     await signOut()
 
     expect(supabaseMock.deactivateSharedIdentitySupabaseSession).toHaveBeenCalledOnce()
-    expect(signOutDependencyMock.clearSharedIdentitySession).toHaveBeenCalledOnce()
-    expect(signOutDependencyMock.publishSharedIdentityBrowserEvent).toHaveBeenCalledWith('cleared')
-    expect(supabaseMock.client.auth.signOut).toHaveBeenCalledWith({ scope: 'local' })
     expect(localStorage.getItem('sygshift:trusted-device-token:v1')).toBe('remembered-device-token')
     expect(sessionStorage.getItem('sygshift:view-date-selections:v1')).toBeNull()
-    expect(sessionStorage.getItem('sygshift:personal-email-verification-intent:v1')).toBeNull()
-    expect(sessionStorage.getItem(TOTP_SETUP_STORAGE_KEY)).toBeNull()
-  })
-
-  it('locks reloads and sibling tabs while the local credential remains mounted after shared-cookie cleanup fails', async () => {
-    signOutDependencyMock.clearSharedIdentityServerSession.mockRejectedValueOnce(new Error('remote logout unavailable'))
-    supabaseMock.client.auth.signOut.mockResolvedValueOnce({ error: null })
-    sessionStorage.setItem(TOTP_SETUP_STORAGE_KEY, JSON.stringify({ secret: 'private-enrollment-secret' }))
-
-    await expect(signOut()).rejects.toThrow(/shared sign-out could not be confirmed/i)
-
-    expect(supabaseMock.client.auth.signOut).not.toHaveBeenCalled()
-    expect(supabaseMock.deactivateSharedIdentitySupabaseSession).not.toHaveBeenCalled()
-    expect(signOutDependencyMock.publishSharedIdentityBrowserEvent).not.toHaveBeenCalled()
-    expect(sessionStorage.getItem(TOTP_SETUP_STORAGE_KEY)).not.toBeNull()
-    expect(hasLocalSignOutBarrier()).toBe(true)
-    expect(localStorage.getItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY)).toBe('blocked')
-  })
-
-  it('persists a browser-wide lock when local sign out fails and clears it only after a successful retry', async () => {
-    supabaseMock.client.auth.signOut
-      .mockResolvedValueOnce({ error: new Error('local storage unavailable') })
-      .mockResolvedValueOnce({ error: null })
-
-    await expect(signOut()).rejects.toThrow(/workspace remains locked on this device/i)
-
-    expect(hasLocalSignOutBarrier()).toBe(true)
-    expect(localStorage.getItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY)).toBe('blocked')
-
-    await signOut()
-
-    expect(supabaseMock.client.auth.signOut).toHaveBeenCalledTimes(2)
-    expect(hasLocalSignOutBarrier()).toBe(false)
-    expect(localStorage.getItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY)).toBeNull()
-  })
-
-  it('clears the cross-tab barrier only after local and shared credential teardown is complete', async () => {
-    supabaseMock.client.auth.signOut.mockImplementationOnce(async () => {
-      expect(localStorage.getItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY)).toBe('blocked')
-      return { error: null }
-    })
-    supabaseMock.deactivateSharedIdentitySupabaseSession.mockImplementationOnce(() => {
-      expect(localStorage.getItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY)).toBe('blocked')
-    })
-    signOutDependencyMock.clearSharedIdentitySession.mockImplementationOnce(() => {
-      expect(localStorage.getItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY)).toBe('blocked')
-    })
-    signOutDependencyMock.publishSharedIdentityBrowserEvent.mockImplementationOnce(() => {
-      expect(localStorage.getItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY)).toBe('blocked')
-    })
-
-    await signOut()
-
-    expect(localStorage.getItem(LOCAL_SIGN_OUT_BARRIER_STORAGE_KEY)).toBeNull()
-    expect(supabaseMock.deactivateSharedIdentitySupabaseSession).toHaveBeenCalledOnce()
-    expect(signOutDependencyMock.clearSharedIdentitySession).toHaveBeenCalledOnce()
-    expect(signOutDependencyMock.publishSharedIdentityBrowserEvent).toHaveBeenCalledWith('cleared')
   })
 })
 
