@@ -2,7 +2,7 @@
 
 Date: October 27, 2026
 Application: SygShift
-Status: implementation prepared; production migration and deployment pending
+Status: database repair active and live-verified; application fallback deployment pending
 
 ## Why this repair is needed
 
@@ -51,8 +51,20 @@ Completed verification:
 
 Pending before release:
 
-- production migration application and verification;
-- exact-main push and successful GitHub quality run;
-- Cloudflare deployment, health/readiness checks, and authenticated live banner verification.
+- Cloudflare deployment of the plain-language banner-feed failure fallback;
+- post-deployment health/readiness and exact-source verification.
 
-No production release is claimed by this changelog.
+## Production activation evidence
+
+- Pushed implementation commit `b47643b068a9008f19872d4b13d14ead9ddff54f` to exact `main`.
+- GitHub quality workflow `40513619204` passed for that exact source, including CodeQL and the exact-candidate quality gate.
+- Applied only migration `20261027131606_repair_announcement_banner_delivery_contract` through the fingerprint-guarded atomic release artifact.
+  - Atomic release artifact SHA-256: `9FA56D7F4614917B6A855161C1CF5B9065BBF5197CF413B0E6EBFD63714D1F57`.
+  - Installed migration source MD5: `0cd672c0264d344c8a3a4e08cbc01bd3`, matching the local migration source.
+  - Installed mapper MD5: `106880ad7994e05f16151cca182c1c47`.
+  - The mapper remains owned by `postgres`, `SECURITY DEFINER`, `STABLE`, pinned to an empty `search_path`, and executable only by `postgres`.
+- Production now has 399 applied migration identities; the post-activation ownership manifest records the new migration as an exact version-and-name source match without changing earlier migration identities.
+- Re-ran the mixed-feed rollback-only production regression after activation; both banner source types returned their complete lifecycle contract and no fixture row was retained.
+- Opened a fresh authenticated production session and verified the active urgent `System Maintenance!!` banner appears in the global `Workspace alerts` region with its existing message. No banner or announcement record was edited to produce that result.
+
+The database contract repair is active in production. The application fallback deployment and its final runtime checks remain pending, so this changelog does not yet claim the complete application release.
