@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AnnouncementBanner } from '../data/announcements'
 import { AppShell } from './AppShell'
 
 const employeeId = 'a25a5f5f-45b6-4e43-87a6-79298ed9347f'
@@ -39,6 +40,8 @@ const shared = vi.hoisted(() => ({
   }> | null,
   authSourceActive: true,
   authListener: null as null | ((event: string, session: { access_token: string } | null) => void),
+  announcementBannerError: null as Error | null,
+  announcementBanners: [] as AnnouncementBanner[],
   browserListener: null as ((action: 'cleared' | 'updated') => void) | null,
   hydrateError: null as Error | null,
   hydrateTransient: true,
@@ -152,7 +155,13 @@ vi.mock('../data/auth', () => ({
   signOut: vi.fn(async () => undefined),
 }))
 
-vi.mock('../data/announcements', () => ({ getActiveAnnouncementBanners: vi.fn(async () => []) }))
+vi.mock('../data/announcements', async (loadOriginal) => ({
+  ...await loadOriginal<typeof import('../data/announcements')>(),
+  getActiveAnnouncementBanners: vi.fn(async () => {
+    if (shared.announcementBannerError) throw shared.announcementBannerError
+    return shared.announcementBanners
+  }),
+}))
 vi.mock('../data/timeOperations', async (loadOriginal) => ({
   ...await loadOriginal<typeof import('../data/timeOperations')>(),
   getTimekeepingOperationsWorkspace: vi.fn(async () => shared.operationalWorkspace),
@@ -211,6 +220,8 @@ beforeEach(() => {
   shared.authGetSessionPromise = null
   shared.authListener = null
   shared.authSourceActive = true
+  shared.announcementBannerError = null
+  shared.announcementBanners = []
   shared.browserListener = null
   shared.hydrateError = null
   shared.hydrateTransient = true
@@ -686,6 +697,25 @@ describe('AppShell shared-session lifecycle', () => {
     expect(screen.queryByText('Resolved alert')).not.toBeInTheDocument()
   })
 
+  it('renders an urgent employee-facing banner in the global workspace strip', async () => {
+    shared.announcementBanners = [announcementBanner('System maintenance')]
+    prepareSharedSession('platform')
+    renderShell('/')
+
+    expect(await screen.findByText('System maintenance')).toBeVisible()
+    expect(screen.getByText('Maintenance is in progress.')).toBeVisible()
+  })
+
+  it('shows a plain-language global warning when banner alerts cannot be verified', async () => {
+    shared.announcementBannerError = new Error('Unexpected validation details')
+    prepareSharedSession('platform')
+    renderShell('/')
+
+    expect(await screen.findByText('Banner alerts unavailable')).toBeVisible()
+    expect(screen.getByText('Current banner alerts could not be verified. Refresh the page or try again shortly.')).toBeVisible()
+    expect(screen.queryByText('Unexpected validation details')).not.toBeInTheDocument()
+  })
+
   it('switches scaled laptop viewports to the full-width navigation drawer without losing the saved desktop preference', async () => {
     const removeEventListener = vi.fn()
     vi.stubGlobal('matchMedia', vi.fn(() => ({
@@ -902,6 +932,26 @@ function operationalAlert(
     active: true,
     lifecycleStatus: 'active_operations',
     ...overrides,
+  }
+}
+
+function announcementBanner(title: string): AnnouncementBanner {
+  return {
+    id: '30000000-0000-4000-8000-000000000001',
+    title,
+    message: 'Maintenance is in progress.',
+    tone: 'urgent',
+    ctaLabel: null,
+    ctaHref: null,
+    audience: 'all',
+    audienceRoles: [],
+    active: true,
+    lifecycleStatus: 'active',
+    startsAt: '2026-10-27T13:00:00.000Z',
+    expiresAt: '2026-10-28T13:00:00.000Z',
+    canceledAt: null,
+    createdAt: '2026-10-27T13:00:00.000Z',
+    updatedAt: '2026-10-27T13:00:00.000Z',
   }
 }
 

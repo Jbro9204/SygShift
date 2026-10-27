@@ -3595,3 +3595,13 @@ pnpm exec wrangler deploy --keep-vars
 - See
   `docs/changelogs/CHANGELOG_09-30-2026_ACCOUNTABILITY_CALL_OFF_IDEMPOTENCY_REPAIR.md`
   for the complete repair, verification, limitations, and release record.
+
+# 10/27/2026 - Announcement Banner Delivery Contract Repair (Pending Release)
+
+- Traced the missing global banner to a mixed-response contract mismatch: dedicated banners included lifecycle fields, while ordinary published announcements omitted `lifecycleStatus` and `canceledAt`, causing strict validation to reject the entire feed.
+- Prepared forward migration `20261027131606_repair_announcement_banner_delivery_contract.sql` to normalize the ordinary-announcement mapper without changing any stored announcement, audience, expiration, acknowledgment, or delivery record.
+- Added a plain-language global warning for an initial banner-feed failure while retaining usable cached banners during background-refetch failures.
+- Added mixed-payload parser, rendered-shell, and rollback-only database regressions covering dedicated and ordinary announcement sources.
+- Added a fingerprint-guarded, exact-ledger production activation preparer and included its regression in the release-tool gate.
+- Local validation passed: 2,263 application tests, 183 release-tool tests, 42 Time Clock browser tests across desktop/mobile, production builds, static-asset validation, and the rollback-only production activation rehearsal.
+- Production migration, deployment, live verification, and final release evidence remain pending. See `docs/changelogs/CHANGELOG_2026-10-27_ANNOUNCEMENT_BANNER_DELIVERY_REPAIR.md`.

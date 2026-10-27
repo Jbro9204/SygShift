@@ -322,6 +322,19 @@ export function AppShell() {
         }
       })
 
+    const announcementLoadAlerts: WorkspaceAlertEntry[] = activeBannerQuery.isError
+      && activeBannerQuery.data === undefined
+      ? [{
+          id: 'announcement-banner-load-failed',
+          title: 'Banner alerts unavailable',
+          message: 'Current banner alerts could not be verified. Refresh the page or try again shortly.',
+          tone: 'urgent',
+          icon: 'announcement',
+          ctaHref: null,
+          ctaLabel: null,
+        }]
+      : []
+
     const attendanceAlerts = (operationalAlertQuery.data?.alerts ?? [])
       .filter((alert) => (
         isOperationalAlertLive(alert, operationalAlertQuery.data?.serverTimestamp)
@@ -341,7 +354,7 @@ export function AppShell() {
           ctaLabel: 'Review alert',
         }]
       })
-    const liveAlerts = [...attendanceAlerts, ...announcementAlerts]
+    const liveAlerts = [...attendanceAlerts, ...announcementAlerts, ...announcementLoadAlerts]
 
     if (!showPayrollReminder) return liveAlerts
 
@@ -357,7 +370,7 @@ export function AppShell() {
         ctaLabel: 'Open Time & Attendance',
       },
     ]
-  }, [activeBannerQuery.data, operationalAlertQuery.data?.alerts, operationalAlertQuery.data?.serverTimestamp, payrollReminderWeek.fromLabel, payrollReminderWeek.throughLabel, sessionContext, showPayrollReminder])
+  }, [activeBannerQuery.data, activeBannerQuery.isError, operationalAlertQuery.data?.alerts, operationalAlertQuery.data?.serverTimestamp, payrollReminderWeek.fromLabel, payrollReminderWeek.throughLabel, sessionContext, showPayrollReminder])
 
   const visibleNavigationGroups = navigationGroups
     .map((group) => ({
