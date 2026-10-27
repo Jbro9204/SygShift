@@ -2,7 +2,7 @@
 
 Date: October 27, 2026
 Application: SygShift
-Status: database repair active and live-verified; application fallback deployment pending
+Status: released and verified in production
 
 ## Why this repair is needed
 
@@ -49,10 +49,10 @@ Completed verification:
 - production rollback-only activation rehearsal: passed without retaining the candidate ledger entry or test fixtures;
 - reviewed pre-activation migration ownership manifest: 398 applied migrations, with only the new banner repair source added as local and not yet approved for production.
 
-Pending before release:
+Release completion:
 
-- Cloudflare deployment of the plain-language banner-feed failure fallback;
-- post-deployment health/readiness and exact-source verification.
+- Cloudflare deployment of the plain-language banner-feed failure fallback: complete;
+- post-deployment health/readiness, exact-source, scheduled-runtime, and authenticated banner verification: complete.
 
 ## Production activation evidence
 
@@ -67,4 +67,20 @@ Pending before release:
 - Re-ran the mixed-feed rollback-only production regression after activation; both banner source types returned their complete lifecycle contract and no fixture row was retained.
 - Opened a fresh authenticated production session and verified the active urgent `System Maintenance!!` banner appears in the global `Workspace alerts` region with its existing message. No banner or announcement record was edited to produce that result.
 
-The database contract repair is active in production. The application fallback deployment and its final runtime checks remain pending, so this changelog does not yet claim the complete application release.
+## Application release evidence
+
+- Released exact source `01dd28b9858c227c86a49a20fc7b9e4a07feb31f` as Worker version `51ceb2bb-f759-421c-bc53-1927d5cbe3b0`.
+  - Prior production source: `ccd31ed2a9bf15eaf06af668e494f91ea92aef95`.
+  - Prior Worker version: `c2e9b3c3-989a-4eab-bc26-9ee4a38ddda0`.
+  - Promotion outcome: released; promoted `true`; rolled back `false`.
+- The release gate revalidated the fresh 399-migration baseline immediately before deployment and reran the complete application, release-tool, browser, and production-build gates.
+- Because no approved release-canary credentials were loaded, the guarded release used its documented anonymous boundary probe. Wrangler did not return a candidate Version URL, so candidate-only preview checks were unavailable; the workflow retained production health monitoring and exact rollback protection.
+- The first normal scheduled-runtime full success after promotion completed at `2026-10-27T14:14:55.426Z` on the exact released source.
+- Independent post-release checks confirmed:
+  - `/api/v1/health` returned HTTP 200;
+  - `/api/v1/ready` returned HTTP 200 with `ready: true`;
+  - scheduled runtime mode `closed`, `consecutiveFailures: 0`, and exact released source commit;
+  - the production root returned HTTP 200 with the SygShift application shell;
+  - a fresh authenticated browser session reported SygShift `Online` and visibly rendered the existing urgent `System Maintenance!!` banner in the global workspace alert strip.
+
+The failure fallback was verified by rendered-shell regression tests rather than by deliberately breaking the production banner feed. The banner delivery repair is released and verified in production.

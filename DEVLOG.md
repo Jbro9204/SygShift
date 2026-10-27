@@ -3596,7 +3596,7 @@ pnpm exec wrangler deploy --keep-vars
   `docs/changelogs/CHANGELOG_09-30-2026_ACCOUNTABILITY_CALL_OFF_IDEMPOTENCY_REPAIR.md`
   for the complete repair, verification, limitations, and release record.
 
-# 10/27/2026 - Announcement Banner Delivery Contract Repair (Database Active)
+# 10/27/2026 - Announcement Banner Delivery Contract Repair
 
 - Traced the missing global banner to a mixed-response contract mismatch: dedicated banners included lifecycle fields, while ordinary published announcements omitted `lifecycleStatus` and `canceledAt`, causing strict validation to reject the entire feed.
 - Prepared forward migration `20261027131606_repair_announcement_banner_delivery_contract.sql` to normalize the ordinary-announcement mapper without changing any stored announcement, audience, expiration, acknowledgment, or delivery record.
@@ -3607,4 +3607,6 @@ pnpm exec wrangler deploy --keep-vars
 - Pushed exact source `b47643b` and received a successful GitHub quality workflow for that SHA, including CodeQL and the exact-candidate gate.
 - Applied only migration `20261027131606` through the guarded atomic release, verified its exact ledger/source/security metadata, and reran the rollback-only mixed-feed production regression with no retained fixtures.
 - Verified in a fresh authenticated production session that the existing urgent `System Maintenance!!` notice renders in the global workspace alert strip without editing the announcement record.
-- Cloudflare deployment of the safe banner-load fallback and final runtime verification remain pending. See `docs/changelogs/CHANGELOG_2026-10-27_ANNOUNCEMENT_BANNER_DELIVERY_REPAIR.md`.
+- Released exact source `01dd28b` as Cloudflare Worker `51ceb2bb-f759-421c-bc53-1927d5cbe3b0`; the scheduled runtime advanced on that exact source and rollback was not needed.
+- Independent production checks passed for health, readiness, zero scheduled-runtime failures, exact source, the SygShift root shell, and a fresh authenticated rendering of the existing urgent banner.
+- See `docs/changelogs/CHANGELOG_2026-10-27_ANNOUNCEMENT_BANNER_DELIVERY_REPAIR.md` for the complete contract, safety, database, CI, release, verification, and limitation record.
