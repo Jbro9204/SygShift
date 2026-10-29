@@ -65,6 +65,8 @@ Completed during implementation:
 - Worker authorization, recent-MFA, idempotency, provider-failure, recovery-delivery, fail-closed partial-state, and interrupted-operation coverage;
 - a generated rollback-only activation rehearsal against production PostgreSQL 17.6 containing the exact migration and both SQL regressions under one outer transaction;
 - post-rehearsal verification of zero candidate ledger rows, tables, columns, RPCs, employee fixtures, Auth sessions, and refresh-token fixtures retained;
+- clean-checkout gate repair of the pre-existing Schedule account-handoff race, keeping queries paused until the new account's state and URL agree, with repeated date-retention regressions passing;
+- fresh pre-activation ownership capture of 421 production migration identities, reconciliation of the 22 entries added after the prior reviewed baseline to current Sygilant default-chain and canonical-HR source evidence, and confirmation that no prior identity, statement-array checksum, owner, or owning-source checksum changed;
 - generated rollback-only artifact SHA-256 `f3056421f8a4284cea679dbe94ffa964ba7a2591bc5e1ee5a1b50daa90f06964` and atomic release artifact SHA-256 `41a510b37c0bd9a90024329a1b0db6c9cd9cb50dfbc7bf094afe113fd9d4b1e8`.
 
 Pending completion of:

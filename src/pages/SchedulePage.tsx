@@ -2551,15 +2551,23 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     setWeekStart((current) => format(current, 'yyyy-MM-dd') === nextWeekKey ? current : resolvedWeek)
     setEmployeeScheduleRange((current) => current === nextRange ? current : nextRange)
     setOpenShiftForm((current) => selectionOwnerId === activeSelectionOwnerId ? current : defaultOpenShiftForm(nextWeekKey))
-    setSelectionOwnerId(activeSelectionOwnerId)
     saveViewDateSelection(activeSelectionOwnerId, selectionSurface, nextSelection)
 
-    if (requestedWeekKey !== nextWeekKey || (!isSchedulerHome && requestedEmployeeRange !== nextRange)) {
+    const selectionUrlMatches = requestedWeekKey === nextWeekKey
+      && (isSchedulerHome || requestedEmployeeRange === nextRange)
+    if (!selectionUrlMatches) {
       const nextParams = new URLSearchParams(searchParams)
       nextParams.set('week', nextWeekKey)
       if (isSchedulerHome) nextParams.delete('range')
       else nextParams.set('range', nextRange)
       setSearchParams(nextParams, { replace: true })
+    }
+
+    // Keep schedule queries paused during an account handoff until the URL also
+    // belongs to the new owner. Otherwise the next effect can briefly adopt the
+    // previous employee's historical range before the router applies this reset.
+    if (!ownerChanged || selectionUrlMatches) {
+      setSelectionOwnerId(activeSelectionOwnerId)
     }
   }, [
     activeSelectionOwnerId,
