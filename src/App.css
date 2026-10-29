@@ -30243,7 +30243,8 @@ button.patrol-overview-row:focus-visible {
 
 .user-account-security-card--danger .account-control-kicker,
 .user-account-security-card--danger h4,
-.user-account-security-card--danger p {
+.user-account-security-card--danger p,
+.user-account-security-card--danger small {
   grid-column: 1;
 }
 
@@ -30277,6 +30278,198 @@ button.patrol-overview-row:focus-visible {
 .user-account-security-button-stack .secondary-button {
   width: 100%;
   min-height: 44px;
+}
+
+.modal-dialog--emergency-access {
+  width: min(760px, calc(100vw - 28px));
+}
+
+.emergency-access-workflow {
+  display: grid;
+  gap: 18px;
+  padding: 20px 22px 22px;
+}
+
+.emergency-access-workflow > label:not(.emergency-access-acknowledgment) {
+  display: grid;
+  gap: 7px;
+  color: light-dark(#413a30, #f5f1e8);
+  font-weight: 850;
+}
+
+.emergency-access-workflow textarea,
+.emergency-access-workflow input[type="text"],
+.emergency-access-workflow input:not([type]) {
+  width: 100%;
+}
+
+.emergency-access-workflow label small {
+  color: light-dark(#766c5d, #b9b2a7);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.emergency-access-impact {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+  padding: 16px;
+  border: 1px solid light-dark(#e2b9b2, #8e443b);
+  border-radius: 12px;
+  background: light-dark(#fff7f5, #3a201e);
+}
+
+.emergency-access-impact--restore {
+  border-color: light-dark(#c7d9ca, #3d7050);
+  background: light-dark(#f4faf5, #183124);
+}
+
+.emergency-access-impact strong,
+.emergency-access-impact p {
+  display: block;
+  margin: 0;
+}
+
+.emergency-access-impact p {
+  margin-top: 5px;
+  color: light-dark(#665b4d, #d1cbc0);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.emergency-access-acknowledgment {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid light-dark(#ded6ca, #44494e);
+  border-radius: 10px;
+  background: light-dark(#fbfaf7, #171b1f);
+  color: light-dark(#423a2f, #f5f1e8);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.emergency-access-acknowledgment input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+}
+
+.emergency-access-receipt {
+  display: grid;
+  gap: 15px;
+  padding: 18px;
+  border: 1px solid light-dark(#c7d9ca, #3d7050);
+  border-radius: 12px;
+  background: light-dark(#f4faf5, #183124);
+}
+
+.emergency-access-receipt--attention {
+  border-color: light-dark(#e2b9b2, #8e443b);
+  background: light-dark(#fff7f5, #3a201e);
+}
+
+.emergency-access-receipt h4,
+.emergency-access-receipt p {
+  margin: 0;
+}
+
+.emergency-access-receipt h4 {
+  margin-top: 4px;
+  color: light-dark(#28241d, #f5f1e8);
+  font-size: 19px;
+}
+
+.emergency-access-receipt p {
+  margin-top: 6px;
+  color: light-dark(#665e52, #d1cbc0);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.emergency-access-receipt dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 0;
+}
+
+.emergency-access-receipt dl div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid light-dark(#d9ded7, #375344);
+  border-radius: 9px;
+  background: light-dark(#fff, #171b1f);
+}
+
+.emergency-access-receipt dt {
+  color: light-dark(#756b5c, #b9b2a7);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.emergency-access-receipt dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: light-dark(#302a22, #f5f1e8);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.emergency-access-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.emergency-access-count-group {
+  display: grid;
+  gap: 8px;
+}
+
+.emergency-access-count-group > strong {
+  color: light-dark(#4d4438, #e1dacf);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.emergency-access-counts span {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: light-dark(#fff, #171b1f);
+  color: light-dark(#62594c, #d1cbc0);
+  font-size: 11px;
+}
+
+.emergency-access-counts strong {
+  color: light-dark(#2c271f, #f5f1e8);
+}
+
+@media (max-width: 620px) {
+  .emergency-access-workflow {
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .emergency-access-receipt dl {
+    grid-template-columns: 1fr;
+  }
+
+  .emergency-access-workflow .modal-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .emergency-access-workflow .modal-actions button {
+    width: 100%;
+  }
 }
 
 .user-account-onboarding-summary {

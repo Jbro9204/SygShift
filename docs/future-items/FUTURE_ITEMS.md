@@ -51,7 +51,7 @@ Build a defense-in-depth security program that materially reduces the likelihood
 #### Stage 3 — Identity, Session, and Account-Takeover Controls
 
 - [ ] Harden session storage and cookies using secure, HttpOnly, SameSite, rotation, idle-timeout, and absolute-lifetime controls where the current architecture supports them.
-- [ ] Revoke active sessions after password reset, MFA reset, protected-role downgrade, separation, account disablement, suspicious activity, and administrator-forced sign-out.
+- [ ] Revoke active sessions after password reset, MFA reset, protected-role downgrade, separation, account disablement, suspicious activity, and administrator-forced sign-out. (The comprehensive emergency employee-access control plane is implemented in the 10/29/2026 release candidate; production activation and the remaining automatic lifecycle triggers are still pending.)
 - [ ] Provide permission-controlled session and device inventory with clear revocation tools and append-only audit evidence.
 - [ ] Detect meaningful risk signals such as unusual IP or ASN changes, impossible travel, repeated failures, new-device anomalies, and abnormal privileged activity without relying on fixed-IP restrictions for remote personnel.
 - [ ] Keep the normal employee login flow unchanged; retain privileged-role MFA and optional FIDO2 security keys as stronger controls rather than universal employee requirements.
@@ -91,7 +91,7 @@ Build a defense-in-depth security program that materially reduces the likelihood
 #### Stage 8 — Incident Response, Recovery, and Governance
 
 - [ ] Create and rehearse response runbooks for stolen credentials, account takeover, malicious administration, data exfiltration, exposed secrets, ransomware, compromised uploads, and database corruption.
-- [ ] Provide tested emergency controls to revoke all sessions, disable an affected account or feature, rotate secrets, enter feature-specific read-only maintenance, and preserve forensic evidence.
+- [ ] Provide tested emergency controls to revoke all sessions, disable an affected account or feature, rotate secrets, enter feature-specific read-only maintenance, and preserve forensic evidence. (Employee-account revoke/restore with durable receipts is implemented in the 10/29/2026 release candidate. Secret rotation, feature controls, maintenance entry, rehearsal, and production verification remain open.)
 - [ ] Define encrypted backup and point-in-time-recovery coverage, independent restore verification, quarterly recovery drills, and approved recovery-time and recovery-point objectives.
 - [ ] Formalize joiner, mover, and leaver controls; quarterly access certification; vendor-security review; and administrator endpoint requirements including encryption, patching, antimalware, and prohibition of shared accounts.
 

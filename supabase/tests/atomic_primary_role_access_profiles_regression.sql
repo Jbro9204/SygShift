@@ -88,6 +88,12 @@ declare
   recovery_admin_auth constant uuid := 'e9310000-0000-4000-8000-000000000004';
   role_viewer_auth constant uuid := 'e9310000-0000-4000-8000-000000000005';
   unactivated_admin_auth constant uuid := 'e9310000-0000-4000-8000-000000000006';
+  admin_auth_session constant uuid := 'e9330000-0000-4000-8000-000000000001';
+  limited_auth_session constant uuid := 'e9330000-0000-4000-8000-000000000002';
+  role_manager_auth_session constant uuid := 'e9330000-0000-4000-8000-000000000003';
+  recovery_admin_auth_session constant uuid := 'e9330000-0000-4000-8000-000000000004';
+  role_viewer_auth_session constant uuid := 'e9330000-0000-4000-8000-000000000005';
+  unactivated_admin_auth_session constant uuid := 'e9330000-0000-4000-8000-000000000006';
   extra_role_id constant uuid := 'e9320000-0000-4000-8000-000000000001';
   retired_role_id constant uuid := 'e9320000-0000-4000-8000-000000000002';
   retired_guard_role_id constant uuid := 'e9320000-0000-4000-8000-000000000006';
@@ -171,6 +177,18 @@ begin
     (recovery_admin_auth, 'atomic-role-recovery@example.invalid'),
     (role_viewer_auth, 'atomic-role-viewer@example.invalid'),
     (unactivated_admin_auth, 'atomic-role-unactivated-admin@example.invalid');
+
+  -- The production identity boundary requires a live Supabase Auth session and
+  -- the matching session_id claim. Keep every authenticated fixture faithful
+  -- to that contract instead of relying on a subject-only synthetic JWT.
+  insert into auth.sessions(id, user_id, not_after)
+  values
+    (admin_auth_session, admin_auth, clock_timestamp() + interval '1 hour'),
+    (limited_auth_session, limited_auth, clock_timestamp() + interval '1 hour'),
+    (role_manager_auth_session, role_manager_auth, clock_timestamp() + interval '1 hour'),
+    (recovery_admin_auth_session, recovery_admin_auth, clock_timestamp() + interval '1 hour'),
+    (role_viewer_auth_session, role_viewer_auth, clock_timestamp() + interval '1 hour'),
+    (unactivated_admin_auth_session, unactivated_admin_auth, clock_timestamp() + interval '1 hour');
 
   insert into private.employee_accounts(employee_id, auth_user_id, activated_at)
   values
@@ -666,7 +684,9 @@ begin
 
   perform set_config('request.jwt.claim.sub', role_viewer_auth::text, true);
   perform set_config('request.jwt.claims', jsonb_build_object(
-    'sub', role_viewer_auth, 'role', 'authenticated', 'aal', 'aal1'
+    'sub', role_viewer_auth, 'role', 'authenticated', 'aal', 'aal1',
+    'session_id', role_viewer_auth_session,
+    'iat', floor(extract(epoch from clock_timestamp()))::bigint
   )::text, true);
 
   begin
@@ -677,7 +697,9 @@ begin
   end;
 
   perform set_config('request.jwt.claims', jsonb_build_object(
-    'sub', role_viewer_auth, 'role', 'authenticated', 'aal', 'aal2'
+    'sub', role_viewer_auth, 'role', 'authenticated', 'aal', 'aal2',
+    'session_id', role_viewer_auth_session,
+    'iat', floor(extract(epoch from clock_timestamp()))::bigint
   )::text, true);
   payload := public.get_access_control_center();
   assert jsonb_typeof(payload -> 'users') = 'array',
@@ -745,7 +767,9 @@ begin
 
   perform set_config('request.jwt.claim.sub', limited_auth::text, true);
   perform set_config('request.jwt.claims', jsonb_build_object(
-    'sub', limited_auth, 'role', 'authenticated', 'aal', 'aal2'
+    'sub', limited_auth, 'role', 'authenticated', 'aal', 'aal2',
+    'session_id', limited_auth_session,
+    'iat', floor(extract(epoch from clock_timestamp()))::bigint
   )::text, true);
 
   begin
@@ -866,7 +890,9 @@ begin
   -- AAL2. It does not require admin.users.manage for the roles-only endpoint.
   perform set_config('request.jwt.claim.sub', role_manager_auth::text, true);
   perform set_config('request.jwt.claims', jsonb_build_object(
-    'sub', role_manager_auth, 'role', 'authenticated', 'aal', 'aal1'
+    'sub', role_manager_auth, 'role', 'authenticated', 'aal', 'aal1',
+    'session_id', role_manager_auth_session,
+    'iat', floor(extract(epoch from clock_timestamp()))::bigint
   )::text, true);
 
   perform set_config('sygshift.role_creation_actor_id', role_manager_employee::text, true);
@@ -920,7 +946,9 @@ begin
   end;
 
   perform set_config('request.jwt.claims', jsonb_build_object(
-    'sub', role_manager_auth, 'role', 'authenticated', 'aal', 'aal2'
+    'sub', role_manager_auth, 'role', 'authenticated', 'aal', 'aal2',
+    'session_id', role_manager_auth_session,
+    'iat', floor(extract(epoch from clock_timestamp()))::bigint
   )::text, true);
 
   assert public.has_effective_permission('admin.roles.manage')
@@ -1275,7 +1303,9 @@ begin
 
   perform set_config('request.jwt.claim.sub', admin_auth::text, true);
   perform set_config('request.jwt.claims', jsonb_build_object(
-    'sub', admin_auth, 'role', 'authenticated', 'aal', 'aal2'
+    'sub', admin_auth, 'role', 'authenticated', 'aal', 'aal2',
+    'session_id', admin_auth_session,
+    'iat', floor(extract(epoch from clock_timestamp()))::bigint
   )::text, true);
 
   perform public.set_access_role_permissions(admin_role_id, admin_permission_codes);
@@ -1653,7 +1683,9 @@ begin
 
   perform set_config('request.jwt.claim.sub', role_manager_auth::text, true);
   perform set_config('request.jwt.claims', jsonb_build_object(
-    'sub', role_manager_auth, 'role', 'authenticated', 'aal', 'aal2'
+    'sub', role_manager_auth, 'role', 'authenticated', 'aal', 'aal2',
+    'session_id', role_manager_auth_session,
+    'iat', floor(extract(epoch from clock_timestamp()))::bigint
   )::text, true);
 
   assert not public.is_admin(),
@@ -1744,7 +1776,9 @@ begin
 
   perform set_config('request.jwt.claim.sub', admin_auth::text, true);
   perform set_config('request.jwt.claims', jsonb_build_object(
-    'sub', admin_auth, 'role', 'authenticated', 'aal', 'aal2'
+    'sub', admin_auth, 'role', 'authenticated', 'aal', 'aal2',
+    'session_id', admin_auth_session,
+    'iat', floor(extract(epoch from clock_timestamp()))::bigint
   )::text, true);
 
   perform public.admin_update_employee(
@@ -1862,14 +1896,19 @@ begin
 
   begin
     perform public.admin_set_employee_account_state(recovery_admin_employee, true);
-    raise exception 'The final recovery-capable Admin account was disabled.';
-  exception when check_violation then
+    raise exception 'The retired browser account-state RPC remained callable.';
+  exception when insufficient_privilege or feature_not_supported then
     null;
   end;
   assert exists (
     select 1 from private.employee_accounts
     where employee_id = recovery_admin_employee and disabled_at is null
-  ), 'The denied final-recovery Admin disable changed the account.';
+  ), 'The retired account-state RPC changed the account.';
+  assert not has_function_privilege(
+    'authenticated',
+    'public.admin_set_employee_account_state(uuid,boolean)',
+    'EXECUTE'
+  ), 'Authenticated callers retained the unsafe timestamp-only account toggle.';
 
   begin
     perform public.admin_separate_employee(
@@ -1905,7 +1944,7 @@ begin
       'public.admin_update_employee(uuid,text,text,text,text,public.app_role,public.employment_type,public.employee_status,text,text,text,text,text)'::regprocedure
     )) > 0
     and position('pg_advisory_xact_lock' in pg_get_functiondef(
-      'public.admin_set_employee_account_state(uuid,boolean)'::regprocedure
+      'private.begin_emergency_access_operation(text,uuid,uuid,uuid,text,text,boolean,uuid,text,timestamp with time zone)'::regprocedure
     )) > 0
     and position('pg_advisory_xact_lock' in pg_get_functiondef(
       'private.separate_employee_account_and_future_work(uuid,uuid,text,date)'::regprocedure

@@ -147,6 +147,60 @@ const welcomeEmailResponseSchema = z.object({
   username: z.string(),
 })
 
+const emergencyAccessAccountStateSchema = z.enum([
+  'active',
+  'restoration_attention',
+  'revocation_pending',
+  'revoked',
+  'revocation_attention',
+  'restoration_pending',
+  'legacy_disabled',
+  'not_created',
+])
+
+const emergencyAccessCountsSchema = z.record(z.string(), z.number().int().nonnegative())
+
+const emergencyAccessOperationSchema = z.object({
+  action: z.enum(['revoke', 'restore']),
+  cleanupCounts: emergencyAccessCountsSchema.optional(),
+  operationRequestId: z.string().uuid(),
+  providerResult: z.record(z.string(), z.unknown()).optional(),
+  reason: z.string(),
+  status: z.string(),
+}).passthrough()
+
+const employeeEmergencyAccessStateSchema = z.object({
+  accountState: emergencyAccessAccountStateSchema,
+  activeSessionCounts: emergencyAccessCountsSchema.optional(),
+  authBanned: z.boolean().nullable(),
+  counts: emergencyAccessCountsSchema.optional(),
+  disabledAt: z.string().nullable(),
+  displayName: z.string(),
+  emergencyRevocationId: z.string().uuid().nullable().optional(),
+  employeeId: z.string().uuid(),
+  latestOperation: emergencyAccessOperationSchema.nullable().optional(),
+  operation: emergencyAccessOperationSchema.optional(),
+  recoveryEmailMasked: z.string().nullable().optional(),
+  revocationId: z.string().uuid().nullable().optional(),
+  username: z.string(),
+}).passthrough().transform((state) => ({
+  ...state,
+  activeSessionCounts: state.activeSessionCounts ?? {},
+  counts: state.counts ?? state.latestOperation?.cleanupCounts ?? {},
+  operation: state.operation ?? state.latestOperation ?? undefined,
+  revocationId: state.revocationId ?? state.emergencyRevocationId ?? null,
+}))
+
+const employeeEmergencyAccessResponseSchema = z.object({
+  action: z.enum(['revoke', 'restore']).optional(),
+  detail: z.string().optional(),
+  operationId: z.string().uuid().optional(),
+  recoveryEmailMasked: z.string().nullable().optional(),
+  requestId: z.string(),
+  state: employeeEmergencyAccessStateSchema,
+  status: z.string().optional(),
+}).passthrough()
+
 const recentlyDeletedRecordSchema = z.object({
   id: z.string().uuid(),
   recordType: z.enum(['employee', 'site', 'post']),
@@ -196,6 +250,15 @@ export type WelcomeEmailResult = z.infer<typeof welcomeEmailResponseSchema>
 export type RecentlyDeletedRecord = z.infer<typeof recentlyDeletedRecordSchema>
 export type DeleteEmployeeResult = z.infer<typeof deleteEmployeeResponseSchema>
 export type EmployeeRemovalPreview = z.infer<typeof employeeRemovalPreviewSchema>
+export type EmployeeEmergencyAccessState = z.infer<typeof employeeEmergencyAccessStateSchema>
+export type EmployeeEmergencyAccessResult = z.infer<typeof employeeEmergencyAccessResponseSchema>
+
+export interface EmployeeEmergencyAccessInput {
+  acknowledged: true
+  confirmationUsername: string
+  operationRequestId: string
+  reason: string
+}
 
 export interface EmployeeMutationInput {
   employeeId?: string
@@ -264,10 +327,12 @@ async function authHeaders(): Promise<Headers> {
 }
 
 async function adminApiRequest(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = await authHeaders()
+  new Headers(init.headers).forEach((value, key) => headers.set(key, value))
   return fetchWithIdentityVerification(async () => fetch(path, {
     ...init,
     cache: 'no-store',
-    headers: await authHeaders(),
+    headers,
   }))
 }
 
@@ -339,13 +404,55 @@ export async function upsertEmployeeCredential(input: EmployeeCredentialMutation
   return withLegalDisplayName(adminUserSchema.parse(data))
 }
 
-export async function setEmployeeAccountState(employeeId: string, disabled: boolean): Promise<AdminUser> {
-  const { data, error } = await getSupabaseClient().rpc('admin_set_employee_account_state', {
-    target_disabled: disabled,
-    target_employee_id: employeeId,
+export async function getEmployeeEmergencyAccessState(employeeId: string): Promise<EmployeeEmergencyAccessState> {
+  const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/emergency-access`, {
+    method: 'GET',
   })
-  if (error) throw new Error(error.message || 'Account state could not be changed.')
-  return withLegalDisplayName(adminUserSchema.parse(data))
+  return employeeEmergencyAccessResponseSchema.parse(await parseApiResponse(response)).state
+}
+
+async function changeEmployeeEmergencyAccess(
+  employeeId: string,
+  action: 'revoke' | 'restore',
+  input: EmployeeEmergencyAccessInput,
+): Promise<EmployeeEmergencyAccessResult> {
+  const operationRequestId = z.string().uuid().parse(input.operationRequestId)
+  const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/emergency-access/${action}`, {
+    body: JSON.stringify({
+      acknowledged: input.acknowledged,
+      confirmationUsername: input.confirmationUsername.trim(),
+      operationRequestId,
+      reason: input.reason.trim(),
+    }),
+    headers: { 'idempotency-key': operationRequestId },
+    method: 'POST',
+  })
+  const payload = await response.json().catch(() => null)
+  const receipt = employeeEmergencyAccessResponseSchema.safeParse(payload)
+  if (receipt.success) return receipt.data
+  if (!response.ok) {
+    const detail = typeof payload?.detail === 'string'
+      ? payload.detail
+      : typeof payload?.error === 'string'
+        ? payload.error.replaceAll('_', ' ')
+        : 'The emergency access request failed before a verified receipt was available.'
+    throw new Error(detail)
+  }
+  throw new Error('The emergency access response could not be verified. No security action is being reported as complete.')
+}
+
+export async function revokeEmployeeEmergencyAccess(
+  employeeId: string,
+  input: EmployeeEmergencyAccessInput,
+): Promise<EmployeeEmergencyAccessResult> {
+  return changeEmployeeEmergencyAccess(employeeId, 'revoke', input)
+}
+
+export async function restoreEmployeeEmergencyAccess(
+  employeeId: string,
+  input: EmployeeEmergencyAccessInput,
+): Promise<EmployeeEmergencyAccessResult> {
+  return changeEmployeeEmergencyAccess(employeeId, 'restore', input)
 }
 
 export async function revokeEmployeeTrustedDevices(employeeId: string): Promise<number> {

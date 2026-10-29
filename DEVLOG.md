@@ -1,5 +1,16 @@
 # SygShift Development Log
 
+## 10/29/2026 - Emergency Access Revocation Control Plane (release candidate)
+
+- Replaced the misleading browser-direct login toggle in the release candidate with one SygShift-owned emergency access workflow for verified state, full revocation, and controlled restoration.
+- Added fail-closed database markers, session epochs and tombstones, idempotent operation receipts, append-only event evidence, exact permission and recent-MFA checks, self/final-recovery-admin protection, and source-safe restoration.
+- Added Worker orchestration for supported Supabase Auth password rotation, provider ban/unban, recovery-link delivery, provider/session verification, and durable partial results. Provider or delivery failure leaves the account blocked and retryable; it never re-enables access as compensation.
+- Added a deliberate User Accounts workflow requiring an exact username, written reason, preservation acknowledgment, and stable operation identifier. The interface distinguishes completed cleanup from access that remains active and never reports an unverifiable operation as successful.
+- Preserved employment, identity, roles, permissions, schedules, assignments, punches, time corrections, payroll, licensing, clients, documents, MFA factors, and historical audit records. Restoration does not revive old passwords, sessions, trusted devices, or shared sessions.
+- Added forward migration `20261029225323_emergency_access_revocation_control_plane.sql`, rollback-only database regression coverage, fingerprint-gated atomic activation tooling, Worker authorization/provider/failure-path tests, browser contract guardrails, and rendered User Accounts interaction tests.
+- Final candidate verification passed 387 application test files / 2,275 tests with one intentional skip, 189 release-control tests, the 42-check desktop/mobile Time Clock matrix, exact toolchain/type/lint/build/static-asset gates, and the generated rollback-only production database rehearsal with no retained candidate object, fixture, Auth session, refresh token, or ledger row.
+- Production migration activation, exact-source push/CI/deploy, health/readiness, and live non-mutating Admin workflow verification remain pending and must be recorded in the dated changelog before release is called complete.
+
 ## 10/23/2026 - Required-Action Checkpoint Resilience
 
 - Corrected the older AppShell policy flaw that converted any required-action detail-query failure into a positive blocking checkpoint and replaced the employee's verified workspace.

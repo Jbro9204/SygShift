@@ -22,6 +22,7 @@ import {
   createEmployee,
   credentialsToCsv,
   getEmployeeRemovalPreview,
+  getEmployeeEmergencyAccessState,
   getEmployeeSecurityKeys,
   getAdminUserDirectory,
   getRecentlyDeletedEmployees,
@@ -30,11 +31,12 @@ import {
   revokeEmployeeSecurityKey,
   revokeEmployeeTrustedDevices,
   removeSeparatedEmployee,
+  restoreEmployeeEmergencyAccess,
+  revokeEmployeeEmergencyAccess,
   sendAllEmployeeLoginEmails,
   sendEmployeeLoginEmail,
   sendEmployeePasswordReset,
   sendEmployeeWelcomeEmail,
-  setEmployeeAccountState,
   updateEmployee,
   type AdminUser,
   type AdminUserDirectory,
@@ -43,6 +45,8 @@ import {
   type EmployeeStatus,
   type EmploymentType,
   type EmployeeRemovalPreview,
+  type EmployeeEmergencyAccessResult,
+  type EmployeeEmergencyAccessState,
   type ProvisioningCredential,
 } from '../data/adminUsers'
 import { continentalUsTimeZones } from '../lib/usTimeZones'
@@ -86,6 +90,28 @@ const employmentLabels: Record<EmploymentType, string> = {
 
 const EMPTY_USERS: AdminUser[] = []
 const EMPTY_ACCESS_ROLES: AccessRoleDefinition[] = []
+
+const emergencyAccessLabels: Record<EmployeeEmergencyAccessState['accountState'], string> = {
+  active: 'Access is active',
+  legacy_disabled: 'Legacy disabled account',
+  not_created: 'Login has not been created',
+  restoration_attention: 'Restoration needs attention',
+  restoration_pending: 'Restoration is pending',
+  revocation_attention: 'Revocation needs attention',
+  revocation_pending: 'Revocation is in progress',
+  revoked: 'All access is revoked',
+}
+
+const emergencyAccessDescriptions: Record<EmployeeEmergencyAccessState['accountState'], string> = {
+  active: 'No emergency access block is active.',
+  legacy_disabled: 'This account was disabled by the retired login-only control. Its prior disable reason is preserved and it cannot be reopened through the emergency restoration workflow.',
+  not_created: 'There is no login account to revoke.',
+  restoration_attention: 'The account remains blocked. Review the operation receipt and resume restoration; do not report access as restored.',
+  restoration_pending: 'The account remains blocked while recovery delivery and provider verification finish.',
+  revocation_attention: 'The account remains blocked. Review the operation receipt and resume cleanup; do not treat this as a completed revocation.',
+  revocation_pending: 'The application block is active while remaining sessions and provider access are being verified.',
+  revoked: 'The password was rotated, provider login was banned, and prior sessions and devices cannot return.',
+}
 
 type AccountActivityFilter = 'all' | 'pending_setup' | 'activated' | 'signed_in' | 'never_signed_in'
 type PresenceFilter = 'all' | PlatformPresenceStatus
@@ -431,7 +457,7 @@ export function EmployeeForm({
   )
 }
 
-function ManageUserModal({
+export function ManageUserModal({
   accessRoles,
   accessRolesReady,
   actorEmployeeId,
@@ -441,6 +467,7 @@ function ManageUserModal({
   canEditAdminRole,
   canEditBasic,
   canViewAdminRoles,
+  canManageEmergencyAccess,
   canManageLogin,
   canResetPassword,
   canSendNewUserInvites,
@@ -457,6 +484,7 @@ function ManageUserModal({
   canEditAdminRole: boolean
   canEditBasic: boolean
   canViewAdminRoles: boolean
+  canManageEmergencyAccess: boolean
   canManageLogin: boolean
   canResetPassword: boolean
   canSendNewUserInvites: boolean
@@ -477,6 +505,7 @@ function ManageUserModal({
   const [securityKeyMessage, setSecurityKeyMessage] = useState<string | null>(null)
   const [confirmingMfaReset, setConfirmingMfaReset] = useState(false)
   const [removingEmployee, setRemovingEmployee] = useState(false)
+  const [emergencyAction, setEmergencyAction] = useState<'revoke' | 'restore' | null>(null)
   const deliveryEmail = preferredEmployeeDeliveryEmail(employee.personalEmail, employee.companyEmail)
   const assignedRoleNames = [...new Set([
     accessRoles.find((role) => role.systemRole && role.baseAppRole === employee.role)?.name ?? roleLabels[employee.role],
@@ -488,6 +517,12 @@ function ManageUserModal({
     enabled: activeTab === 'security' && canManageLogin && employee.accountStatus === 'active',
     queryFn: () => getEmployeeSecurityKeys(employee.id),
     queryKey: ['employee-security-keys', employee.id],
+  })
+  const emergencyAccessQuery = useQuery({
+    enabled: activeTab === 'security' && canManageEmergencyAccess && employee.accountStatus !== 'not_created',
+    queryFn: () => getEmployeeEmergencyAccessState(employee.id),
+    queryKey: ['employee-emergency-access', employee.id],
+    refetchOnWindowFocus: true,
   })
 
   const updateMutation = useMutation({
@@ -516,15 +551,6 @@ function ManageUserModal({
       if (center) queryClient.setQueryData(['access-control-center'], center)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
       await queryClient.invalidateQueries({ queryKey: ['access-control-center'], refetchType: 'active' })
-    },
-  })
-  const accountStateMutation = useMutation({
-    mutationFn: (disabled: boolean) => setEmployeeAccountState(employee.id, disabled),
-    onSuccess: async (updatedEmployee) => {
-      queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) =>
-        replaceDirectoryUser(current, updatedEmployee),
-      )
-      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
     },
   })
   const revokeTrustedDevicesMutation = useMutation({
@@ -576,7 +602,6 @@ function ManageUserModal({
     },
   })
   const modalBusy = updateMutation.isPending
-    || accountStateMutation.isPending
     || revokeTrustedDevicesMutation.isPending
     || resetMfaMutation.isPending
     || revokeSecurityKeyMutation.isPending
@@ -609,6 +634,23 @@ function ManageUserModal({
     && employee.status !== 'separated'
     && (actorIsPrimaryAdmin || employee.role !== 'admin')
   const canSaveEmployeeForm = canEditProfileFields || canManageEmployeeRoles
+  const emergencyState = emergencyAccessQuery.data
+  const effectiveEmergencyState = emergencyState?.accountState
+    ?? (employee.accountStatus === 'not_created' ? 'not_created' : employee.accountStatus === 'disabled' ? 'legacy_disabled' : 'active')
+  const emergencyStateVerified = !canManageEmergencyAccess
+    || employee.accountStatus === 'not_created'
+    || emergencyAccessQuery.isSuccess
+  const routineSecurityActionsAvailable = emergencyStateVerified && effectiveEmergencyState === 'active'
+  const revokeActionAvailable = canManageEmergencyAccess
+    && emergencyAccessQuery.isSuccess
+    && employee.accountStatus !== 'not_created'
+    && employee.id !== actorEmployeeId
+    && ['active', 'revocation_pending', 'revocation_attention'].includes(effectiveEmergencyState)
+  const restoreActionAvailable = canManageEmergencyAccess
+    && emergencyAccessQuery.isSuccess
+    && employee.status === 'active'
+    && employee.id !== actorEmployeeId
+    && ['revoked', 'restoration_pending', 'restoration_attention'].includes(effectiveEmergencyState)
 
   function closeWorkspace() {
     if (profileDirty && !window.confirm('Discard the unsaved employee profile changes?')) return
@@ -751,14 +793,10 @@ function ManageUserModal({
             <div className="user-account-security-grid">
               <article className="user-account-security-card user-account-security-card--status">
                 <AccountStatusBadge user={employee} />
-                <strong>{employee.accountStatus === 'not_created' ? 'Login has not been created' : employee.accountStatus === 'disabled' ? 'Login is disabled' : 'Login is active'}</strong>
-                <p>{employee.accountStatus === 'not_created'
-                  ? 'Use Onboarding to create access and send approved login instructions.'
-                  : employee.accountStatus === 'disabled'
-                    ? 'The employee cannot sign in until login access is enabled.'
-                    : employee.account?.activatedAt
-                      ? 'The employee has completed initial account setup.'
-                      : 'The login exists and is waiting for the employee to complete initial setup.'}</p>
+                <strong>{emergencyAccessLabels[effectiveEmergencyState]}</strong>
+                <p>{emergencyAccessDescriptions[effectiveEmergencyState]}</p>
+                {canManageEmergencyAccess && emergencyAccessQuery.isPending ? <small>Verifying every access surface…</small> : null}
+                {canManageEmergencyAccess && emergencyAccessQuery.isError ? <div className="inline-alert" role="alert">Access state could not be verified. No security action is being reported as complete.</div> : null}
               </article>
               {canManageLogin || canResetPassword ? (
                 <article className="user-account-security-card user-account-security-card--actions">
@@ -771,27 +809,27 @@ function ManageUserModal({
                         <KeyRound aria-hidden="true" size={18} /> Open onboarding
                       </button>
                     ) : null}
-                    {canResetPassword && employee.accountStatus === 'active' && employee.account?.activatedAt ? (
+                    {canResetPassword && routineSecurityActionsAvailable && employee.accountStatus === 'active' && employee.account?.activatedAt ? (
                       <button className="primary-action" disabled={passwordResetMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => { setPasswordResetMessage(null); passwordResetMutation.mutate() }} type="button">
                         <Mail aria-hidden="true" size={18} /> {passwordResetMutation.isPending ? 'Sending reset…' : 'Send password reset'}
                       </button>
                     ) : null}
-                    {canSendNewUserInvites && employee.accountStatus === 'active' && !employee.account?.activatedAt ? (
+                    {canSendNewUserInvites && routineSecurityActionsAvailable && employee.accountStatus === 'active' && !employee.account?.activatedAt ? (
                       <button className="primary-action" disabled={employee.status !== 'active'} onClick={() => setActiveTab('onboarding')} type="button">
                         <Mail aria-hidden="true" size={18} /> Open login instructions
                       </button>
                     ) : null}
-                    {canManageLogin && employee.accountStatus === 'disabled' && employee.account ? (
-                      <button className="primary-action" disabled={accountStateMutation.isPending} onClick={() => accountStateMutation.mutate(false)} type="button">
-                        <LockKeyhole aria-hidden="true" size={18} /> {accountStateMutation.isPending ? 'Enabling…' : 'Enable login'}
+                    {restoreActionAvailable ? (
+                      <button className="primary-action" disabled={emergencyAccessQuery.isFetching || !deliveryEmail} onClick={() => setEmergencyAction('restore')} type="button">
+                        <LockKeyhole aria-hidden="true" size={18} /> Review access restoration
                       </button>
                     ) : null}
-                    {canManageLogin && employee.accountStatus === 'active' && employee.account && !confirmingMfaReset ? (
+                    {canManageLogin && routineSecurityActionsAvailable && employee.accountStatus === 'active' && employee.account && !confirmingMfaReset ? (
                       <button className="secondary-button" disabled={resetMfaMutation.isPending} onClick={() => { setMfaResetMessage(null); setConfirmingMfaReset(true) }} type="button">
                         <RotateCcw aria-hidden="true" size={18} /> Reset MFA setup
                       </button>
                     ) : null}
-                    {canManageLogin && employee.accountStatus === 'active' && employee.account && (employee.account.trustedDeviceCount ?? 0) > 0 ? (
+                    {canManageLogin && routineSecurityActionsAvailable && employee.accountStatus === 'active' && employee.account && (employee.account.trustedDeviceCount ?? 0) > 0 ? (
                       <button className="secondary-button" disabled={revokeTrustedDevicesMutation.isPending} onClick={() => revokeTrustedDevicesMutation.mutate()} type="button">
                         <ShieldAlert aria-hidden="true" size={18} /> Revoke remembered devices ({employee.account.trustedDeviceCount})
                       </button>
@@ -809,9 +847,10 @@ function ManageUserModal({
                   ) : null}
                   {employee.status !== 'active' ? <small>Only active employees can receive login accounts.</small> : null}
                   {!deliveryEmail && employee.accountStatus === 'active' ? <small>Add an approved personal email before sending a password reset.</small> : null}
+                  {!deliveryEmail && restoreActionAvailable ? <small>Add an approved personal email before restoring access. Restoration requires a fresh recovery link.</small> : null}
                 </article>
               ) : null}
-              {canManageLogin && employee.accountStatus === 'active' ? (
+              {canManageLogin && routineSecurityActionsAvailable && employee.accountStatus === 'active' ? (
                 <article className="user-account-security-card user-account-security-card--keys">
                   <span className="account-control-kicker">Physical security keys</span>
                   <h4>Registered FIDO2 keys</h4>
@@ -844,25 +883,29 @@ function ManageUserModal({
                   ) : !securityKeysQuery.isPending && !securityKeysQuery.isError ? <p className="user-account-security-key-empty">No physical security keys are registered.</p> : null}
                 </article>
               ) : null}
-              {!canManageLogin && !canResetPassword ? (
+              {!canManageLogin && !canResetPassword && !canManageEmergencyAccess ? (
                 <article className="user-account-security-card user-account-security-card--actions">
                   <span className="account-control-kicker">Read only</span>
                   <h4>Security actions unavailable</h4>
                   <p>This permission level can review account status but cannot change login access.</p>
                 </article>
               ) : null}
-              {canManageLogin && employee.accountStatus === 'active' && employee.account ? (
+              {canManageEmergencyAccess && employee.accountStatus !== 'not_created' && employee.account ? (
                 <article className="user-account-security-card user-account-security-card--danger">
                   <span className="account-control-kicker">Danger zone</span>
-                  <h4>Disable login access</h4>
-                  <p>The employee will be signed out and cannot return until access is enabled.</p>
-                  <button className="secondary-button danger-button" disabled={accountStateMutation.isPending} onClick={() => accountStateMutation.mutate(true)} type="button">
-                    <LockKeyhole aria-hidden="true" size={18} /> {accountStateMutation.isPending ? 'Disabling…' : 'Disable login'}
-                  </button>
+                  <h4>Emergency access control</h4>
+                  <p>Revocation blocks the application first, rotates the password, bans provider login, ends sessions, and clears trusted access without changing employment, schedules, punches, payroll, roles, or audit history.</p>
+                  {effectiveEmergencyState === 'legacy_disabled' ? (
+                    <small>Use a dedicated access review before changing this older disable state. Emergency restoration will not erase it.</small>
+                  ) : (
+                    <button className="secondary-button danger-button" disabled={!revokeActionAvailable || emergencyAccessQuery.isFetching} onClick={() => setEmergencyAction('revoke')} type="button">
+                      <LockKeyhole aria-hidden="true" size={18} /> {effectiveEmergencyState === 'active' ? 'Revoke all access' : 'Resume full revocation'}
+                    </button>
+                  )}
+                  {employee.id === actorEmployeeId ? <small>You cannot revoke your own access.</small> : null}
                 </article>
               ) : null}
             </div>
-            {accountStateMutation.isError ? <div className="inline-alert" role="alert">{accountStateMutation.error.message}</div> : null}
             {passwordResetMessage ? <div className="form-feedback form-feedback--success" role="status">{passwordResetMessage}</div> : null}
             {trustedDeviceMessage ? <div className="form-feedback form-feedback--success" role="status">{trustedDeviceMessage}</div> : null}
             {mfaResetMessage ? <div className="form-feedback form-feedback--success" role="status">{mfaResetMessage}</div> : null}
@@ -939,6 +982,177 @@ function ManageUserModal({
           }}
         />
       ) : null}
+      {emergencyAction ? (
+        <EmployeeEmergencyAccessModal
+          action={emergencyAction}
+          employee={employee}
+          onClose={() => setEmergencyAction(null)}
+          onRecheck={async () => {
+            await queryClient.invalidateQueries({ queryKey: ['employee-emergency-access', employee.id], refetchType: 'active' })
+          }}
+          onStateChanged={async (state) => {
+            queryClient.setQueryData(['employee-emergency-access', employee.id], state)
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ['employee-emergency-access', employee.id], refetchType: 'active' }),
+              queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' }),
+              queryClient.invalidateQueries({ queryKey: ['platform-presence-directory'], refetchType: 'active' }),
+              queryClient.invalidateQueries({ queryKey: ['employee-security-keys', employee.id], refetchType: 'active' }),
+            ])
+          }}
+          state={emergencyState}
+        />
+      ) : null}
+    </ModalDialog>
+  )
+}
+
+export function EmployeeEmergencyAccessModal({
+  action,
+  employee,
+  onClose,
+  onRecheck,
+  onStateChanged,
+  state,
+}: {
+  action: 'revoke' | 'restore'
+  employee: AdminUser
+  onClose: () => void
+  onRecheck: () => Promise<void>
+  onStateChanged: (state: EmployeeEmergencyAccessState) => Promise<void>
+  state: EmployeeEmergencyAccessState | undefined
+}) {
+  const resumableOperation = state?.operation?.action === action
+    && ['provider_pending', 'provider_failed'].includes(state.operation.status)
+    ? state.operation
+    : null
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [confirmation, setConfirmation] = useState('')
+  const [operationRequestId] = useState(() => resumableOperation?.operationRequestId ?? crypto.randomUUID())
+  const [reason, setReason] = useState(() => resumableOperation?.reason ?? '')
+  const [result, setResult] = useState<EmployeeEmergencyAccessResult | null>(null)
+  const mutation = useMutation({
+    mutationFn: () => {
+      const input = {
+        acknowledged: true as const,
+        confirmationUsername: confirmation,
+        operationRequestId,
+        reason,
+      }
+      return action === 'revoke'
+        ? revokeEmployeeEmergencyAccess(employee.id, input)
+        : restoreEmployeeEmergencyAccess(employee.id, input)
+    },
+    onSuccess: async (nextResult) => {
+      setResult(nextResult)
+      await onStateChanged(nextResult.state)
+    },
+    onError: async () => {
+      await onRecheck().catch(() => undefined)
+    },
+  })
+  const reasonLength = reason.trim().length
+  const confirmed = confirmation.trim() === employee.username
+  const canSubmit = acknowledged && confirmed && reasonLength >= 10 && reasonLength <= 1000
+  const completed = result
+    ? action === 'revoke'
+      ? result.state.accountState === 'revoked'
+      : result.state.accountState === 'active'
+    : false
+  const currentState = result?.state ?? state
+  const cleanupCountEntries = Object.entries(currentState?.counts ?? {}).sort(([left], [right]) => left.localeCompare(right))
+  const activeCountEntries = Object.entries(currentState?.activeSessionCounts ?? {}).sort(([left], [right]) => left.localeCompare(right))
+  const actionTitle = action === 'revoke' ? `Revoke all access for ${employee.displayName}?` : `Restore access for ${employee.displayName}?`
+
+  return (
+    <ModalDialog
+      busy={mutation.isPending}
+      busyLabel={action === 'revoke' ? 'Revoking and verifying every access surface…' : 'Preparing secure recovery and verifying restoration…'}
+      className="modal-dialog--emergency-access"
+      description={action === 'revoke'
+        ? 'This is an emergency security action. It does not terminate the employee or change operational records.'
+        : 'Restoration creates new recovery access. It never revives old sessions, remembered devices, or passwords.'}
+      onClose={onClose}
+      title={actionTitle}
+    >
+      <div className="emergency-access-workflow">
+        <div className={`emergency-access-impact emergency-access-impact--${action}`}>
+          {action === 'revoke' ? <ShieldAlert aria-hidden="true" size={24} /> : <ShieldCheck aria-hidden="true" size={24} />}
+          <div>
+            <strong>{action === 'revoke' ? 'What this revokes' : 'What restoration does'}</strong>
+            <p>{action === 'revoke'
+              ? 'SygShift and connected-platform access, provider login, passwords, sessions, trusted devices, presence, and push registrations are blocked or ended. Employment, roles, schedules, punches, payroll, licensing, client records, and audit history remain unchanged.'
+              : 'A fresh password-recovery link is sent to the approved employee email, the provider ban is removed, and only this matching emergency block is cleared after verification. The employee signs in again as a new session.'}</p>
+          </div>
+        </div>
+
+        {result ? (
+          <section className={`emergency-access-receipt ${completed ? 'emergency-access-receipt--complete' : 'emergency-access-receipt--attention'}`} aria-live="polite">
+            <div>
+              <span className="account-control-kicker">Operation receipt</span>
+              <h4>{completed ? (action === 'revoke' ? 'Access revocation verified' : 'Access restoration verified') : 'Operation needs attention'}</h4>
+              <p>{completed
+                ? emergencyAccessDescriptions[result.state.accountState]
+                : result.detail ?? emergencyAccessDescriptions[result.state.accountState]}</p>
+            </div>
+            <dl>
+              <div><dt>Operation ID</dt><dd>{result.operationId ?? operationRequestId}</dd></div>
+              <div><dt>Request ID</dt><dd>{result.requestId}</dd></div>
+              <div><dt>Final state</dt><dd>{emergencyAccessLabels[result.state.accountState]}</dd></div>
+              {result.recoveryEmailMasked ?? result.state.recoveryEmailMasked ? <div><dt>Recovery sent to</dt><dd>{result.recoveryEmailMasked ?? result.state.recoveryEmailMasked}</dd></div> : null}
+            </dl>
+            {cleanupCountEntries.length ? (
+              <div className="emergency-access-count-group">
+                <strong>Cleanup completed</strong>
+                <div className="emergency-access-counts" aria-label="Verified access cleanup counts">
+                  {cleanupCountEntries.map(([key, count]) => <span key={key}><strong>{count}</strong> {key.replaceAll(/([A-Z_])/g, ' $1').replaceAll('_', ' ').trim()}</span>)}
+                </div>
+              </div>
+            ) : null}
+            {activeCountEntries.length ? (
+              <div className="emergency-access-count-group">
+                <strong>Still active after verification</strong>
+                <div className="emergency-access-counts" aria-label="Remaining active access counts">
+                  {activeCountEntries.map(([key, count]) => <span key={key}><strong>{count}</strong> {key.replaceAll(/([A-Z_])/g, ' $1').replaceAll('_', ' ').trim()}</span>)}
+                </div>
+              </div>
+            ) : null}
+            <div className="modal-actions">
+              {!completed ? <button className="secondary-button" disabled={mutation.isPending} onClick={onClose} type="button">Close for now</button> : null}
+              {!completed ? (
+                <button className="primary-action" disabled={mutation.isPending} onClick={() => mutation.mutate()} type="button">
+                  <RotateCcw aria-hidden="true" size={18} /> Retry same operation
+                </button>
+              ) : <button className="primary-action" onClick={onClose} type="button">Close receipt</button>}
+            </div>
+          </section>
+        ) : (
+          <>
+            <label>
+              <span>Required security reason</span>
+              <textarea maxLength={1000} onChange={(event) => setReason(event.target.value)} placeholder={action === 'revoke' ? 'Example: Immediate access removal requested while employment status is reviewed.' : 'Example: Access restoration approved after identity and employment status were verified.'} rows={4} value={reason} />
+              <small>{reasonLength}/1000 characters. Enter at least 10.</small>
+            </label>
+            <label>
+              <span>Type <strong>{employee.username}</strong> exactly to confirm</span>
+              <input autoComplete="off" onChange={(event) => setConfirmation(event.target.value)} spellCheck={false} value={confirmation} />
+            </label>
+            <label className="emergency-access-acknowledgment">
+              <input checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} type="checkbox" />
+              <span>{action === 'revoke'
+                ? 'I understand this revokes access without terminating employment or modifying schedules, punches, payroll, roles, or history.'
+                : 'I verified this restoration is authorized and understand that a fresh recovery link is required; old sessions and devices will not return.'}</span>
+            </label>
+            {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message} The account has not been reported as restored or fully revoked. Retry this open form to reuse the same safe operation ID.</div> : null}
+            <div className="modal-actions">
+              <button className="secondary-button" disabled={mutation.isPending} onClick={onClose} type="button">Cancel</button>
+              <button className={action === 'revoke' ? 'danger-action' : 'primary-action'} disabled={!canSubmit || mutation.isPending} onClick={() => mutation.mutate()} type="button">
+                {action === 'revoke' ? <ShieldAlert aria-hidden="true" size={18} /> : <ShieldCheck aria-hidden="true" size={18} />}
+                {action === 'revoke' ? 'Revoke and verify all access' : 'Send recovery and restore access'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </ModalDialog>
   )
 }
@@ -1058,6 +1272,7 @@ export function UserAdminPage() {
   const hasPermission = (permission: string) => Boolean(sessionContext?.permissions.includes(permission))
   const canEditBasic = hasPermission('admin.users.basic') || hasPermission('admin.users.manage')
   const canManageLogin = hasPermission('admin.users.manage')
+  const canManageEmergencyAccess = canManageLogin && hasPermission('admin.security.manage')
   const canResetPassword = canManageLogin || hasPermission('admin.users.password_reset')
   const canSendNewUserInvites = Boolean(sessionContext?.permissions.includes('admin.users.invite'))
   const canSeparate = hasPermission('admin.users.separate')
@@ -1405,6 +1620,7 @@ export function UserAdminPage() {
           canEditAdminRole={canEditAdminRole}
           canEditBasic={canEditBasic}
           canViewAdminRoles={canViewAdminRoles}
+          canManageEmergencyAccess={canManageEmergencyAccess}
           canManageLogin={canManageLogin}
           canResetPassword={canResetPassword}
           canSendNewUserInvites={canSendNewUserInvites}

@@ -167,8 +167,43 @@ interface SelfServiceUsernameClaim {
 }
 
 interface AuthUser {
+  banned_until?: string | null
   id: string
   email?: string
+}
+
+interface EmergencyAccessState {
+  accountState?: string
+  authBanned?: boolean | null
+  authUserId?: string | null
+  counts?: Record<string, number>
+  disabledAt?: string | null
+  displayName?: string
+  employeeId?: string
+  operation?: EmergencyAccessOperation | null
+  revocationId?: string | null
+  username?: string
+  [key: string]: unknown
+}
+
+interface EmergencyAccessOperation {
+  action?: 'revoke' | 'restore'
+  id?: string
+  operationId?: string
+  providerResult?: Record<string, unknown> | null
+  requestId?: string
+  status?: string
+  [key: string]: unknown
+}
+
+interface EmergencyAccessOperationStart {
+  authUserId?: string | null
+  operation?: EmergencyAccessOperation | null
+  operationId?: string
+  providerResult?: Record<string, unknown> | null
+  state?: EmergencyAccessState
+  status?: string
+  [key: string]: unknown
 }
 
 interface AuthMfaFactor {
@@ -471,6 +506,10 @@ const maxWebAuthnBodyBytes = 64 * 1024
 const maxHrDocumentBytes = 25 * 1024 * 1024
 const maxHrDocumentMetadataBytes = 16 * 1024
 const recentDocumentMfaSeconds = 15 * 60
+const recentEmergencyAccessMfaSeconds = 15 * 60
+// Keep this shorter than the database's 15-minute restoration evidence
+// window. A stale delivered link is never treated as current authorization.
+const emergencyRecoveryLinkReuseSeconds = 12 * 60
 const recentHrMfaSeconds = 30 * 60
 const defaultAppUrl = 'https://app.sygilant.us'
 const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
@@ -1188,6 +1227,7 @@ function forwardedAssuranceHeaders(request: Request): Record<string, string> | u
 function requiredActionCheckpointAllowsMutation(pathname: string): boolean {
   return pathname.startsWith('/api/v1/account/')
     || pathname === '/api/v1/time/attendance/report'
+    || /^\/api\/v1\/admin\/users\/[0-9a-f-]{36}\/emergency-access\/revoke$/i.test(pathname)
     || /^\/api\/v1\/hr\/automation\/tasks\/[0-9a-f-]{36}\/(?:viewed|complete)$/i.test(pathname)
     || /^\/api\/v1\/hr\/documents\/assignments\/[0-9a-f-]{36}\/(?:access|complete)$/i.test(pathname)
     || /^\/api\/v1\/hr\/documents\/signatures\/[0-9a-f-]{36}\/(?:access|actions)$/i.test(pathname)
@@ -2180,6 +2220,13 @@ function generateOpaqueToken(size = 48): string {
   const bytes = new Uint8Array(size)
   crypto.getRandomValues(bytes)
   return encodeBase64Url(bytes)
+}
+
+function generateEmergencyRevocationPassword(): string {
+  // The random token supplies more than enough entropy; the prefix guarantees
+  // every configured Auth password-class rule is met before the value is
+  // discarded. This password is never returned, logged, or emailed.
+  return `Aa9!${generateOpaqueToken(48)}`
 }
 
 function expectedWebAuthnOrigins(request: Request): string[] {
@@ -6775,6 +6822,22 @@ async function updateAuthUser(
   })
 }
 
+async function updateAuthUserEmergencyAccess(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  userId: string,
+  update: { ban_duration: '876000h', password: string } | { ban_duration: 'none' },
+): Promise<AuthUser> {
+  return supabaseJson<AuthUser>(`${config.url}/auth/v1/admin/users/${userId}`, {
+    body: JSON.stringify(update),
+    headers: {
+      apikey: config.serviceRoleKey,
+      authorization: `Bearer ${config.serviceRoleKey}`,
+      'content-type': 'application/json',
+    },
+    method: 'PUT',
+  })
+}
+
 async function provisionOne(
   config: NonNullable<ReturnType<typeof configuredSupabase>>,
   target: AuthTarget,
@@ -7928,8 +7991,530 @@ async function handleMyAccountApi(request: Request, environment: Environment, re
   return errorJson('not_found', requestId, 404)
 }
 
+type EmergencyAccessAction = 'revoke' | 'restore'
+
+type EmergencyAccessMutationInput = {
+  acknowledged: true
+  confirmationUsername: string
+  operationRequestId: string
+  reason: string
+}
+
+function emergencyAccessOperation(payload: EmergencyAccessOperationStart): EmergencyAccessOperation | null {
+  return payload.operation ?? payload.state?.operation ?? null
+}
+
+function emergencyAccessOperationId(payload: EmergencyAccessOperationStart, fallback: string): string {
+  return payload.operationId
+    ?? emergencyAccessOperation(payload)?.operationId
+    ?? emergencyAccessOperation(payload)?.id
+    ?? fallback
+}
+
+function emergencyAccessProviderResult(payload: EmergencyAccessOperationStart): Record<string, unknown> {
+  return payload.providerResult
+    ?? emergencyAccessOperation(payload)?.providerResult
+    ?? {}
+}
+
+function emergencyAccessOperationComplete(payload: EmergencyAccessOperationStart): boolean {
+  return [payload.status, emergencyAccessOperation(payload)?.status]
+    .some((status) => status === 'completed')
+}
+
+function emergencyAccessState(payload: EmergencyAccessOperationStart): EmergencyAccessState {
+  const state = payload.state ?? payload as EmergencyAccessState
+  const {
+    authEmail: _authEmail,
+    recoveryEmail,
+    ...safeState
+  } = state
+  return {
+    ...safeState,
+    recoveryEmailMasked: typeof recoveryEmail === 'string' && recoveryEmail.includes('@')
+      ? maskEmailAddress(recoveryEmail)
+      : null,
+  }
+}
+
+function parseEmergencyAccessMutationInput(request: Request, body: Record<string, unknown>): EmergencyAccessMutationInput {
+  const bodyOperationId = typeof body.operationRequestId === 'string' ? body.operationRequestId.trim() : ''
+  const headerOperationId = request.headers.get('idempotency-key')?.trim() ?? ''
+  if (bodyOperationId && headerOperationId && bodyOperationId !== headerOperationId) {
+    throw new ApiError('emergency_access_request_mismatch', 409, 'The request identifier does not match the Idempotency-Key header.')
+  }
+  const operationRequestId = bodyOperationId || headerOperationId
+  if (!validUuid(operationRequestId)) {
+    throw new ApiError('invalid_emergency_access_request_id', 422, 'A stable UUID request identifier is required.')
+  }
+
+  const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
+  if (reason.length < 10 || reason.length > 1000) {
+    throw new ApiError('invalid_emergency_access_reason', 422, 'Enter a reason between 10 and 1,000 characters.')
+  }
+  const confirmationUsername = typeof body.confirmationUsername === 'string'
+    ? body.confirmationUsername.trim()
+    : ''
+  if (!confirmationUsername || confirmationUsername.length > 120) {
+    throw new ApiError('invalid_emergency_access_confirmation', 422, 'Enter the employee username exactly as shown.')
+  }
+  if (body.acknowledged !== true) {
+    throw new ApiError('emergency_access_acknowledgment_required', 422, 'Confirm that employment and historical records will remain unchanged.')
+  }
+  return { acknowledged: true, confirmationUsername, operationRequestId, reason }
+}
+
+async function requireEmergencyAccessSession(
+  request: Request,
+  environment: Environment,
+  requireFreshMfa: boolean,
+) {
+  let session: Awaited<ReturnType<typeof requireAuthenticatedSession>>
+  try {
+    session = await requireAuthenticatedSession(request, environment)
+  } catch (error) {
+    if (error instanceof Response) {
+      const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+      throw new ApiError(payload.error ?? 'auth_required', error.status, 'Sign in again before managing emergency access.')
+    }
+    throw error
+  }
+
+  if (
+    session.context.permissions?.includes('admin.users.manage') !== true
+    || session.context.permissions?.includes('admin.security.manage') !== true
+  ) {
+    throw new ApiError(
+      'emergency_access_permissions_required',
+      403,
+      'User-account and security-management permissions are both required.',
+    )
+  }
+
+  if (!requireFreshMfa) return { ...session, authSessionId: null, mfa: null }
+
+  let mfa: Awaited<ReturnType<typeof requireRecentHrMfa>>
+  try {
+    mfa = await requireRecentHrMfa(request, session)
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'recent_hr_mfa_required') {
+      throw new ApiError(
+        'recent_security_mfa_required',
+        403,
+        'Verify with your authenticator or security key before changing emergency access.',
+      )
+    }
+    throw error
+  }
+  const verifiedAtMs = Date.parse(mfa.verifiedAt)
+  const nowMs = Date.now()
+  if (
+    !Number.isFinite(verifiedAtMs)
+    || verifiedAtMs < nowMs - recentEmergencyAccessMfaSeconds * 1000
+    || verifiedAtMs > nowMs + 60_000
+  ) {
+    throw new ApiError(
+      'recent_security_mfa_required',
+      403,
+      'Verify with your authenticator or security key before changing emergency access.',
+    )
+  }
+
+  const authSessionId = accessTokenClaims(session.token)?.session_id ?? ''
+  if (!validUuid(authSessionId)) {
+    throw new ApiError('active_security_session_required', 403, 'Sign in again before changing emergency access.')
+  }
+  return { ...session, authSessionId, mfa }
+}
+
+function safeEmergencyAccessProviderError(error: unknown): Record<string, unknown> {
+  if (error instanceof SupabaseRequestError) {
+    return {
+      code: error.code,
+      operation: error.operation,
+      status: error.status,
+    }
+  }
+  return {
+    code: error instanceof ApiError ? error.code : 'provider_request_failed',
+    status: error instanceof ApiError ? error.status : 503,
+  }
+}
+
+async function completeEmergencyAccessOperation(
+  session: Awaited<ReturnType<typeof requireEmergencyAccessSession>>,
+  action: EmergencyAccessAction,
+  operationRequestId: string,
+  providerSucceeded: boolean,
+  providerResult: Record<string, unknown>,
+): Promise<EmergencyAccessOperationStart> {
+  return callRpc<EmergencyAccessOperationStart>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_complete_emergency_access_operation',
+    {
+      target_action: action,
+      target_actor_id: session.context.employee_id,
+      target_auth_provider_result: providerResult,
+      target_auth_provider_succeeded: providerSucceeded,
+      target_operation_request_id: operationRequestId,
+    },
+    session.config.serviceRoleKey,
+  )
+}
+
+async function recordEmergencyAccessProviderProgress(
+  session: Awaited<ReturnType<typeof requireEmergencyAccessSession>>,
+  action: EmergencyAccessAction,
+  operationRequestId: string,
+  providerProgress: Record<string, unknown>,
+): Promise<EmergencyAccessOperationStart> {
+  return callRpc<EmergencyAccessOperationStart>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_record_emergency_access_provider_progress',
+    {
+      target_action: action,
+      target_actor_id: session.context.employee_id,
+      target_operation_request_id: operationRequestId,
+      target_provider_progress: providerProgress,
+    },
+    session.config.serviceRoleKey,
+  )
+}
+
+async function handleEmergencyAccessApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  employeeId: string,
+  action: EmergencyAccessAction | 'state',
+): Promise<Response> {
+  const mutation = action !== 'state'
+  const session = await requireEmergencyAccessSession(request, environment, mutation)
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+
+  if (!mutation) {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    const state = await callRpc<EmergencyAccessState>(
+      serviceConfig,
+      'service_get_employee_emergency_access_state',
+      {
+        target_actor_id: session.context.employee_id,
+        target_employee_id: employeeId,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ requestId, state: emergencyAccessState(state) })
+  }
+
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  if (action === 'restore') await requireMaintenanceWriteAccess(serviceConfig, 'user_accounts')
+
+  const input = parseEmergencyAccessMutationInput(request, await readJsonBody(request))
+  let restoreTarget: LoginEmailTarget | null = null
+  let restoreRecipient: string | null = null
+  if (action === 'restore') {
+    restoreTarget = await callRpc<LoginEmailTarget>(
+      serviceConfig,
+      'service_get_employee_login_email_target',
+      { target_employee_id: employeeId },
+      session.config.serviceRoleKey,
+    )
+    if (!restoreTarget?.existingAuthUserId) {
+      throw new ApiError('employee_login_missing', 422, 'This employee does not have a login account to restore.')
+    }
+    restoreRecipient = requireApprovedEmployeeEmail(environment, restoreTarget)
+  }
+  const beginRpc = action === 'revoke'
+    ? 'service_begin_emergency_access_revoke'
+    : 'service_begin_emergency_access_restore'
+  const begin = await callRpc<EmergencyAccessOperationStart>(
+    serviceConfig,
+    beginRpc,
+    {
+      target_acknowledged: input.acknowledged,
+      target_actor_auth_session_id: session.authSessionId,
+      target_actor_id: session.context.employee_id,
+      target_confirmation_username: input.confirmationUsername,
+      target_employee_id: employeeId,
+      target_mfa_method: session.mfa?.method,
+      target_mfa_verified_at: session.mfa?.verifiedAt,
+      target_operation_request_id: input.operationRequestId,
+      target_reason: input.reason,
+    },
+    session.config.serviceRoleKey,
+  )
+  const operationId = emergencyAccessOperationId(begin, input.operationRequestId)
+  if (emergencyAccessOperationComplete(begin)) {
+    return json({
+      action,
+      operationId,
+      requestId,
+      state: emergencyAccessState(begin),
+      status: 'completed',
+    })
+  }
+
+  const beginState = emergencyAccessState(begin)
+  const authUserId = begin.authUserId ?? beginState.authUserId
+  if (!authUserId || !validUuid(authUserId)) {
+    const providerResult = {
+      error: { code: 'employee_login_missing', status: 422 },
+      errorCode: 'employee_login_missing',
+    }
+    const failed = await completeEmergencyAccessOperation(session, action, input.operationRequestId, false, providerResult)
+    return json({
+      action,
+      detail: 'The employee login is missing. Access remains blocked until an administrator repairs the account link.',
+      error: 'employee_login_missing',
+      operationId,
+      requestId,
+      state: emergencyAccessState(failed),
+      status: 'partial',
+    }, 422)
+  }
+
+  if (action === 'revoke') {
+    try {
+      const authUser = await updateAuthUserEmergencyAccess(session.config, authUserId, {
+        ban_duration: '876000h',
+        password: generateEmergencyRevocationPassword(),
+      })
+      const providerResult = {
+        banned: true,
+        bannedUntil: authUser.banned_until ?? null,
+        passwordRotated: true,
+      }
+      const completed = await completeEmergencyAccessOperation(
+        session,
+        action,
+        input.operationRequestId,
+        true,
+        providerResult,
+      )
+      return json({
+        action,
+        operationId,
+        requestId,
+        state: emergencyAccessState(completed),
+        status: 'completed',
+      })
+    } catch (error) {
+      const providerError = safeEmergencyAccessProviderError(error)
+      const providerResult = { error: providerError, errorCode: providerError.code }
+      let failed: EmergencyAccessOperationStart = begin
+      try {
+        failed = await completeEmergencyAccessOperation(
+          session,
+          action,
+          input.operationRequestId,
+          false,
+          providerResult,
+        )
+      } catch {
+        // The database begin step already disabled the account. Never report
+        // success or attempt to compensate by reopening access.
+      }
+      return json({
+        action,
+        detail: 'Application access remains blocked, but the identity-provider cleanup needs administrator attention.',
+        error: 'emergency_access_revoke_partial',
+        operationId,
+        requestId,
+        state: emergencyAccessState(failed),
+        status: 'partial',
+      }, 503)
+    }
+  }
+
+  const target = restoreTarget as LoginEmailTarget
+  if (target.existingAuthUserId !== authUserId) {
+    const providerResult = {
+      error: { code: 'employee_login_mismatch', status: 409 },
+      errorCode: 'employee_login_mismatch',
+    }
+    const failed = await completeEmergencyAccessOperation(session, action, input.operationRequestId, false, providerResult)
+    return json({
+      action,
+      detail: 'The employee login link changed while access was being restored. Access remains blocked.',
+      error: 'employee_login_mismatch',
+      operationId,
+      requestId,
+      state: emergencyAccessState(failed),
+      status: 'partial',
+    }, 409)
+  }
+  const recipient = restoreRecipient as string
+  const maskedEmail = maskEmailAddress(recipient)
+  const priorProviderResult = emergencyAccessProviderResult(begin)
+  const priorRecoveryUsableUntil = typeof priorProviderResult.recoveryUsableUntil === 'string'
+    ? Date.parse(priorProviderResult.recoveryUsableUntil)
+    : Number.NaN
+  let recoveryDelivered = priorProviderResult.recoveryDelivered === true
+    && Number.isFinite(priorRecoveryUsableUntil)
+    && priorRecoveryUsableUntil > Date.now() + 60_000
+  let recoveryDeliveredAt = recoveryDelivered && typeof priorProviderResult.recoveryDeliveredAt === 'string'
+    ? priorProviderResult.recoveryDeliveredAt
+    : null
+  let recoveryUsableUntil = recoveryDelivered && typeof priorProviderResult.recoveryUsableUntil === 'string'
+    ? priorProviderResult.recoveryUsableUntil
+    : null
+
+  if (!recoveryDelivered) {
+    try {
+      const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
+      const generated = await supabaseJson<GeneratedPasswordRecoveryLink>(`${session.config.url}/auth/v1/admin/generate_link`, {
+        body: JSON.stringify({
+          email: target.authEmail,
+          redirect_to: `${appUrl}/password-recovery`,
+          type: 'recovery',
+        }),
+        headers: {
+          apikey: session.config.serviceRoleKey,
+          authorization: `Bearer ${session.config.serviceRoleKey}`,
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      })
+      const recoveryLink = buildApplicationPasswordRecoveryLink(generated, appUrl)
+      const delivery = await sendAuditedEmail(
+        environment,
+        recipient,
+        buildPasswordResetEmail(target, recoveryLink),
+        {
+          notificationType: 'emergency_access_restoration',
+          relatedRecordId: employeeId,
+          relatedRecordType: 'employee',
+        },
+        defaultSupportEmail,
+      )
+      if (delivery.suppressed.length > 0) {
+        throw new ApiError('email_recipient_suppressed', 409, 'The recovery email was suppressed by the active recipient safeguards.')
+      }
+      if (delivery.failed.length > 0) {
+        throw new ApiError('email_delivery_failed', 502, delivery.failed[0].error)
+      }
+      recoveryDelivered = true
+      const deliveredAt = new Date()
+      recoveryDeliveredAt = deliveredAt.toISOString()
+      recoveryUsableUntil = new Date(deliveredAt.getTime() + emergencyRecoveryLinkReuseSeconds * 1000).toISOString()
+      await recordEmergencyAccessProviderProgress(
+        session,
+        action,
+        input.operationRequestId,
+        {
+          recoveryDelivered: true,
+          recoveryDeliveredAt,
+          recoveryEmailMasked: maskedEmail,
+          recoveryUsableUntil,
+        },
+      )
+    } catch (error) {
+      const providerError = safeEmergencyAccessProviderError(error)
+      const providerResult = {
+        error: providerError,
+        errorCode: providerError.code,
+        recoveryDelivered: false,
+        recoveryEmailMasked: maskedEmail,
+      }
+      let failed: EmergencyAccessOperationStart = begin
+      try {
+        failed = await completeEmergencyAccessOperation(
+          session,
+          action,
+          input.operationRequestId,
+          false,
+          providerResult,
+        )
+      } catch {
+        // Restoration is fail-closed: the account remains disabled and banned.
+      }
+      return json({
+        action,
+        detail: 'The recovery message was not completed. Access remains blocked.',
+        error: 'emergency_access_restore_partial',
+        operationId,
+        recoveryEmailMasked: maskedEmail,
+        requestId,
+        state: emergencyAccessState(failed),
+        status: 'partial',
+      }, 503)
+    }
+  }
+
+  let authUnbanned = false
+  try {
+    await updateAuthUserEmergencyAccess(session.config, authUserId, { ban_duration: 'none' })
+    authUnbanned = true
+    const completed = await completeEmergencyAccessOperation(
+      session,
+      action,
+      input.operationRequestId,
+      true,
+      {
+        recoveryDelivered,
+        recoveryDeliveredAt,
+        recoveryEmailMasked: maskedEmail,
+        recoveryUsableUntil,
+        unbanned: true,
+      },
+    )
+    return json({
+      action,
+      operationId,
+      recoveryEmailMasked: maskedEmail,
+      requestId,
+      state: emergencyAccessState(completed),
+      status: 'completed',
+    })
+  } catch (error) {
+    const providerError = safeEmergencyAccessProviderError(error)
+    const providerResult = {
+      error: providerError,
+      errorCode: providerError.code,
+      recoveryDelivered,
+      recoveryDeliveredAt,
+      recoveryEmailMasked: maskedEmail,
+      recoveryUsableUntil,
+      unbanned: authUnbanned,
+    }
+    let failed: EmergencyAccessOperationStart = begin
+    try {
+      failed = await completeEmergencyAccessOperation(
+        session,
+        action,
+        input.operationRequestId,
+        false,
+        providerResult,
+      )
+    } catch {
+      // The database marker remains in place, so a provider-only success can
+      // never silently reopen the application account.
+    }
+    return json({
+      action,
+      detail: 'The recovery email was sent, but access remains blocked until the identity-provider restore is verified.',
+      error: 'emergency_access_restore_partial',
+      operationId,
+      recoveryEmailMasked: maskedEmail,
+      requestId,
+      state: emergencyAccessState(failed),
+      status: 'partial',
+    }, 503)
+  }
+}
+
 async function handleAdminUsersApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
   const url = new URL(request.url)
+  const emergencyAccessMatch = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/emergency-access(?:\/(revoke|restore))?$/i.exec(url.pathname)
+  if (emergencyAccessMatch) {
+    return handleEmergencyAccessApi(
+      request,
+      environment,
+      requestId,
+      emergencyAccessMatch[1],
+      (emergencyAccessMatch[2]?.toLowerCase() as EmergencyAccessAction | undefined) ?? 'state',
+    )
+  }
   const isNewUserInviteRequest = url.pathname === '/api/v1/admin/users/login-emails'
     || /^\/api\/v1\/admin\/users\/[0-9a-f-]{36}\/(?:login-email|welcome-email)$/i.test(url.pathname)
   const isPasswordResetRequest = /^\/api\/v1\/admin\/users\/[0-9a-f-]{36}\/password-reset$/i.test(url.pathname)
