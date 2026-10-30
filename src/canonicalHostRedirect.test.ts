@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import worker from '../worker'
 
@@ -23,6 +24,17 @@ function documentNavigation(url: string, method: 'GET' | 'HEAD' = 'GET') {
 }
 
 describe('canonical production host redirect', () => {
+  it('runs application navigations through the Worker before the SPA asset fallback', () => {
+    const configuration = JSON.parse(readFileSync('wrangler.jsonc', 'utf8')) as {
+      assets?: { run_worker_first?: string[] }
+    }
+    const routes = configuration.assets?.run_worker_first
+
+    expect(routes).toContain('/*')
+    expect(routes).toContain('!/assets/*')
+    expect(routes).toContain('!/notification-sw.js')
+  })
+
   it.each(['GET', 'HEAD'] as const)(
     'moves an exact legacy production %s document navigation to the canonical host without losing path or query',
     async (method) => {
