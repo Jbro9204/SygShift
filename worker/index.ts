@@ -494,6 +494,7 @@ const maxHrDocumentMetadataBytes = 16 * 1024
 const recentDocumentMfaSeconds = 15 * 60
 const recentHrMfaSeconds = 30 * 60
 const defaultAppUrl = 'https://app.sygilant.us'
+const legacyProductionWorkerHostname = 'sygshift.sygilant.workers.dev'
 const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
 const dispatchAlertEmail = 'dispatch@guardianshipsecurity.net'
 class ApiError extends Error {
@@ -551,6 +552,60 @@ const baseSecurityHeaders = {
 
 function isLocalDevelopment(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
+}
+
+function canonicalPublicAppOrigin(environment: Environment): string | null {
+  const configured = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
+
+  try {
+    const candidate = new URL(configured)
+    const expected = new URL(defaultAppUrl)
+    if (
+      candidate.protocol !== 'https:'
+      || candidate.hostname !== expected.hostname
+      || candidate.port
+      || candidate.username
+      || candidate.password
+      || (candidate.pathname !== '/' && candidate.pathname !== '')
+      || candidate.search
+      || candidate.hash
+    ) return null
+    return candidate.origin
+  } catch {
+    return null
+  }
+}
+
+function legacyProductionNavigationRedirect(
+  request: Request,
+  environment: Environment,
+  requestUrl: URL,
+): Response | null {
+  if (requestUrl.hostname !== legacyProductionWorkerHostname) return null
+  if (request.method !== 'GET' && request.method !== 'HEAD') return null
+  if (requestUrl.pathname.startsWith('/api/')) return null
+
+  const fetchMode = request.headers.get('sec-fetch-mode')?.toLowerCase()
+  const fetchDestination = request.headers.get('sec-fetch-dest')?.toLowerCase()
+  const acceptsHtml = request.headers.get('accept')
+    ?.split(',')
+    .some((value) => value.trim().split(';', 1)[0]?.toLowerCase() === 'text/html') ?? false
+  if (fetchMode !== 'navigate' && fetchDestination !== 'document' && !acceptsHtml) return null
+
+  const canonicalOrigin = canonicalPublicAppOrigin(environment)
+  if (!canonicalOrigin) return null
+
+  const destination = new URL(canonicalOrigin)
+  destination.pathname = requestUrl.pathname
+  destination.search = requestUrl.search
+  return new Response(null, {
+    headers: {
+      'cache-control': 'no-store',
+      location: destination.toString(),
+      vary: 'Sec-Fetch-Dest, Sec-Fetch-Mode',
+    },
+    status: 308,
+  })
 }
 
 function json(payload: unknown, status = 200, additionalHeaders?: HeadersInit): Response {
@@ -9976,7 +10031,11 @@ export default {
     const requestId = crypto.randomUUID()
     let response: Response
 
-    if (url.pathname === '/api/v1/health') {
+    const canonicalNavigationRedirect = legacyProductionNavigationRedirect(request, environment, url)
+
+    if (canonicalNavigationRedirect) {
+      response = canonicalNavigationRedirect
+    } else if (url.pathname === '/api/v1/health') {
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         response = json(
           { error: 'method_not_allowed', requestId },
