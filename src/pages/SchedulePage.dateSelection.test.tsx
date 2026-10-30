@@ -213,6 +213,7 @@ describe('Schedule date retention', () => {
     expect(await screen.findByText('10/11/2026 - 10/24/2026')).toBeVisible()
     await waitFor(() => expect(screen.queryByText('10/04/2026 - 10/10/2026')).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: '2 weeks' })).toHaveClass('is-active')
-    expect(screen.getByTestId('location')).toHaveTextContent('/schedule?week=2026-10-11&range=2w')
+    await waitFor(() => expect(screen.getByTestId('location'))
+      .toHaveTextContent('/schedule?week=2026-10-11&range=2w'))
   })
 })
