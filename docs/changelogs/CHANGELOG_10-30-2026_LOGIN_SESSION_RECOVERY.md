@@ -2,7 +2,7 @@
 
 Date: 10/30/2026
 Application: SygShift
-Status: database repair active; exact companion source verified, bootstrap deployed, and ready; governed release record pending
+Status: database repair active; exact companion source released and ready; controlled authenticated confirmation pending
 
 ## Outcome
 
@@ -40,13 +40,17 @@ The production migration and read-only Sygilant postflight passed. A separately 
 
 - Focused context, registration, shell-lifecycle, and central-bridge regression suite: 114 tests passed on exact Node.js 24.19.0 and pnpm 11.25.0 after reconciling with current main.
 - Complete local release gate: 390 test files passed with one intentional skip; 2,307 of 2,308 tests passed; 189 release-control tests passed; strict TypeScript, zero-warning lint, production build/static-asset validation, and all 42 mandatory desktop/mobile Time Clock checks passed.
-- Exact-main GitHub workflow `41055433836`: exact-candidate quality gate and CodeQL passed for source `b447d08e7cc6c46df005b05d3baa0ca2b45bcc8a`.
+- Exact-main GitHub workflow `41055433836`: exact-candidate quality gate and CodeQL passed for repair source `b447d08e7cc6c46df005b05d3baa0ca2b45bcc8a`.
+- Exact-main GitHub workflow `41060754638`: exact-candidate quality gate and CodeQL passed for the tracked post-repair ownership source `d0f5aee37bcc7d17ea6b42f0033a4fcfe244a542`.
 - Migration-ownership comparison: 427 earlier applied entries and 559 earlier sources unchanged; exactly the reviewed `20261030120000` identity and Sygilant source added; fresh verification against the new baseline accepted with zero drift and reconciliation errors.
-- Production readiness for the exact bootstrap source is verified. The normal rollback-safe release record and an authenticated login confirmation remain required before complete recovery is claimed.
+- The normal release gate captured the fresh production ledger and accepted the tracked post-repair baseline at 428 applied identities before any Worker promotion.
+- The rollback-safe production release promoted Worker `7dcc3e05-ef0c-464e-a769-0ecd5ee4229e` from exact source `d0f5aee37bcc7d17ea6b42f0033a4fcfe244a542`. Promotion was unambiguous, no rollback occurred, and the scheduler advanced from the pre-promotion watermark to `2026-10-30T13:22:54.011Z` on that exact source.
+- Independent live checks returned HTTP 200 for `/`, `/login`, `/api/v1/health`, and `/api/v1/ready`. Readiness reported `ready=true`, all 11 checks true, zero scheduled-runtime failures, and exact source `d0f5aee37bcc7d17ea6b42f0033a4fcfe244a542`.
+- No controlled release-canary credentials were configured. The release therefore used the approved boundary-only probe; an authenticated login confirmation remains a separate user-assisted check and is not claimed here.
 
 ## Release status
 
-Sygilant source `f0dbbb230be521ee5e503b07356218917baa2699` and its database repair are live. SygShift source `b447d08e7cc6c46df005b05d3baa0ca2b45bcc8a` was lifecycle-bootstrap deployed as Worker `78484513-73c5-423c-ae19-9e84836ef589`; the live root, login, health, and readiness endpoints returned HTTP 200. Readiness reported `ready=true`, all 11 checks true, zero failures, and `lastFullSuccessSourceCommit=b447d08e7cc6c46df005b05d3baa0ca2b45bcc8a`. The scheduled coordinator has therefore reconciled to the exact bootstrap source. The normal rollback-safe release record and authenticated login confirmation remain pending; readiness is verified but complete recovery is not yet claimed.
+Sygilant source `f0dbbb230be521ee5e503b07356218917baa2699` and its database repair are live. SygShift first established configuration continuity by lifecycle-bootstrap deploying source `b447d08e7cc6c46df005b05d3baa0ca2b45bcc8a` as Worker `78484513-73c5-423c-ae19-9e84836ef589`. After the tracked post-repair database baseline passed the fresh production ledger gate, the normal rollback-safe release promoted exact source `d0f5aee37bcc7d17ea6b42f0033a4fcfe244a542` as Worker `7dcc3e05-ef0c-464e-a769-0ecd5ee4229e`. The release completed with `outcome=released`, `promoted=true`, `rolledBack=false`, two promotion reconciliation reads, 31 production probes, and three upstream probes. Wrangler did not provide a candidate Version URL, so candidate-only smoke checks were unavailable; production promotion and postflight checks passed. Independent root, login, health, and readiness checks all returned HTTP 200, and readiness reported the exact final source with every check true and zero failures. Controlled authenticated confirmation remains pending because no release-canary credentials were configured.
 
 ## Rollback plan
 
