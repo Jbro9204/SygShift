@@ -95,7 +95,7 @@ Completed during implementation:
 
 The centralized bridge was subsequently released from exact source `dd5b532df4f792dd60be98002909b84d42c11e66` as Cloudflare Worker `40129fe3-84d2-4d5c-956f-3c9339711f39`. This predecessor Worker, `02ee56ae-7692-4072-a4e2-fbf1c071a1da` at source `3cc2a31eb69b028e73d047e3b3af96b18f72f25d`, remains only the application rollback floor. A rollback must not restore the retired browser-driven mutation controls or revive an account disabled by the central authority.
 
-After compatible application paths were live, the forward-only `20261029233000_activate_emergency_access_control_plane` migration was applied. Activation postflight and the rollback-only canary passed. The resulting 427-entry ownership baseline has file SHA-256 `b49e141fe3c354d61a549ad8510c208337c78ec0c239cd6f3c6c43cc4da2c9a9` and preserves all 426 precursor entries unchanged while adding only the central activation identity.
+After compatible application paths were live, the forward-only `20261029233000_activate_emergency_access_control_plane` migration was applied. Activation postflight and the rollback-only canary passed. The resulting repository-relative 427-entry ownership baseline has file SHA-256 `71f80e4539676a31940139dd50ad144776b2e43398f8d966f7042a834a5e1328` and preserves all 426 precursor entries unchanged while adding only the central activation identity.
 
 Production deployment, exact source, activation, health, readiness, and migration ownership are verified. The controlled live-account, multi-platform, multi-browser/device zero-access exercise remains open and is not claimed complete.
 
