@@ -44,6 +44,7 @@ const shared = vi.hoisted(() => ({
   announcementBanners: [] as AnnouncementBanner[],
   browserListener: null as ((action: 'cleared' | 'updated') => void) | null,
   emergencyRegistrationError: null as Error | null,
+  emergencyRegistrationFailureKind: 'transient' as 'compatibility' | 'revoked' | 'transient',
   hydrateError: null as Error | null,
   hydrateTransient: true,
   hydrateResult: null as null | { accessToken: string; expiresAt: number; refreshToken: string; scope: 'platform' | 'sygsphere' },
@@ -52,6 +53,7 @@ const shared = vi.hoisted(() => ({
   requiredActionError: null as Error | null,
   scope: null as null | 'platform' | 'sygsphere',
   sessionContextError: null as Error | null,
+  sessionContextFailureKind: 'transient' as 'compatibility' | 'revoked' | 'transient',
 }))
 
 vi.mock('../lib/sharedIdentitySession', () => ({
@@ -153,14 +155,24 @@ vi.mock('../data/auth', () => ({
       username: 'shareduser',
     }
   }),
-  isTransientSessionContextError: vi.fn((error: unknown) => error === shared.sessionContextError),
+  isExplicitSessionContextRevocationError: vi.fn((error: unknown) => (
+    error === shared.sessionContextError && shared.sessionContextFailureKind === 'revoked'
+  )),
+  isTransientSessionContextError: vi.fn((error: unknown) => (
+    error === shared.sessionContextError && shared.sessionContextFailureKind === 'transient'
+  )),
   notifySessionContextChanged: vi.fn(),
   recordCompletedSignInWithRetry: vi.fn(async () => undefined),
   signOut: vi.fn(async () => undefined),
 }))
 
 vi.mock('../data/emergencyAccessSession', () => ({
-  isTransientEmergencyPlatformSessionError: vi.fn((error: unknown) => error === shared.emergencyRegistrationError),
+  isExplicitEmergencyPlatformSessionRevocationError: vi.fn((error: unknown) => (
+    error === shared.emergencyRegistrationError && shared.emergencyRegistrationFailureKind === 'revoked'
+  )),
+  isTransientEmergencyPlatformSessionError: vi.fn((error: unknown) => (
+    error === shared.emergencyRegistrationError && shared.emergencyRegistrationFailureKind === 'transient'
+  )),
   registerEmergencyPlatformSession: vi.fn(async () => {
     if (shared.emergencyRegistrationError) throw shared.emergencyRegistrationError
     return {
@@ -242,6 +254,7 @@ beforeEach(() => {
   shared.announcementBanners = []
   shared.browserListener = null
   shared.emergencyRegistrationError = null
+  shared.emergencyRegistrationFailureKind = 'transient'
   shared.hydrateError = null
   shared.hydrateTransient = true
   shared.hydrateResult = null
@@ -250,6 +263,7 @@ beforeEach(() => {
   shared.requiredActionError = null
   shared.scope = null
   shared.sessionContextError = null
+  shared.sessionContextFailureKind = 'transient'
   localStorage.clear()
   sessionStorage.clear()
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
@@ -916,6 +930,60 @@ describe('AppShell shared-session lifecycle', () => {
     expect(shared.activeAccessToken).toBe(accessToken)
     const { signOut } = await import('../data/auth')
     expect(signOut).not.toHaveBeenCalled()
+  })
+
+  it('preserves a native Auth session across a central context compatibility failure', async () => {
+    shared.activeAccessToken = accessToken
+    shared.sessionContextError = new Error('central context contract changed')
+    shared.sessionContextFailureKind = 'compatibility'
+    renderShell('/')
+
+    expect(await screen.findByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+    expect(shared.activeAccessToken).toBe(accessToken)
+    const { signOut } = await import('../data/auth')
+    expect(signOut).not.toHaveBeenCalled()
+  })
+
+  it('recovers a preserved login after a platform registry compatibility failure', async () => {
+    shared.emergencyRegistrationError = new Error('registry response is from another compatible release')
+    shared.emergencyRegistrationFailureKind = 'compatibility'
+    prepareSharedSession('platform')
+    renderShell('/')
+
+    expect(await screen.findByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+    expect(shared.activeAccessToken).toBe(accessToken)
+
+    shared.emergencyRegistrationError = null
+    fireEvent.click(screen.getByRole('button', { name: 'Retry secure access' }))
+
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    const { signOut } = await import('../data/auth')
+    expect(signOut).not.toHaveBeenCalled()
+  })
+
+  it('still destroys a native session when central context explicitly reports suspension', async () => {
+    shared.activeAccessToken = accessToken
+    shared.sessionContextError = new Error('access suspended')
+    shared.sessionContextFailureKind = 'revoked'
+    renderShell('/')
+
+    expect(await screen.findByText('Native login')).toBeInTheDocument()
+    const { signOut } = await import('../data/auth')
+    expect(signOut).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('heading', { name: 'Secure access is temporarily unavailable' })).not.toBeInTheDocument()
+  })
+
+  it('still clears a shared session when the central registry explicitly reports revocation', async () => {
+    shared.emergencyRegistrationError = new Error('access revoked')
+    shared.emergencyRegistrationFailureKind = 'revoked'
+    prepareSharedSession('platform')
+    renderShell('/')
+
+    expect(await screen.findByText('Native login')).toBeInTheDocument()
+    const { clearSharedIdentityServerSession } = await import('../lib/sharedIdentitySession')
+    expect(clearSharedIdentityServerSession).toHaveBeenCalledWith(accessToken)
+    expect(shared.activeAccessToken).toBeNull()
   })
 
   it('purges Client Communications and session context caches when the authenticated session ends', async () => {

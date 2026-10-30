@@ -3642,3 +3642,11 @@ pnpm exec wrangler deploy --keep-vars
 - Captured a 427-entry post-central-activation ownership baseline with repository-relative evidence paths, file SHA-256 `f44866d45a8bd06133f3a3951da87274b101f38c437b7ea4033ad9d83d399fe0`, and ledger SHA-256 `76529a52ac0d0fc4bdfda85ceb0eeb33c65009efa6776f4a70cbf4131d20bdb8`. All 426 precursor entries remain unchanged; the only addition is the eight-statement activation migration.
 - No approved controlled production account was available for the simultaneous Sygilant, SygShift, SygSphere, and SygTasks multi-device zero-access exercise. Production release and activation are verified, but full controlled-account acceptance remains open and is not claimed complete.
 - See `docs/changelogs/CHANGELOG_10-29-2026_CENTRAL_EMERGENCY_ACCESS_BRIDGE.md` for activation order, dependencies, verification, and rollback.
+# 10/30/2026 - Login Session Recovery
+
+- Preserved healthy native and shared-identity logins during central-service, context-contract, registry, and access-generation compatibility failures while keeping the SygShift workspace closed until verification succeeds.
+- Limited destructive sign-out to explicit centralized suspension or revocation; the private forced-logout path and exact acknowledgement remain unchanged.
+- Reconciled the repair with current main, including the canonical legacy-host entry correction.
+- Focused validation passed on the exact release toolchain: 4 test files / 61 tests, TypeScript, zero-warning lint, and diff validation.
+- Full release verification, exact-main CI, coordinated database activation, Worker deployment, and live authenticated verification remain pending.
+- See `docs/changelogs/CHANGELOG_10-30-2026_LOGIN_SESSION_RECOVERY.md`.

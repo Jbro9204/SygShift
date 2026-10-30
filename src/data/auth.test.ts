@@ -4,6 +4,7 @@ import {
   authSessionIdFromAccessToken,
   getSessionContext,
   getSessionContextWithSignal,
+  isExplicitSessionContextRevocationError,
   isTransientSessionContextError,
   isValidUsername,
   normalizeUsername,
@@ -177,9 +178,10 @@ describe('session context verification', () => {
 
     const rejection = await getSessionContext().catch((error: unknown) => error)
     expect(isTransientSessionContextError(rejection)).toBe(false)
+    expect(isExplicitSessionContextRevocationError(rejection)).toBe(true)
   })
 
-  it('does not classify a rejected session as transient', async () => {
+  it('does not mistake a compatibility rejection for explicit suspension', async () => {
     supabaseMock.client.rpc.mockResolvedValueOnce({
       data: null,
       error: { code: '42501', details: null, message: 'permission denied' },
@@ -188,6 +190,38 @@ describe('session context verification', () => {
 
     const rejection = await getSessionContext().catch((error: unknown) => error)
     expect(isTransientSessionContextError(rejection)).toBe(false)
+    expect(isExplicitSessionContextRevocationError(rejection)).toBe(false)
+  })
+
+  it('preserves an unfamiliar active context as a recoverable compatibility failure', async () => {
+    supabaseMock.client.rpc.mockResolvedValueOnce({
+      data: {
+        active: true,
+        authSessionActive: true,
+        display_name: 'Jordan Brown',
+        employee_id: 'a25a5f5f-45b6-4e43-87a6-79298ed9347f',
+        emergencyAccessEnforced: true,
+        emergencyAccessState: 'active',
+        username: 'jbrown',
+      },
+      error: null,
+      status: 200,
+    })
+
+    const rejection = await getSessionContext().catch((error: unknown) => error)
+    expect(isTransientSessionContextError(rejection)).toBe(false)
+    expect(isExplicitSessionContextRevocationError(rejection)).toBe(false)
+  })
+
+  it('recognizes an explicit suspended-access error even without a context payload', async () => {
+    supabaseMock.client.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42501', details: null, message: 'Emergency access suspended for this account.' },
+      status: 403,
+    })
+
+    const rejection = await getSessionContext().catch((error: unknown) => error)
+    expect(isExplicitSessionContextRevocationError(rejection)).toBe(true)
   })
 })
 

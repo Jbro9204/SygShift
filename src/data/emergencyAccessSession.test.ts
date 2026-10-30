@@ -3,6 +3,7 @@ import {
   acknowledgeEmergencyPlatformSessionRevocation,
   EMERGENCY_PLATFORM_SESSION_ACKNOWLEDGEMENT_ENDPOINT,
   EMERGENCY_PLATFORM_SESSION_REGISTER_ENDPOINT,
+  isExplicitEmergencyPlatformSessionRevocationError,
   isTransientEmergencyPlatformSessionError,
   registerEmergencyPlatformSession,
 } from './emergencyAccessSession'
@@ -67,6 +68,7 @@ describe('central emergency platform session client', () => {
 
     const rejection = await registerEmergencyPlatformSession(4).catch((error: unknown) => error)
     expect(isTransientEmergencyPlatformSessionError(rejection)).toBe(false)
+    expect(isExplicitEmergencyPlatformSessionRevocationError(rejection)).toBe(false)
   })
 
   it('acknowledges the exact forced-logout operation with the captured revoked token', async () => {
@@ -110,5 +112,20 @@ describe('central emergency platform session client', () => {
 
     const rejection = await registerEmergencyPlatformSession(4).catch((error: unknown) => error)
     expect(isTransientEmergencyPlatformSessionError(rejection)).toBe(true)
+    expect(isExplicitEmergencyPlatformSessionRevocationError(rejection)).toBe(false)
+  })
+
+  it('distinguishes explicit revocation from a compatibility response', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ error: 'access_generation_changed' }, { status: 409 }))
+      .mockResolvedValueOnce(Response.json({ error: 'access_revoked' }, { status: 401 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const compatibilityFailure = await registerEmergencyPlatformSession(4).catch((error: unknown) => error)
+    expect(isTransientEmergencyPlatformSessionError(compatibilityFailure)).toBe(false)
+    expect(isExplicitEmergencyPlatformSessionRevocationError(compatibilityFailure)).toBe(false)
+
+    const revoked = await registerEmergencyPlatformSession(4).catch((error: unknown) => error)
+    expect(isExplicitEmergencyPlatformSessionRevocationError(revoked)).toBe(true)
   })
 })

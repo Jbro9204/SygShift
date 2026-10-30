@@ -30,6 +30,13 @@ const sessionContextSchema = z.object({
   permissions: z.array(z.string()).optional().default([]),
 })
 
+const emergencyAccessStateSchema = z.object({
+  active: z.boolean().optional(),
+  authSessionActive: z.boolean().optional(),
+  emergencyAccessEnforced: z.literal(true),
+  emergencyAccessState: z.string().min(1),
+}).passthrough()
+
 const recoveryRequestSchema = z.object({
   accepted: z.literal(true),
   message: z.string().min(1),
@@ -51,11 +58,13 @@ export type SessionContext = {
 }
 
 class SessionContextError extends Error {
+  readonly explicitlyRevoked: boolean
   readonly transient: boolean
 
-  constructor(transient: boolean) {
+  constructor(transient: boolean, explicitlyRevoked = false) {
     super('Your secure session could not be verified.')
     this.name = 'SessionContextError'
+    this.explicitlyRevoked = explicitlyRevoked
     this.transient = transient
   }
 }
@@ -64,6 +73,16 @@ const transientSessionErrorCodes = new Set([
   '40001', '40P01', '53300', '57014', '57P01', '57P02', '57P03',
   'PGRST000', 'PGRST001', 'PGRST002', 'PGRST003', 'PGRST202',
 ])
+
+function isExplicitRevocationMessage(message: string): boolean {
+  const normalized = message.toLowerCase()
+  return normalized.includes('access revoked')
+    || normalized.includes('access suspended')
+    || normalized.includes('account is suspended')
+    || normalized.includes('account has been disabled')
+    || normalized.includes('auth session revoked')
+    || normalized.includes('emergency-revoked')
+}
 
 export type PasswordPolicyResult = {
   valid: boolean
@@ -196,11 +215,20 @@ async function requestSessionContext(signal?: AbortSignal): Promise<SessionConte
       || normalizedMessage.includes('network')
       || normalizedMessage.includes('timed out')
       || normalizedMessage.includes('timeout')
-    throw new SessionContextError(transient)
+    throw new SessionContextError(transient, isExplicitRevocationMessage(normalizedMessage))
   }
 
-  const parsedResult = sessionContextSchema.safeParse(Array.isArray(data) ? data[0] : data)
-  if (!parsedResult.success) throw new SessionContextError(false)
+  const rawContext = Array.isArray(data) ? data[0] : data
+  const parsedResult = sessionContextSchema.safeParse(rawContext)
+  if (!parsedResult.success) {
+    const emergencyState = emergencyAccessStateSchema.safeParse(rawContext)
+    const explicitlyRevoked = emergencyState.success && (
+      emergencyState.data.emergencyAccessState !== 'active'
+      || emergencyState.data.active === false
+      || emergencyState.data.authSessionActive === false
+    )
+    throw new SessionContextError(false, explicitlyRevoked)
+  }
   const parsed = parsedResult.data
 
   return {
@@ -229,6 +257,10 @@ export async function getSessionContextWithSignal(signal: AbortSignal): Promise<
 
 export function isTransientSessionContextError(error: unknown): boolean {
   return error instanceof SessionContextError && error.transient
+}
+
+export function isExplicitSessionContextRevocationError(error: unknown): boolean {
+  return error instanceof SessionContextError && error.explicitlyRevoked
 }
 
 export type CompletedSignInKind = 'native' | 'platform' | 'sygsphere'

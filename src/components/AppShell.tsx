@@ -16,13 +16,13 @@ import { getActiveAnnouncementBanners, type AnnouncementBanner } from '../data/a
 import { getTimekeepingOperationsWorkspace, isOperationalAlertLive } from '../data/timeOperations'
 import { getRequiredActionCheckpoint } from '../data/actionCenter'
 import {
-  isTransientEmergencyPlatformSessionError,
+  isExplicitEmergencyPlatformSessionRevocationError,
   registerEmergencyPlatformSession,
 } from '../data/emergencyAccessSession'
 import {
   authSessionIdFromAccessToken,
   getSessionContextWithSignal,
-  isTransientSessionContextError,
+  isExplicitSessionContextRevocationError,
   recordCompletedSignInWithRetry,
   SESSION_CONTEXT_REFRESH_EVENT,
   signOut,
@@ -843,32 +843,37 @@ export function AppShell() {
         setAuthRecoveryRequired(false)
       } catch (error) {
         if (!isCurrentSessionGeneration(generation)) return
-        if (
-          error instanceof SecureAccessRequestTimeoutError
-          || isTransientSessionContextError(error)
-          || isTransientEmergencyPlatformSessionError(error)
-        ) {
-          clearSessionScopedQueryCaches(queryClient)
-          setSessionContext(null)
-          scheduleSessionRecovery(getSharedIdentitySessionScope() !== null)
-          showTransientSecureAccessRecovery(
-            'SygShift is reconnecting to centralized access services. Your sign-in is preserved, but the workspace remains closed until verification succeeds.',
-          )
+        const wasShared = getSharedIdentitySessionScope() !== null
+        const explicitlyRevoked = isExplicitSessionContextRevocationError(error)
+          || isExplicitEmergencyPlatformSessionRevocationError(error)
+        if (explicitlyRevoked) {
+          if (wasShared) {
+            void clearSharedIdentityServerSession(data.session.access_token)
+            tearDownSharedIdentitySession(
+              'Your access has been suspended. Contact an authorized administrator if access should be restored.',
+              true,
+            )
+          } else {
+            await signOut()
+            clearSessionScopedQueryCaches(queryClient)
+          }
+          if (isCurrentSessionGeneration(generation)) {
+            setSessionContext(null)
+            setAuthRecoveryRequired(false)
+            setAuthMessage('Your access has been suspended. Contact an authorized administrator if access should be restored.')
+          }
           return
         }
-        const wasShared = getSharedIdentitySessionScope() !== null
-        if (wasShared) {
-          void clearSharedIdentityServerSession(data.session.access_token)
-          tearDownSharedIdentitySession(null, true)
-        } else {
-          await signOut()
-          clearSessionScopedQueryCaches(queryClient)
-        }
-        if (isCurrentSessionGeneration(generation)) {
-          setSessionContext(null)
-          setAuthRecoveryRequired(false)
-          setAuthMessage('Your account is not linked to an active SygShift employee record.')
-        }
+
+        // Central timeouts, rollout/version mismatches, and registry failures
+        // close the workspace without destroying a still-valid Auth session.
+        // Only a positive centralized revocation may take the destructive path.
+        clearSessionScopedQueryCaches(queryClient)
+        setSessionContext(null)
+        scheduleSessionRecovery(wasShared)
+        showTransientSecureAccessRecovery(
+          'SygShift is reconnecting to centralized access services. Your sign-in is preserved, but the workspace remains closed until verification succeeds.',
+        )
       } finally {
         if (isCurrentSessionGeneration(generation)) setAuthLoading(false)
       }

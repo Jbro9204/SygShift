@@ -25,11 +25,13 @@ export type EmergencyPlatformSessionRegistration = z.infer<typeof registrationSc
 export type EmergencyPlatformSessionAcknowledgement = z.infer<typeof acknowledgementSchema>
 
 export class EmergencyPlatformSessionError extends Error {
+  readonly explicitlyRevoked: boolean
   readonly transient: boolean
 
-  constructor(transient: boolean) {
+  constructor(transient: boolean, explicitlyRevoked = false) {
     super('Your centralized access session could not be verified.')
     this.name = 'EmergencyPlatformSessionError'
+    this.explicitlyRevoked = explicitlyRevoked
     this.transient = transient
   }
 }
@@ -74,7 +76,16 @@ async function postEmergencySessionRequest(
   }
 
   const payload = await response.json().catch(() => null)
-  if (!response.ok) throw new EmergencyPlatformSessionError(isTransientStatus(response.status))
+  if (!response.ok) {
+    const errorCode = payload && typeof payload === 'object' && 'error' in payload
+      && typeof payload.error === 'string'
+      ? payload.error
+      : ''
+    throw new EmergencyPlatformSessionError(
+      isTransientStatus(response.status),
+      errorCode === 'access_revoked',
+    )
+  }
   return { payload, status: response.status }
 }
 
@@ -126,4 +137,8 @@ export async function acknowledgeEmergencyPlatformSessionRevocation(
 
 export function isTransientEmergencyPlatformSessionError(error: unknown): boolean {
   return error instanceof EmergencyPlatformSessionError && error.transient
+}
+
+export function isExplicitEmergencyPlatformSessionRevocationError(error: unknown): boolean {
+  return error instanceof EmergencyPlatformSessionError && error.explicitlyRevoked
 }
