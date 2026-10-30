@@ -25,7 +25,7 @@ export function getSupabaseClient() {
   return {
     async rpc(name: string, input?: { target_kind?: string }) {
       await delay()
-      if (name === 'get_session_context') return { error: null, data: { employee_id: employeeId, username: 'testemployee', display_name: 'Test Employee', role: params.get('role') ?? 'guard', must_change_password: false, password_changed_at: null, mfa_enrolled_at: null, mfa_required: false, has_mfa: false, time_zone: 'America/New_York', permissions: params.has('viewonly') ? ['time.self.view'] : ['time.self.view', 'time.punch'] } }
+      if (name === 'get_session_context_emergency') return { error: null, data: { accessGeneration: 1, active: true, authSessionActive: true, emergencyAccessEnforced: true, emergencyAccessState: 'active', employee_id: employeeId, username: 'testemployee', display_name: 'Test Employee', role: params.get('role') ?? 'guard', must_change_password: false, password_changed_at: null, mfa_enrolled_at: null, mfa_required: false, has_mfa: false, time_zone: 'America/New_York', permissions: params.has('viewonly') ? ['time.self.view'] : ['time.self.view', 'time.punch'] } }
       if (name === 'get_timekeeping_dashboard') {
         dashboardCalls++
         if (scenario === 'loading') await delay(1000)
