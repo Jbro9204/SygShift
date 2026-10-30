@@ -91,6 +91,14 @@ Completed during implementation:
 - The live `UserAdminPage-BehrmUxm.js` asset matched the reviewed build byte-for-byte at SHA-256 `360ecfd2617c45858a338aed0a93c67050f03df031ab6834efda98e4cbdd0137`. The protected emergency-access endpoint returned 401 without authentication.
 - Final database readback found zero emergency operations, operation events, revoked-session tombstones, synthetic employees, or synthetic Auth users. No real employee account was used as a deployment test.
 
+## Central convergence release addendum
+
+The centralized bridge was subsequently released from exact source `dd5b532df4f792dd60be98002909b84d42c11e66` as Cloudflare Worker `40129fe3-84d2-4d5c-956f-3c9339711f39`. This predecessor Worker, `02ee56ae-7692-4072-a4e2-fbf1c071a1da` at source `3cc2a31eb69b028e73d047e3b3af96b18f72f25d`, remains only the application rollback floor. A rollback must not restore the retired browser-driven mutation controls or revive an account disabled by the central authority.
+
+After compatible application paths were live, the forward-only `20261029233000_activate_emergency_access_control_plane` migration was applied. Activation postflight and the rollback-only canary passed. The resulting 427-entry ownership baseline has file SHA-256 `b49e141fe3c354d61a549ad8510c208337c78ec0c239cd6f3c6c43cc4da2c9a9` and preserves all 426 precursor entries unchanged while adding only the central activation identity.
+
+Production deployment, exact source, activation, health, readiness, and migration ownership are verified. The controlled live-account, multi-platform, multi-browser/device zero-access exercise remains open and is not claimed complete.
+
 ## Remaining interface dependency
 
 No signed-in SygShift browser tab or release-canary credentials were available for a final manual read of the Admin page. The exact deployed asset, signed-out boundary, rendered interaction tests, Worker authorization/provider tests, installed database contracts, and rollback-only production behaviors are verified. The subsequent centralization release moves mutation authority to Sygilant Security Center and retains SygShift only as an enforcement client of that shared authority; it does not create a second revocation implementation.

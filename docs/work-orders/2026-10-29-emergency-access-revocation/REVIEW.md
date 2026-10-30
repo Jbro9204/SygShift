@@ -35,7 +35,8 @@ These three entries remain review findings rather than being silently relabeled 
 
 - Apply only the generated fingerprint-gated atomic artifact after the exact candidate passes the clean-checkout and GitHub quality gates.
 - Do not use broad `supabase db push`.
-- Activate the database contract before deploying the Worker routes that consume it.
+- Commit and verify the additive precursor database contracts before deploying Worker routes that consume them, but leave the one-way central enforcement activation unapplied during that compatibility phase.
+- Deploy compatible Sygilant and SygShift application paths before applying `20261029233000_activate_emergency_access_control_plane`.
 - Do not test by revoking a real employee.
 - After activation, capture a separately tracked post-activation baseline and verify the new ledger identity and all function, ACL, RLS, trigger, index, and marker contracts.
 - A Worker rollback must leave revocation markers and session invalidation intact; it must never restore access.
@@ -60,4 +61,22 @@ Comparison with the reviewed 422-entry post-activation evidence found zero earli
 - `20261029231000_employee_storage_session_uploads`; and
 - `20261029232000_sygsphere_session_bound_uploads`.
 
-The separately reviewed `20261029233000_activate_emergency_access_control_plane` source is present but remains unapplied at this checkpoint. This baseline is the required nondrift input for the coordinated Worker release; it authorizes neither bulk migration replay nor history rewriting. The three canonical HR source findings and eighteen historical NULL/empty statement-array findings remain unchanged.
+The separately reviewed `20261029233000_activate_emergency_access_control_plane` source is present but remains unapplied at this precursor checkpoint. This historical checkpoint is superseded by the post-central-activation evidence below. The baseline is the required nondrift input for the coordinated Worker release; it authorizes neither bulk migration replay nor history rewriting. The three canonical HR source findings and eighteen historical NULL/empty statement-array findings remain unchanged.
+
+## Reviewed post-central-activation ownership evidence
+
+`migration-ownership-post-central-activation-v2.json` was captured read-only on `2026-10-30T03:37:31.106Z` after the one-way central activation, activation postflight, and rollback-only canary completed. It contains 427 applied migration identities, 408 SygShift owning sources, and 151 Sygilant default-chain owning sources. Its file SHA-256 is `b49e141fe3c354d61a549ad8510c208337c78ec0c239cd6f3c6c43cc4da2c9a9`, and its ledger SHA-256 is `76529a52ac0d0fc4bdfda85ceb0eeb33c65009efa6776f4a70cbf4131d20bdb8`.
+
+Comparison with the reviewed 426-entry precursor evidence found zero removed entries and zero changes to any earlier version, name, owner, statement-array checksum, ordered-statements checksum, owning-source identity, or owning-source checksum. Exactly one applied identity was added: `20261029233000_activate_emergency_access_control_plane`, owned by Sygilant with an exact version-and-name source match. The ledger entry contains eight statements, statement-array SHA-256 `ccafd1d523550fc2f4a60b7102fcb0ae419366d2692e228e7b82d3acd1028c54`, and ordered-statements SHA-256 `60d42cea563d864ebfeb0b229a613ab21aebd15ae6f552ebaa69e740b08d24c8`. This evidence authorizes neither bulk replay nor migration-history rewriting.
+
+The activation postflight passed. The rollback-only canary returned the explicit result `emergency_access_control_plane_passed_in_rollback` and retained no synthetic fixtures.
+
+## Reviewed central-bridge production evidence
+
+Exact source `dd5b532df4f792dd60be98002909b84d42c11e66` was released as Cloudflare Worker `40129fe3-84d2-4d5c-956f-3c9339711f39`. The prior Worker `02ee56ae-7692-4072-a4e2-fbf1c071a1da` at source `3cc2a31eb69b028e73d047e3b3af96b18f72f25d` remains the application rollback floor. The governed release completed as released and promoted, required two reconciliation reads, used 31 live probes and three upstream probes, and did not roll back. Wrangler did not return a candidate Version URL, so candidate-preview smoke checks were unavailable.
+
+The pre-promotion full-success watermark was `2026-10-30T03:31:06.414Z`, and the post-promotion scheduled full success was `2026-10-30T03:31:57.399Z` on the exact source. Live health and readiness returned HTTP 200; readiness reported `ready=true`, status `ready`, scheduled-runtime mode `closed`, zero consecutive failures, and all required configuration, shared-identity, and runtime checks true.
+
+The complete release gate passed 389 application test files with one intentional skip, 2,286 tests with one intentional skip, 189 release-control tests, all 42 mandatory desktop/mobile Time Clock browser checks, and the production build/static-asset contract. Source `dd5b532df4f792dd60be98002909b84d42c11e66` aligned the browser fixture with `get_session_context_emergency` and its fail-closed emergency-access fields.
+
+No approved controlled production account and credentials were available for the required simultaneous multi-platform, multi-browser/device zero-access exercise. Production deployment and readiness are verified; full controlled-account acceptance across Sygilant, SygShift, SygSphere, and SygTasks remains open and must not be claimed complete.
