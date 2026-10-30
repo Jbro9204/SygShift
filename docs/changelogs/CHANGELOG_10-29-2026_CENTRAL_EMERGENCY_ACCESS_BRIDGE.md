@@ -62,10 +62,11 @@ Open SygShift clients now subscribe to the employee's private revocation topic a
 
 - `pnpm typecheck`: passed.
 - `pnpm lint`: passed with zero warnings.
-- Complete application test suite: 387 files passed, 1 skipped; 2,275 tests passed, 1 skipped.
+- Complete application test suite: 389 files passed, 1 skipped; 2,286 tests passed, 1 skipped.
+- Release-control suite: 189 tests passed, including migration ownership, database-release, exact-main, process-cleanup, and emergency-access preparation controls.
 - Production build and static-asset contract: passed.
 - Focused coverage verifies the private revocation topic, one-time forced logout, offline-return revalidation, central session-context rejection, exact Security Center destination, protected Worker denial, and shared-identity denial.
-- `pnpm check:toolchain` stops on the local workstation's Node version: the repository requires exactly `24.19.0`, while the workstation has `24.22.1`. Type checking, linting, tests, and production builds were run independently and passed.
+- The complete `pnpm check` gate passed under the repository's exact Node.js `24.19.0` and pnpm `11.25.0` toolchain after rebasing onto current `origin/main`.
 
 ## Activation dependencies and blockers
 
