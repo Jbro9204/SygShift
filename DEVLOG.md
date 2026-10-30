@@ -1,6 +1,6 @@
 # SygShift Development Log
 
-## 10/29/2026 - Emergency Access Revocation Control Plane (release candidate)
+## 10/29/2026 - Emergency Access Revocation Control Plane
 
 - Replaced the misleading browser-direct login toggle in the release candidate with one SygShift-owned emergency access workflow for verified state, full revocation, and controlled restoration.
 - Added fail-closed database markers, session epochs and tombstones, idempotent operation receipts, append-only event evidence, exact permission and recent-MFA checks, self/final-recovery-admin protection, and source-safe restoration.
@@ -14,7 +14,9 @@
 - Pushed exact source `27b203420391865a3d73568b4aaac12984954a88`; GitHub Actions run `40976027648` completed both CodeQL job `123804148736` and exact-candidate quality job `123804148950` successfully.
 - Activated only fingerprint-gated migration `20261029225323` through atomic artifact SHA-256 `41a510b37c0bd9a90024329a1b0db6c9cd9cb50dfbc7bf094afe113fd9d4b1e8`. The live ledger advanced from 421 to 422 with one exact stored source statement whose SHA-256 is `f9bc9d56659662adaa8ec42fcebfa4412be00d890f57d44c0b19c80eda0a0335`.
 - Both installed rollback-only SQL regressions passed without retaining their synthetic employee, Auth, session, schedule, punch, payroll, or operation fixtures. The generated post-activation ownership manifest preserved every earlier ledger identity and owning-source checksum and added only the reviewed emergency-access version.
-- Exact-source Cloudflare release and the final live non-mutating Admin workflow verification remain pending and must be recorded in the dated changelog before release is called complete.
+- Committed the reviewed post-activation evidence as `3cc2a31eb69b028e73d047e3b3af96b18f72f25d`; GitHub Actions run `40978594959` completed exact-candidate job `123812664367` and CodeQL job `123812664695` successfully.
+- Released exact source `3cc2a31eb69b028e73d047e3b3af96b18f72f25d` as Cloudflare Worker `02ee56ae-7692-4072-a4e2-fbf1c071a1da`, retaining `51ceb2bb-f759-421c-bc53-1927d5cbe3b0` as the rollback floor. Promotion was unambiguous, required no rollback, and the first natural full scheduled cycle completed at `2026-10-30T00:29:59.065Z` on the exact source with zero consecutive failures.
+- Independent production checks passed for root, login, health, readiness, exact User Accounts asset parity, signed-out 401 enforcement, and zero retained emergency or synthetic regression records. No signed-in SygShift browser session was available for a final manual Admin-page read; the exact deployed bundle, protected endpoint boundary, rendered interactions, Worker tests, installed database contracts, and rollback-only production regressions were verified without changing a real account.
 
 ## 10/23/2026 - Required-Action Checkpoint Resilience
 

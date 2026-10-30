@@ -2,7 +2,7 @@
 
 Date: October 29, 2026
 Application: SygShift, with connected Sygilant session invalidation
-Status: database authority active; exact application release pending
+Status: released and verified
 
 ## Why this change is needed
 
@@ -75,8 +75,17 @@ Completed during implementation:
 - post-activation ownership evidence at `docs/work-orders/2026-10-29-emergency-access-revocation/migration-ownership-post-activation-v2.json`, file SHA-256 `5245048ac9ba03b2982506bb2a21f53878d6c694d4223288130d8964ce244541`, preserving every earlier applied identity, statement-array checksum, owner, and owning-source checksum while adding only version `20261029225323`; and
 - pre-deployment production checks returning HTTP 200 for the root, login, health, and readiness routes, with `ready=true`, scheduled runtime `closed`, and zero consecutive failures.
 
-Pending completion of:
+## Production release
 
-- exact-source Cloudflare release, health/readiness, and live non-mutating Admin workflow verification.
+- Committed the reviewed post-activation evidence as exact source `3cc2a31eb69b028e73d047e3b3af96b18f72f25d` and pushed it through the complete clean-checkout gate.
+- GitHub Actions run `40978594959` completed Exact candidate quality gate job `123812664367` and CodeQL JavaScript and TypeScript job `123812664695` successfully for that exact SHA.
+- Released Cloudflare Worker version `02ee56ae-7692-4072-a4e2-fbf1c071a1da`. The prior version `51ceb2bb-f759-421c-bc53-1927d5cbe3b0` at source `01dd28b9858c227c86a49a20fc7b9e4a07feb31f` remains the rollback floor.
+- Wrangler did not expose a candidate Version URL, so candidate-preview smoke checks were unavailable. The release therefore used the explicitly allowed anonymous boundary probe, then exact-version promotion, 16 post-promotion probes, two upstream probes, and two status-reconciliation reads. Promotion was unambiguous and no rollback occurred.
+- The first natural full scheduled-runtime success advanced from the pre-promotion watermark to `2026-10-30T00:29:59.065Z` and reported exact source `3cc2a31eb69b028e73d047e3b3af96b18f72f25d`.
+- Independent production checks returned HTTP 200 for root, login, health, and readiness; `ready=true`; scheduler mode `closed`; zero consecutive failures; and every readiness check true.
+- The live `UserAdminPage-BehrmUxm.js` asset matched the reviewed build byte-for-byte at SHA-256 `360ecfd2617c45858a338aed0a93c67050f03df031ab6834efda98e4cbdd0137`. The protected emergency-access endpoint returned 401 without authentication.
+- Final database readback found zero emergency operations, operation events, revoked-session tombstones, synthetic employees, or synthetic Auth users. No real employee account was used as a deployment test.
 
-Production evidence will be recorded here only after each corresponding check succeeds.
+## Remaining interface dependency
+
+No signed-in SygShift browser tab or release-canary credentials were available for a final manual read of the Admin page. The exact deployed asset, signed-out boundary, rendered interaction tests, Worker authorization/provider tests, installed database contracts, and rollback-only production behaviors are verified. Sygilant's future native administrator screen must proxy this SygShift authority; it must not create a second revocation implementation.
