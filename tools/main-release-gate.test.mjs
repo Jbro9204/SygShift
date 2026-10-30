@@ -217,7 +217,7 @@ function runGit(arguments_, options = {}) {
   })
 }
 
-function isWindowsCodexSandbox() {
+function isWindowsRestrictedSandbox() {
   return process.platform === 'win32'
     && /\\Packages\\sandbox\.[^\\]+\\AC$/iu.test(process.env.LOCALAPPDATA ?? '')
 }
@@ -527,11 +527,11 @@ test('Git discovers the versioned hook through core.hooksPath', async (context) 
       ])
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (isWindowsCodexSandbox() && (
+      if (isWindowsRestrictedSandbox() && (
         /NtCreateDirectoryObject\(.+msys-2\.0/isu.test(message)
         || /Could not read from remote repository/iu.test(message)
       )) {
-        context.skip('The Codex Windows sandbox denies the Git for Windows MSYS hook process; normal Windows and CI execute this smoke test.')
+        context.skip('The restricted Windows sandbox denies the Git for Windows MSYS hook process; normal Windows and CI execute this smoke test.')
         return
       }
       throw error
