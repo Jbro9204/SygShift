@@ -3657,3 +3657,13 @@ pnpm exec wrangler deploy --keep-vars
 - Independent production checks returned HTTP 200 for root, login, health, and readiness. Readiness reported all 11 checks true, zero failures, and exact source `d0f5aee37bcc7d17ea6b42f0033a4fcfe244a542`.
 - No controlled release-canary credentials were configured, so the approved boundary-only probe was used. Authenticated login confirmation remains a separate user-assisted check and is not claimed complete.
 - See `docs/changelogs/CHANGELOG_10-30-2026_LOGIN_SESSION_RECOVERY.md`.
+
+# 10/30/2026 - Secure-Access Browser Recovery Race Repair
+
+- Traced the live recovery wall beyond healthy Worker and database responses: shared-session verification completed in 2 ms, emergency platform registration completed in 99 ms, and the browser then discarded the verified result.
+- Debounced focus/online/visibility revalidation, removed a redundant Supabase session lookup, split independent recovery timers, and made manual retry invalidate older requests and timers before rechecking.
+- Prevented the page's separate `BroadcastChannel` subscriber from aborting and rebroadcasting its own shared-session update.
+- Kept an already verified workspace mounted during pending background checks while preserving fail-closed behavior for completed failures and explicit revocation.
+- Focused browser/session validation passed 4 files and 51 tests, including completed transient and terminal Auth-session failures after a mounted workspace. Full `pnpm check` passed 390 application files with 2,311 of 2,312 tests, 189 release-control tests, strict TypeScript, zero-warning lint, production build, and static-asset validation. All 42 mandatory desktop/mobile Time Clock checks also passed, followed by a fresh production build.
+- No database migration or production record change is required.
+- See `docs/changelogs/CHANGELOG_10-30-2026_SECURE_ACCESS_BROWSER_RECOVERY_RACE_REPAIR.md`.

@@ -406,6 +406,7 @@ describe('AppShell shared-session lifecycle', () => {
     hydrate
       .mockImplementationOnce(waitForAbort)
       .mockImplementationOnce(waitForAbort)
+      .mockImplementationOnce(waitForAbort)
 
     const view = renderShell('/')
     expect(screen.getByText('Checking secure access…')).toBeInTheDocument()
@@ -434,7 +435,7 @@ describe('AppShell shared-session lifecycle', () => {
       await Promise.resolve()
     })
 
-    expect(hydrate).toHaveBeenCalledTimes(2)
+    expect(hydrate).toHaveBeenCalledTimes(3)
     expect(screen.getByRole('button', { name: 'Retrying secure access…' })).toBeDisabled()
     view.unmount()
   })
@@ -686,6 +687,159 @@ describe('AppShell shared-session lifecycle', () => {
     expect(screen.getByText('Platform home')).toBeInTheDocument()
   })
 
+  it('does not republish a shared-session update received from the browser channel', async () => {
+    prepareSharedSession('platform')
+    renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+
+    const sharedSession = await import('../lib/sharedIdentitySession')
+    const browserSync = await import('../lib/sharedIdentityBrowserSync')
+    const hydrate = vi.mocked(sharedSession.hydrateSharedIdentitySession)
+    const publish = vi.mocked(browserSync.publishSharedIdentityBrowserEvent)
+    hydrate.mockClear()
+    publish.mockClear()
+
+    act(() => shared.browserListener?.('updated'))
+
+    await waitFor(() => expect(hydrate).toHaveBeenCalledOnce())
+    expect(publish).not.toHaveBeenCalled()
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Secure access is temporarily unavailable' })).not.toBeInTheDocument()
+  })
+
+  it('keeps a verified workspace mounted while background access revalidation is pending', async () => {
+    prepareSharedSession('platform')
+    renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+
+    const auth = await import('../data/auth')
+    const getContext = vi.mocked(auth.getSessionContextWithSignal)
+    let resolveContext: ((context: Awaited<ReturnType<typeof auth.getSessionContextWithSignal>>) => void) | undefined
+    getContext.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveContext = resolve
+    }))
+
+    window.dispatchEvent(new Event('sygshift:session-context-refresh'))
+    await waitFor(() => expect(resolveContext).toBeTypeOf('function'))
+
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+    expect(screen.queryByText('Checking secure access…')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Secure access is temporarily unavailable' })).not.toBeInTheDocument()
+
+    await act(async () => {
+      resolveContext?.({
+        accessGeneration: 1,
+        displayName: 'Shared User',
+        employeeId,
+        hasMfa: false,
+        mfaEnrolledAt: null,
+        mfaRequired: true,
+        mustChangePassword: false,
+        passwordChangedAt: null,
+        permissions: ['apps.sygilant.access', 'operations.view', 'time.view'],
+        role: 'guard',
+        timeZone: 'America/Denver',
+        username: 'shareduser',
+      })
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Secure access is temporarily unavailable' })).not.toBeInTheDocument()
+  })
+
+  it('keeps a verified workspace mounted when a redundant refresh arrives during platform registration', async () => {
+    prepareSharedSession('platform')
+    renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+
+    const emergencyAccess = await import('../data/emergencyAccessSession')
+    const register = vi.mocked(emergencyAccess.registerEmergencyPlatformSession)
+    register.mockClear()
+    let resolveRegistration: ((value: {
+      accessGeneration: number
+      application: 'sygshift'
+      expiresAt: string
+      id: string
+      registered: true
+    }) => void) | undefined
+    register.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRegistration = resolve
+    }))
+
+    window.dispatchEvent(new Event('sygshift:session-context-refresh'))
+    await waitFor(() => expect(resolveRegistration).toBeTypeOf('function'))
+    window.dispatchEvent(new Event('sygshift:session-context-refresh'))
+
+    expect(register).toHaveBeenCalledOnce()
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Secure access is temporarily unavailable' })).not.toBeInTheDocument()
+
+    await act(async () => {
+      resolveRegistration?.({
+        accessGeneration: 1,
+        application: 'sygshift',
+        expiresAt: '2026-10-29T23:00:00.000Z',
+        id: 'f7658ad9-c43a-45b7-973f-f531649d0f29',
+        registered: true,
+      })
+      await Promise.resolve()
+    })
+
+    expect(register).toHaveBeenCalledOnce()
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Secure access is temporarily unavailable' })).not.toBeInTheDocument()
+  })
+
+  it('closes a verified workspace after background Auth session acquisition fails transiently', async () => {
+    prepareSharedSession('platform')
+    renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+
+    shared.activationError = new Error('temporary auth session failure')
+    shared.activationFailureKind = 'transient'
+    shared.authGetSessionPromise = Promise.resolve({
+      data: { session: null },
+      error: shared.activationError,
+    })
+    window.dispatchEvent(new Event('sygshift:session-context-refresh'))
+
+    expect(await screen.findByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+  })
+
+  it('closes a verified native workspace after terminal Auth session acquisition failure', async () => {
+    shared.activeAccessToken = accessToken
+    const auth = await import('../data/auth')
+    vi.mocked(auth.getSessionContextWithSignal).mockResolvedValueOnce({
+      accessGeneration: 1,
+      displayName: 'Native User',
+      employeeId,
+      hasMfa: true,
+      mfaEnrolledAt: '2026-10-01T12:00:00.000Z',
+      mfaRequired: true,
+      mustChangePassword: false,
+      passwordChangedAt: '2026-10-01T12:00:00.000Z',
+      permissions: ['actions.self.view', 'apps.sygilant.access', 'operations.view', 'time.view'],
+      role: 'guard',
+      timeZone: 'America/Denver',
+      username: 'nativeuser',
+    })
+    renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+
+    shared.activationError = new Error('terminal auth session failure')
+    shared.activationFailureKind = 'terminal'
+    shared.authGetSessionPromise = Promise.resolve({
+      data: { session: null },
+      error: shared.activationError,
+    })
+    window.dispatchEvent(new Event('sygshift:session-context-refresh'))
+
+    expect(await screen.findByText('Native login')).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+  })
+
   it('clears a stale recovery card when a retry reaches a terminal restore response', async () => {
     vi.useFakeTimers()
     shared.scope = 'platform'
@@ -918,6 +1072,32 @@ describe('AppShell shared-session lifecycle', () => {
     expect(signOut).not.toHaveBeenCalled()
     expect(clearSharedIdentityServerSession).not.toHaveBeenCalled()
     expect(deactivateSharedIdentitySupabaseSession).not.toHaveBeenCalled()
+  })
+
+  it('cancels an older recovery timer when manual verification succeeds', async () => {
+    prepareSharedSession('platform')
+    const view = renderShell('/')
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+
+    const sharedSession = await import('../lib/sharedIdentitySession')
+    vi.mocked(sharedSession.sharedIdentityRecoveryDelayMs).mockReturnValueOnce(25)
+    shared.sessionContextError = new Error('temporary central verification failure')
+    await act(async () => {
+      window.dispatchEvent(new Event('sygshift:session-context-refresh'))
+    })
+    expect(await screen.findByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+
+    const auth = await import('../data/auth')
+    const getContext = vi.mocked(auth.getSessionContextWithSignal)
+    shared.sessionContextError = null
+    fireEvent.click(screen.getByRole('button', { name: 'Retry secure access' }))
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    const callsAfterRecovery = getContext.mock.calls.length
+
+    await new Promise((resolve) => window.setTimeout(resolve, 50))
+    expect(getContext).toHaveBeenCalledTimes(callsAfterRecovery)
+    expect(screen.getByText('Platform home')).toBeInTheDocument()
+    view.unmount()
   })
 
   it('does not open a verified workspace until the platform session registry accepts it', async () => {

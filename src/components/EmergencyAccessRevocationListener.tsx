@@ -4,6 +4,7 @@ import { acknowledgeEmergencyPlatformSessionRevocation } from '../data/emergency
 import { getSupabaseClient } from '../lib/supabase'
 
 const REVOCATION_ACKNOWLEDGEMENT_TIMEOUT_MS = 4_000
+const LIFECYCLE_REVALIDATION_DELAY_MS = 150
 
 type EmergencyAccessRevocationListenerProps = {
   onRevoking: () => Promise<void> | void
@@ -23,10 +24,16 @@ export function EmergencyAccessRevocationListener({ onRevoked, onRevoking }: Eme
     const client = getSupabaseClient()
     let active = true
     let handled = false
+    let revalidationTimer: number | undefined
     let channel: ReturnType<typeof client.channel> | undefined
 
     const revalidate = () => {
-      if (document.visibilityState === 'visible') notifySessionContextChanged()
+      if (document.visibilityState !== 'visible') return
+      if (revalidationTimer !== undefined) window.clearTimeout(revalidationTimer)
+      revalidationTimer = window.setTimeout(() => {
+        revalidationTimer = undefined
+        if (active && document.visibilityState === 'visible') notifySessionContextChanged()
+      }, LIFECYCLE_REVALIDATION_DELAY_MS)
     }
 
     const connect = async () => {
@@ -82,6 +89,7 @@ export function EmergencyAccessRevocationListener({ onRevoked, onRevoking }: Eme
 
     return () => {
       active = false
+      if (revalidationTimer !== undefined) window.clearTimeout(revalidationTimer)
       if (channel) void client.removeChannel(channel)
       window.removeEventListener('focus', revalidate)
       window.removeEventListener('online', revalidate)

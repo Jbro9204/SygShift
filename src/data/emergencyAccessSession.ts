@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { getSupabaseClient } from '../lib/supabase'
 
 export const EMERGENCY_PLATFORM_SESSION_REGISTER_ENDPOINT = '/api/v1/security/emergency-session/register'
 export const EMERGENCY_PLATFORM_SESSION_ACKNOWLEDGEMENT_ENDPOINT = '/api/v1/security/emergency-session/revocation-acknowledgement'
@@ -44,19 +43,14 @@ function isTransientStatus(status: number): boolean {
     || status >= 500
 }
 
-async function currentAccessToken(): Promise<string> {
-  const { data, error } = await getSupabaseClient().auth.getSession()
-  if (error || !data.session?.access_token) throw new EmergencyPlatformSessionError(false)
-  return data.session.access_token
-}
-
 async function postEmergencySessionRequest(
   endpoint: string,
   body: Record<string, unknown>,
+  suppliedAccessToken: string,
   signal?: AbortSignal,
-  suppliedAccessToken?: string,
 ): Promise<{ payload: unknown, status: number }> {
-  const accessToken = suppliedAccessToken?.trim() || await currentAccessToken()
+  const accessToken = suppliedAccessToken.trim()
+  if (!accessToken) throw new EmergencyPlatformSessionError(false)
   let response: Response
   try {
     response = await fetch(endpoint, {
@@ -91,14 +85,18 @@ async function postEmergencySessionRequest(
 
 export async function registerEmergencyPlatformSession(
   expectedAccessGeneration: number,
+  verifiedAccessToken: string,
   signal?: AbortSignal,
 ): Promise<EmergencyPlatformSessionRegistration> {
-  if (!Number.isInteger(expectedAccessGeneration) || expectedAccessGeneration <= 0) {
+  if (!Number.isInteger(expectedAccessGeneration)
+    || expectedAccessGeneration <= 0
+    || !verifiedAccessToken.trim()) {
     throw new EmergencyPlatformSessionError(false)
   }
   const { payload } = await postEmergencySessionRequest(
     EMERGENCY_PLATFORM_SESSION_REGISTER_ENDPOINT,
     { expectedAccessGeneration },
+    verifiedAccessToken,
     signal,
   )
   const parsed = registrationSchema.safeParse(payload)
@@ -123,8 +121,8 @@ export async function acknowledgeEmergencyPlatformSessionRevocation(
   const { payload } = await postEmergencySessionRequest(
     EMERGENCY_PLATFORM_SESSION_ACKNOWLEDGEMENT_ENDPOINT,
     { accessGeneration, operationId },
-    signal,
     revokedAccessToken,
+    signal,
   )
   const parsed = acknowledgementSchema.safeParse(payload)
   if (!parsed.success

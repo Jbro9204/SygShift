@@ -1,5 +1,5 @@
 import { act, render, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EmergencyAccessRevocationListener } from './EmergencyAccessRevocationListener'
 
 const mocks = vi.hoisted(() => ({
@@ -34,8 +34,13 @@ vi.mock('../lib/supabase', () => ({
 }))
 
 describe('EmergencyAccessRevocationListener', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
     mocks.channel.on.mockReturnValue(mocks.channel)
     mocks.channel.subscribe.mockReturnValue(mocks.channel)
     mocks.client.channel.mockReturnValue(mocks.channel)
@@ -126,10 +131,21 @@ describe('EmergencyAccessRevocationListener', () => {
   it('rechecks central access when an offline or background browser returns', async () => {
     render(<EmergencyAccessRevocationListener onRevoked={vi.fn()} onRevoking={vi.fn()} />)
     await waitFor(() => expect(mocks.channel.subscribe).toHaveBeenCalledOnce())
+    vi.useFakeTimers()
 
-    window.dispatchEvent(new Event('online'))
-    window.dispatchEvent(new Event('focus'))
+    await act(async () => {
+      window.dispatchEvent(new Event('online'))
+      await vi.advanceTimersByTimeAsync(50)
+      window.dispatchEvent(new Event('focus'))
+      await vi.advanceTimersByTimeAsync(50)
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(149)
+    })
 
-    expect(mocks.notifySessionContextChanged).toHaveBeenCalledTimes(2)
+    expect(mocks.notifySessionContextChanged).not.toHaveBeenCalled()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(mocks.notifySessionContextChanged).toHaveBeenCalledOnce()
   })
 })

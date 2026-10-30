@@ -40,7 +40,7 @@ describe('central emergency platform session client', () => {
     }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(registerEmergencyPlatformSession(4)).resolves.toMatchObject({
+    await expect(registerEmergencyPlatformSession(4, 'verified-access-token')).resolves.toMatchObject({
       accessGeneration: 4,
       application: 'sygshift',
       registered: true,
@@ -55,6 +55,7 @@ describe('central emergency platform session client', () => {
     )
     const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers)
     expect(headers.get('authorization')).toBe('Bearer verified-access-token')
+    expect(mocks.getSession).not.toHaveBeenCalled()
   })
 
   it('rejects a registration response for a different generation', async () => {
@@ -66,7 +67,7 @@ describe('central emergency platform session client', () => {
       registered: true,
     })))
 
-    const rejection = await registerEmergencyPlatformSession(4).catch((error: unknown) => error)
+    const rejection = await registerEmergencyPlatformSession(4, 'verified-access-token').catch((error: unknown) => error)
     expect(isTransientEmergencyPlatformSessionError(rejection)).toBe(false)
     expect(isExplicitEmergencyPlatformSessionRevocationError(rejection)).toBe(false)
   })
@@ -110,7 +111,7 @@ describe('central emergency platform session client', () => {
       { status: 503 },
     )))
 
-    const rejection = await registerEmergencyPlatformSession(4).catch((error: unknown) => error)
+    const rejection = await registerEmergencyPlatformSession(4, 'verified-access-token').catch((error: unknown) => error)
     expect(isTransientEmergencyPlatformSessionError(rejection)).toBe(true)
     expect(isExplicitEmergencyPlatformSessionRevocationError(rejection)).toBe(false)
   })
@@ -121,11 +122,11 @@ describe('central emergency platform session client', () => {
       .mockResolvedValueOnce(Response.json({ error: 'access_revoked' }, { status: 401 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const compatibilityFailure = await registerEmergencyPlatformSession(4).catch((error: unknown) => error)
+    const compatibilityFailure = await registerEmergencyPlatformSession(4, 'verified-access-token').catch((error: unknown) => error)
     expect(isTransientEmergencyPlatformSessionError(compatibilityFailure)).toBe(false)
     expect(isExplicitEmergencyPlatformSessionRevocationError(compatibilityFailure)).toBe(false)
 
-    const revoked = await registerEmergencyPlatformSession(4).catch((error: unknown) => error)
+    const revoked = await registerEmergencyPlatformSession(4, 'verified-access-token').catch((error: unknown) => error)
     expect(isExplicitEmergencyPlatformSessionRevocationError(revoked)).toBe(true)
   })
 })

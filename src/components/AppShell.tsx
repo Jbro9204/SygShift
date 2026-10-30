@@ -559,6 +559,7 @@ export function AppShell() {
   useEffect(() => {
     type SessionLoadIntent = {
       notifyOtherTabs: boolean
+      refreshAccountState: boolean
       restoreSharedSession: boolean
       showLoading: boolean
     }
@@ -577,8 +578,10 @@ export function AppShell() {
       promise: Promise<void>
       state: SessionLoadFlightState
     } | null = null
-    let sessionRecoveryAttempt = 0
-    let sessionRecoveryTimer: number | undefined
+    let sessionContextRecoveryAttempt = 0
+    let sessionContextRecoveryTimer: number | undefined
+    let sharedIdentityRecoveryAttempt = 0
+    let sharedIdentityRecoveryTimer: number | undefined
     let unsubscribeSharedBrowserEvents: () => void = () => undefined
 
     if (!isSupabaseConfigured) {
@@ -595,10 +598,16 @@ export function AppShell() {
       sharedIdentityRefreshTimer = undefined
     }
 
-    function clearSessionRecoveryTimer(resetAttempt = false) {
-      if (sessionRecoveryTimer) window.clearTimeout(sessionRecoveryTimer)
-      sessionRecoveryTimer = undefined
-      if (resetAttempt) sessionRecoveryAttempt = 0
+    function clearSessionContextRecoveryTimer(resetAttempt = false) {
+      if (sessionContextRecoveryTimer) window.clearTimeout(sessionContextRecoveryTimer)
+      sessionContextRecoveryTimer = undefined
+      if (resetAttempt) sessionContextRecoveryAttempt = 0
+    }
+
+    function clearSharedIdentityRecoveryTimer(resetAttempt = false) {
+      if (sharedIdentityRecoveryTimer) window.clearTimeout(sharedIdentityRecoveryTimer)
+      sharedIdentityRecoveryTimer = undefined
+      if (resetAttempt) sharedIdentityRecoveryAttempt = 0
     }
 
     function isCurrentSessionGeneration(generation: number): boolean {
@@ -611,7 +620,8 @@ export function AppShell() {
       activeSecureRequestController = null
       sessionLoadInFlight = null
       clearSharedIdentityRefreshTimer()
-      clearSessionRecoveryTimer(true)
+      clearSessionContextRecoveryTimer(true)
+      clearSharedIdentityRecoveryTimer(true)
       setAuthRecoveryRetrying(false)
     }
 
@@ -641,7 +651,8 @@ export function AppShell() {
     function tearDownSharedIdentitySession(message: string | null, notifyOtherTabs: boolean) {
       invalidateSessionLoads()
       clearSharedIdentityRefreshTimer()
-      clearSessionRecoveryTimer(true)
+      clearSessionContextRecoveryTimer(true)
+      clearSharedIdentityRecoveryTimer(true)
       clearSessionScopedQueryCaches(queryClient)
       deactivateSharedIdentitySupabaseSession()
       clearSharedIdentitySession()
@@ -662,14 +673,25 @@ export function AppShell() {
       }, sharedIdentityRefreshDelayMs(accessToken))
     }
 
-    function scheduleSessionRecovery(restoreSharedSession: boolean, retryAfterMs: number | null = null) {
+    function scheduleSessionContextRecovery(restoreSharedSession: boolean) {
       if (!active) return
-      if (sessionRecoveryTimer !== undefined) return
-      const delayMs = sharedIdentityRecoveryDelayMs(sessionRecoveryAttempt, retryAfterMs)
-      sessionRecoveryAttempt += 1
-      sessionRecoveryTimer = window.setTimeout(() => {
-        sessionRecoveryTimer = undefined
+      if (sessionContextRecoveryTimer !== undefined) return
+      const delayMs = sharedIdentityRecoveryDelayMs(sessionContextRecoveryAttempt, null)
+      sessionContextRecoveryAttempt += 1
+      sessionContextRecoveryTimer = window.setTimeout(() => {
+        sessionContextRecoveryTimer = undefined
         void loadSessionContext(false, restoreSharedSession, restoreSharedSession)
+      }, delayMs)
+    }
+
+    function scheduleSharedIdentityRecovery(retryAfterMs: number | null = null) {
+      if (!active) return
+      if (sharedIdentityRecoveryTimer !== undefined) return
+      const delayMs = sharedIdentityRecoveryDelayMs(sharedIdentityRecoveryAttempt, retryAfterMs)
+      sharedIdentityRecoveryAttempt += 1
+      sharedIdentityRecoveryTimer = window.setTimeout(() => {
+        sharedIdentityRecoveryTimer = undefined
+        void loadSessionContext(false, true, true)
       }, delayMs)
     }
 
@@ -680,7 +702,8 @@ export function AppShell() {
     }
 
     function showTerminalSecureAccessFailure(message: string) {
-      clearSessionRecoveryTimer(true)
+      clearSessionContextRecoveryTimer(true)
+      clearSharedIdentityRecoveryTimer(true)
       setAuthMessage(message)
       setAuthRecoveryRequired(false)
       setAuthLoading(false)
@@ -700,7 +723,7 @@ export function AppShell() {
           || (shouldPreserveSharedIdentitySessionOnRestoreError(error)
             && isTransientSharedIdentitySessionRestoreError(error))
         if (retryable) {
-          scheduleSessionRecovery(true, sharedIdentitySessionRestoreRetryAfterMs(error))
+          scheduleSharedIdentityRecovery(sharedIdentitySessionRestoreRetryAfterMs(error))
           showTransientSecureAccessRecovery(
             'SygShift is reconnecting to your secure session. Your sign-in has been preserved.',
           )
@@ -733,7 +756,7 @@ export function AppShell() {
           error instanceof SecureAccessRequestTimeoutError
           || isTransientSharedIdentitySupabaseSessionError(error)
         ) {
-          scheduleSessionRecovery(true)
+          scheduleSharedIdentityRecovery()
           showTransientSecureAccessRecovery(
             'SygShift is reconnecting to secure authentication services. Your sign-in has been preserved.',
           )
@@ -753,7 +776,7 @@ export function AppShell() {
         return 'preserved'
       }
       if (!isCurrentSessionGeneration(generation)) return 'stale'
-      clearSessionRecoveryTimer()
+      clearSharedIdentityRecoveryTimer(true)
       scheduleSharedIdentityRestore(restored.accessToken)
       if (notifyOtherTabs) publishSharedIdentityBrowserEvent('updated')
       return 'restored'
@@ -764,6 +787,7 @@ export function AppShell() {
       showLoading = true,
       restoreSharedSession = false,
       notifyOtherTabs = false,
+      refreshAccountState = false,
     ) {
       if (!isCurrentSessionGeneration(generation)) return
       if (showLoading) setAuthLoading(true)
@@ -794,11 +818,16 @@ export function AppShell() {
           )
           return
         }
+        // A verified workspace may remain mounted only while revalidation is
+        // pending. Once session acquisition has actually failed, protected
+        // content closes before recovery or terminal handling is shown.
+        clearSessionScopedQueryCaches(queryClient)
+        setSessionContext(null)
         if (
           error instanceof SecureAccessRequestTimeoutError
           || isTransientSharedIdentitySupabaseSessionError(error)
         ) {
-          scheduleSessionRecovery(sharedSessionExpected)
+          scheduleSessionContextRecovery(sharedSessionExpected)
           showTransientSecureAccessRecovery(
             'SygShift is reconnecting to secure authentication services. Your sign-in has been preserved.',
           )
@@ -831,11 +860,18 @@ export function AppShell() {
       try {
         const context = await runSecureAccessRequest(async (signal) => {
           const verifiedContext = await getSessionContextWithSignal(signal)
-          await registerEmergencyPlatformSession(verifiedContext.accessGeneration, signal)
+          await registerEmergencyPlatformSession(
+            verifiedContext.accessGeneration,
+            data.session.access_token,
+            signal,
+          )
           return verifiedContext
         })
         if (!isCurrentSessionGeneration(generation)) return
-        if (sharedRestoreOutcome !== 'retrying') clearSessionRecoveryTimer(true)
+        clearSessionContextRecoveryTimer(true)
+        if (refreshAccountState) {
+          setAccountRefreshVersion((current) => current + 1)
+        }
         queryClient.setQueryData(['session-context'], context)
         bindViewDateSelectionOwner(context.employeeId)
         setSessionContext(context)
@@ -870,7 +906,7 @@ export function AppShell() {
         // Only a positive centralized revocation may take the destructive path.
         clearSessionScopedQueryCaches(queryClient)
         setSessionContext(null)
-        scheduleSessionRecovery(wasShared)
+        scheduleSessionContextRecovery(wasShared)
         showTransientSecureAccessRecovery(
           'SygShift is reconnecting to centralized access services. Your sign-in is preserved, but the workspace remains closed until verification succeeds.',
         )
@@ -883,9 +919,10 @@ export function AppShell() {
       showLoading = true,
       restoreSharedSession = false,
       notifyOtherTabs = false,
+      refreshAccountState = false,
     ): Promise<void> {
       const generation = sessionGeneration
-      const requestedIntent = { notifyOtherTabs, restoreSharedSession, showLoading }
+      const requestedIntent = { notifyOtherTabs, refreshAccountState, restoreSharedSession, showLoading }
       if (sessionLoadInFlight?.generation === generation) {
         const state = sessionLoadInFlight.state
         const strongestIntent = state.pendingIntent
@@ -922,6 +959,7 @@ export function AppShell() {
           intent.showLoading,
           intent.restoreSharedSession,
           intent.notifyOtherTabs,
+          intent.refreshAccountState,
         )
         if (!isCurrentSessionGeneration(generation)) return
         const nextIntent = state.pendingIntent
@@ -937,6 +975,7 @@ export function AppShell() {
     ): SessionLoadIntent {
       return {
         notifyOtherTabs: left.notifyOtherTabs || right.notifyOtherTabs,
+        refreshAccountState: left.refreshAccountState || right.refreshAccountState,
         restoreSharedSession: left.restoreSharedSession || right.restoreSharedSession,
         showLoading: left.showLoading || right.showLoading,
       }
@@ -947,12 +986,14 @@ export function AppShell() {
       requested: SessionLoadIntent,
     ): boolean {
       return (!requested.notifyOtherTabs || available.notifyOtherTabs)
+        && (!requested.refreshAccountState || available.refreshAccountState)
         && (!requested.restoreSharedSession || available.restoreSharedSession)
         && (!requested.showLoading || available.showLoading)
     }
 
     authRecoveryRetryRef.current = async () => {
       if (!active) return
+      invalidateSessionLoads()
       setAuthRecoveryRetrying(true)
       try {
         await loadSessionContext(false, true, true)
@@ -1005,16 +1046,18 @@ export function AppShell() {
         } else {
           invalidateSessionLoads()
           clearSharedIdentityRefreshTimer()
-          clearSessionRecoveryTimer(true)
+          clearSessionContextRecoveryTimer(true)
+          clearSharedIdentityRecoveryTimer(true)
           clearSessionScopedQueryCaches(queryClient)
           setAuthRecoveryRequired(false)
           void loadSessionContext(true)
         }
         return
       }
-      invalidateSessionLoads()
-      clearSessionScopedQueryCaches(queryClient)
-      void loadSessionContext(true, true)
+      // Publishers use a short-lived BroadcastChannel, so this document can
+      // receive its own update. Revalidate through the existing single-flight
+      // queue without aborting a successful registration or republishing it.
+      void loadSessionContext(false, true, false)
     })
 
     const restoreVisibleSharedSession = () => {
@@ -1025,11 +1068,10 @@ export function AppShell() {
     document.addEventListener('visibilitychange', restoreVisibleSharedSession)
 
     const refreshSecurityContext = () => {
-      clearSessionScopedQueryCaches(queryClient)
-      setSessionContext(null)
-      setAuthLoading(true)
-      setAccountRefreshVersion((current) => current + 1)
-      void loadSessionContext(false)
+      // Keep the currently verified workspace mounted while a background
+      // authority refresh is pending. A completed failed verification still
+      // closes the workspace in performSessionContextLoad.
+      void loadSessionContext(false, false, false, true)
     }
     window.addEventListener(SESSION_CONTEXT_REFRESH_EVENT, refreshSecurityContext)
 
@@ -1039,7 +1081,8 @@ export function AppShell() {
       authRecoveryRetryRef.current = null
       authSessionInvalidationRef.current = null
       clearSharedIdentityRefreshTimer()
-      clearSessionRecoveryTimer()
+      clearSessionContextRecoveryTimer()
+      clearSharedIdentityRecoveryTimer()
       authSubscription?.unsubscribe()
       unsubscribeSharedBrowserEvents()
       document.removeEventListener('visibilitychange', restoreVisibleSharedSession)
@@ -1211,7 +1254,7 @@ export function AppShell() {
         <section className="security-card" role="alert">
           <ShieldAlert aria-hidden="true" size={36} />
           <h1>Secure access is temporarily unavailable</h1>
-          <p>Your sign-in is still protected, but SygShift could not verify your account services within 12 seconds. The workspace remains closed until that verification succeeds.</p>
+          <p>{authMessage ?? 'Your sign-in is still protected, but SygShift could not verify your account services. The workspace remains closed until that verification succeeds.'}</p>
           <p>SygShift will keep retrying safely in the background. You can also retry now without signing in again.</p>
           <div className="security-card__actions">
             <button className="primary-action" disabled={authRecoveryRetrying} onClick={retrySecureAccess} type="button">
