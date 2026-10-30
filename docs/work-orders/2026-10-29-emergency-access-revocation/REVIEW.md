@@ -71,6 +71,16 @@ Comparison with the reviewed 426-entry precursor evidence found zero removed ent
 
 The activation postflight passed. The rollback-only canary returned the explicit result `emergency_access_control_plane_passed_in_rollback` and retained no synthetic fixtures.
 
+## Reviewed post-login-admission-repair ownership evidence
+
+`migration-ownership-post-login-admission-repair-v2.json` was captured read-only on `2026-10-30T12:46:58.663Z` after Sygilant migration `20261030120000_emergency_access_login_admission_repair` committed and its production postflight passed. The capture used the pinned official Supabase CLI against project `eqkdfrbwtioiqtjsyglg` with only `select version,name,statements from supabase_migrations.schema_migrations order by version`. Its source paths and historical ownership-evidence references were normalized to repository-relative labels before retention, so the evidence contains no workstation metadata.
+
+The retained file contains 428 applied migration identities, 408 SygShift owning sources, and 152 Sygilant default-chain owning sources. Its file SHA-256 is `9af4faef88dad05adfb67fe0aa4ecaa68d6cfb731340e6f244d0db5ffc682171`, and its captured ledger SHA-256 is `981f307c4057c83090e1def7b89c4612ba14ad46db101dd3137aaa8af7a97a2d`.
+
+Comparison with the reviewed 427-entry post-central-activation baseline proved all 427 earlier applied entries and all 559 earlier owning sources unchanged. Exactly one applied identity and one owning source were added: `20261030120000_emergency_access_login_admission_repair`, owned by Sygilant with an exact version-and-name match. The entry contains 16 statements, statement-array SHA-256 `9b609ad799f716a55dc03f6028d453da4e15bff196619626ebaaaa04eb71758b`, ordered-statements SHA-256 `30b8ceb7f89632b47c2bed2a2a308ce8ec7eae91076485acf5942486bbcc5995`, and normalized owning-source SHA-256 `aa6673b61490ef16fbeaa078610d0ab3113219667e6c7bb217967b643f5578d6`.
+
+The repository ownership verifier accepted a fresh comparison against this retained baseline with zero drift errors and zero reconciliation errors under the established non-strict historical posture. The evidence does not authorize bulk migration replay or migration-history rewriting. It records the already-reviewed forward repair and supplies the mandatory nondrift input for the companion SygShift release.
+
 ## Reviewed central-bridge production evidence
 
 Exact source `dd5b532df4f792dd60be98002909b84d42c11e66` was released as Cloudflare Worker `40129fe3-84d2-4d5c-956f-3c9339711f39`. The prior Worker `02ee56ae-7692-4072-a4e2-fbf1c071a1da` at source `3cc2a31eb69b028e73d047e3b3af96b18f72f25d` remains the application rollback floor. The governed release completed as released and promoted, required two reconciliation reads, used 31 live probes and three upstream probes, and did not roll back. Wrangler did not return a candidate Version URL, so candidate-preview smoke checks were unavailable.

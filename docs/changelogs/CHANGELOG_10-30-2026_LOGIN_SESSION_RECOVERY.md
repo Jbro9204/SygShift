@@ -2,7 +2,7 @@
 
 Date: 10/30/2026
 Application: SygShift
-Status: release candidate verified locally; production deployment pending
+Status: database repair active; exact companion source verified, bootstrap deployed, and ready; governed release record pending
 
 ## Outcome
 
@@ -34,17 +34,19 @@ The post-login shell treated every non-transient context or emergency platform-s
 
 SygShift adds no migration for this companion repair. The shared canonical database repair is owned by Sygilant migration `20261030120000_emergency_access_login_admission_repair.sql`. SygShift must be released against that repaired central contract; it does not create another authority.
 
+The production migration and read-only Sygilant postflight passed. A separately retained SygShift ownership baseline now records 428 applied identities, 408 SygShift sources, and 152 Sygilant sources. Its file SHA-256 is `9af4faef88dad05adfb67fe0aa4ecaa68d6cfb731340e6f244d0db5ffc682171`, and its ledger SHA-256 is `981f307c4057c83090e1def7b89c4612ba14ad46db101dd3137aaa8af7a97a2d`. All 427 earlier applied entries and all 559 earlier owning sources remain unchanged; the only additions are the applied `20261030120000` identity and its exact Sygilant owning source.
+
 ## Verification
 
-- Focused context, registration, shell-lifecycle, and central-bridge regression suite: 4 files and 61 tests passed on exact Node.js 24.19.0 and pnpm 11.25.0 after reconciling with current main.
-- TypeScript: passed.
-- Zero-warning lint: passed.
-- Diff validation: passed.
-- The complete `pnpm release:verify`, exact-main GitHub workflow, production Worker release, health/readiness, and authenticated login check remain required before production recovery is claimed.
+- Focused context, registration, shell-lifecycle, and central-bridge regression suite: 114 tests passed on exact Node.js 24.19.0 and pnpm 11.25.0 after reconciling with current main.
+- Complete local release gate: 390 test files passed with one intentional skip; 2,307 of 2,308 tests passed; 189 release-control tests passed; strict TypeScript, zero-warning lint, production build/static-asset validation, and all 42 mandatory desktop/mobile Time Clock checks passed.
+- Exact-main GitHub workflow `41055433836`: exact-candidate quality gate and CodeQL passed for source `b447d08e7cc6c46df005b05d3baa0ca2b45bcc8a`.
+- Migration-ownership comparison: 427 earlier applied entries and 559 earlier sources unchanged; exactly the reviewed `20261030120000` identity and Sygilant source added; fresh verification against the new baseline accepted with zero drift and reconciliation errors.
+- Production readiness for the exact bootstrap source is verified. The normal rollback-safe release record and an authenticated login confirmation remain required before complete recovery is claimed.
 
 ## Release status
 
-Production deployment is pending the complete release gate, exact `origin/main` workflow, and coordinated database activation. This record will be updated with the exact source and Worker version after release.
+Sygilant source `f0dbbb230be521ee5e503b07356218917baa2699` and its database repair are live. SygShift source `b447d08e7cc6c46df005b05d3baa0ca2b45bcc8a` was lifecycle-bootstrap deployed as Worker `78484513-73c5-423c-ae19-9e84836ef589`; the live root, login, health, and readiness endpoints returned HTTP 200. Readiness reported `ready=true`, all 11 checks true, zero failures, and `lastFullSuccessSourceCommit=b447d08e7cc6c46df005b05d3baa0ca2b45bcc8a`. The scheduled coordinator has therefore reconciled to the exact bootstrap source. The normal rollback-safe release record and authenticated login confirmation remain pending; readiness is verified but complete recovery is not yet claimed.
 
 ## Rollback plan
 

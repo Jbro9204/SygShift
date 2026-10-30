@@ -3647,6 +3647,10 @@ pnpm exec wrangler deploy --keep-vars
 - Preserved healthy native and shared-identity logins during central-service, context-contract, registry, and access-generation compatibility failures while keeping the SygShift workspace closed until verification succeeds.
 - Limited destructive sign-out to explicit centralized suspension or revocation; the private forced-logout path and exact acknowledgement remain unchanged.
 - Reconciled the repair with current main, including the canonical legacy-host entry correction.
-- Focused validation passed on the exact release toolchain: 4 test files / 61 tests, TypeScript, zero-warning lint, and diff validation.
-- Full release verification, exact-main CI, coordinated database activation, Worker deployment, and live authenticated verification remain pending.
+- Focused validation passed on the exact release toolchain: 114 tests, TypeScript, zero-warning lint, and diff validation.
+- Full release verification passed 390 test files with one intentional skip, 2,307 of 2,308 tests, 189 release-control tests, the production build, and all 42 mandatory desktop/mobile Time Clock checks. GitHub workflow `41055433836` passed the exact-candidate and CodeQL gates for source `b447d08e7cc6c46df005b05d3baa0ca2b45bcc8a`.
+- Applied and verified the Sygilant-owned forward migration `20261030120000_emergency_access_login_admission_repair`; SygShift adds no duplicate database authority.
+- Captured the read-only 428-entry ownership baseline after the repair. All 427 earlier applied entries and 559 earlier owning sources are unchanged; only `20261030120000` and its exact Sygilant source were added. The retained file SHA-256 is `9af4faef88dad05adfb67fe0aa4ecaa68d6cfb731340e6f244d0db5ffc682171`, and its ledger SHA-256 is `981f307c4057c83090e1def7b89c4612ba14ad46db101dd3137aaa8af7a97a2d`.
+- Lifecycle-bootstrap deployed source `b447d08e7cc6c46df005b05d3baa0ca2b45bcc8a` as Worker `78484513-73c5-423c-ae19-9e84836ef589`; root, login, health, and readiness returned HTTP 200. Readiness reported `ready=true`, all 11 checks true, zero failures, and `lastFullSuccessSourceCommit=b447d08e7cc6c46df005b05d3baa0ca2b45bcc8a` after the scheduled coordinator reconciled to the exact source.
+- The normal rollback-safe release record and authenticated login verification remain pending; no complete recovery claim is made yet.
 - See `docs/changelogs/CHANGELOG_10-30-2026_LOGIN_SESSION_RECOVERY.md`.
