@@ -93,4 +93,4 @@ Completed during implementation:
 
 ## Remaining interface dependency
 
-No signed-in SygShift browser tab or release-canary credentials were available for a final manual read of the Admin page. The exact deployed asset, signed-out boundary, rendered interaction tests, Worker authorization/provider tests, installed database contracts, and rollback-only production behaviors are verified. Sygilant's future native administrator screen must proxy this SygShift authority; it must not create a second revocation implementation.
+No signed-in SygShift browser tab or release-canary credentials were available for a final manual read of the Admin page. The exact deployed asset, signed-out boundary, rendered interaction tests, Worker authorization/provider tests, installed database contracts, and rollback-only production behaviors are verified. The subsequent centralization release moves mutation authority to Sygilant Security Center and retains SygShift only as an enforcement client of that shared authority; it does not create a second revocation implementation.
