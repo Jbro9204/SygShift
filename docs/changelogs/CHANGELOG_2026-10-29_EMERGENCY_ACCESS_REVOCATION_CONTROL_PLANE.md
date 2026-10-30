@@ -77,7 +77,7 @@ Completed during implementation:
 - production activation of only migration `20261029225323` through the reviewed atomic artifact, with all in-transaction preflight, schema/function/ACL/RLS/index/trigger postflight, and exact-ledger checks passing;
 - independent live verification of a 422-entry migration ledger, one exact stored migration statement with source SHA-256 `f9bc9d56659662adaa8ec42fcebfa4412be00d890f57d44c0b19c80eda0a0335`, and the required operation, event, session-tombstone, revoke, and restore contracts;
 - installed rollback-only emergency-access and atomic-role regressions passing against production without retained synthetic employee, Auth, session, schedule, punch, payroll, or emergency-operation data;
-- post-activation ownership evidence at `docs/work-orders/2026-10-29-emergency-access-revocation/migration-ownership-post-activation-v2.json`, file SHA-256 `5245048ac9ba03b2982506bb2a21f53878d6c694d4223288130d8964ce244541`, preserving every earlier applied identity, statement-array checksum, owner, and owning-source checksum while adding only version `20261029225323`; and
+- post-activation ownership evidence at `docs/work-orders/2026-10-29-emergency-access-revocation/migration-ownership-post-activation-v2.json`, retained file SHA-256 `6fb6f91553ec04994b31b2a9a81bcf91bbadf75618ff4a3876751eea71dc34f5` after repository-relative source-path normalization, preserving every earlier applied identity, statement-array checksum, owner, and owning-source checksum while adding only version `20261029225323`; and
 - pre-deployment production checks returning HTTP 200 for the root, login, health, and readiness routes, with `ready=true`, scheduled runtime `closed`, and zero consecutive failures.
 
 ## Production release
@@ -95,7 +95,7 @@ Completed during implementation:
 
 The centralized bridge was subsequently released from exact source `dd5b532df4f792dd60be98002909b84d42c11e66` as Cloudflare Worker `40129fe3-84d2-4d5c-956f-3c9339711f39`. This predecessor Worker, `02ee56ae-7692-4072-a4e2-fbf1c071a1da` at source `3cc2a31eb69b028e73d047e3b3af96b18f72f25d`, remains only the application rollback floor. A rollback must not restore the retired browser-driven mutation controls or revive an account disabled by the central authority.
 
-After compatible application paths were live, the forward-only `20261029233000_activate_emergency_access_control_plane` migration was applied. Activation postflight and the rollback-only canary passed. The resulting repository-relative 427-entry ownership baseline has file SHA-256 `71f80e4539676a31940139dd50ad144776b2e43398f8d966f7042a834a5e1328` and preserves all 426 precursor entries unchanged while adding only the central activation identity.
+After compatible application paths were live, the forward-only `20261029233000_activate_emergency_access_control_plane` migration was applied. Activation postflight and the rollback-only canary passed. The resulting repository-relative 427-entry ownership baseline has file SHA-256 `f44866d45a8bd06133f3a3951da87274b101f38c437b7ea4033ad9d83d399fe0` and preserves all 426 precursor entries unchanged while adding only the central activation identity.
 
 Production deployment, exact source, activation, health, readiness, and migration ownership are verified. The controlled live-account, multi-platform, multi-browser/device zero-access exercise remains open and is not claimed complete.
 
