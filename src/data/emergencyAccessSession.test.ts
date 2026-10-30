@@ -58,6 +58,22 @@ describe('central emergency platform session client', () => {
     expect(mocks.getSession).not.toHaveBeenCalled()
   })
 
+  it('accepts PostgreSQL timestamptz offsets returned by the centralized registry', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
+      accessGeneration: 4,
+      application: 'sygshift',
+      expiresAt: '2026-10-30T14:00:00+00:00',
+      id: '359c4100-06f1-4e37-8b40-b264ff10f009',
+      registered: true,
+    })))
+
+    await expect(registerEmergencyPlatformSession(4, 'verified-access-token')).resolves.toMatchObject({
+      accessGeneration: 4,
+      expiresAt: '2026-10-30T14:00:00+00:00',
+      registered: true,
+    })
+  })
+
   it('rejects a registration response for a different generation', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
       accessGeneration: 5,

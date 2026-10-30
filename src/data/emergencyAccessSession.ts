@@ -6,7 +6,10 @@ export const EMERGENCY_PLATFORM_SESSION_ACKNOWLEDGEMENT_ENDPOINT = '/api/v1/secu
 const registrationSchema = z.object({
   accessGeneration: z.number().int().positive(),
   application: z.literal('sygshift'),
-  expiresAt: z.string().datetime(),
+  // PostgreSQL timestamptz JSON values use an explicit UTC offset (for
+  // example, `+00:00`) while other producers may use `Z`. Both are valid
+  // RFC 3339 timestamps and must survive the centralized-session boundary.
+  expiresAt: z.string().datetime({ offset: true }),
   id: z.string().uuid(),
   registered: z.literal(true),
 })
@@ -14,7 +17,7 @@ const registrationSchema = z.object({
 const acknowledgementSchema = z.object({
   accessGeneration: z.number().int().positive(),
   acknowledged: z.literal(true),
-  acknowledgedAt: z.string().datetime(),
+  acknowledgedAt: z.string().datetime({ offset: true }),
   application: z.literal('sygshift'),
   closed: z.literal(true),
   operationId: z.string().uuid(),
