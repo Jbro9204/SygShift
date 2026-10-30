@@ -3628,3 +3628,13 @@ pnpm exec wrangler deploy --keep-vars
 - Released exact source `01dd28b` as Cloudflare Worker `51ceb2bb-f759-421c-bc53-1927d5cbe3b0`; the scheduled runtime advanced on that exact source and rollback was not needed.
 - Independent production checks passed for health, readiness, zero scheduled-runtime failures, exact source, the SygShift root shell, and a fresh authenticated rendering of the existing urgent banner.
 - See `docs/changelogs/CHANGELOG_2026-10-27_ANNOUNCEMENT_BANNER_DELIVERY_REPAIR.md` for the complete contract, safety, database, CI, release, verification, and limitation record.
+
+# 10/29/2026 - Central Emergency-Access Bridge
+
+- Replaced the independent SygShift **Disable login** / **Enable login** controls with a signed entry point to the centralized Sygilant Security Center and removed the unsupported claim that SygShift alone ends every session.
+- Made browser, protected Worker, and shared-identity authorization fail closed on the centralized emergency-access contract, including live Auth-session verification.
+- Added private forced-logout handling and returning-browser revalidation so open and previously offline clients honor central revocation.
+- Added exact `/security` signed-navigation support plus focused source, browser, Worker, and shared-identity regression coverage.
+- Local verification passed: strict TypeScript, zero-warning lint, 387 test files / 2,275 tests, and the production build/static-asset contract.
+- The change is not deployed and must follow activation of the centralized Sygilant contract. Live multi-device zero-access verification remains open.
+- See `docs/changelogs/CHANGELOG_10-29-2026_CENTRAL_EMERGENCY_ACCESS_BRIDGE.md` for activation order, dependencies, verification, and rollback.

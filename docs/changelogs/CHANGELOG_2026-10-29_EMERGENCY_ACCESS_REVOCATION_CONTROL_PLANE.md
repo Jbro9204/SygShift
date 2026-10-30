@@ -2,7 +2,15 @@
 
 Date: October 29, 2026
 Application: SygShift, with connected Sygilant session invalidation
-Status: released and verified
+Status: predecessor released and verified; independent application path superseded by the centralized bridge
+
+## Supersession record
+
+The database migration described below was activated before the cross-platform Sygilant control plane was finalized. Its tables, receipts, session tombstones, ownership evidence, regression artifacts, and activation evidence remain preserved. They are historical security evidence and are not deleted or rewritten.
+
+The SygShift-specific Worker endpoints and User Accounts revoke/restore modal described below were released with the predecessor control plane. The later centralized bridge removes that independent application mutation path. Sygilant Security Center becomes the sole emergency-access mutation authority, while SygShift contributes exact platform-session registration, forced-logout handling, offline revalidation, and exact-session cleanup acknowledgement. Its User Accounts screen links authorized administrators to the centralized workflow.
+
+Forward-only convergence retires the legacy SygShift mutation RPC permissions and preserves fail-closed account markers. No historical operation is treated as a verified cross-platform central receipt, and an existing disabled account requires controlled adoption by the centralized workflow.
 
 ## Why this change is needed
 
@@ -39,19 +47,16 @@ This update does not terminate an employee and does not modify employment status
 
 The database change is forward-only. Rollback of application code must not remove an active emergency marker or revive a prior session. Any rollback procedure must preserve the fail-closed database state and use the audited restoration workflow for each affected employee.
 
-## Release-candidate implementation inventory
+## Historical implementation inventory
 
 - Database authority: `supabase/migrations/20261029225323_emergency_access_revocation_control_plane.sql`
 - Rollback-only database regression: `supabase/tests/emergency_access_revocation_control_plane_regression.sql`
-- Worker orchestration and protected endpoints: `worker/index.ts`
-- Browser data contract: `src/data/adminUsers.ts`
-- User Accounts workflow: `src/pages/UserAdminPage.tsx`
-- Responsive presentation: `src/App.css`
-- Focused contract, rendered interaction, and Worker coverage: `src/adminEmergencyAccessGuard.test.ts`, `src/pages/UserAdminEmergencyAccess.test.tsx`, and `src/worker.test.ts`
+- The previously released SygShift-local Worker orchestration, browser data contract, and modal are superseded by the centralized bridge and have been removed from the bridge release branch.
+- The centralized SygShift bridge is documented in `CHANGELOG_10-29-2026_CENTRAL_EMERGENCY_ACCESS_BRIDGE.md`.
 - Fingerprint-gated activation tooling: `tools/prepare-emergency-access-revocation-release.mjs` and `tools/prepare-emergency-access-revocation-release.test.mjs`
 - Security architecture: `docs/SECURITY.md`
 
-The release candidate retires authenticated execution of the former direct account-state RPC. A stale browser cannot use that shortcut to clear or create an emergency marker. Connected Sygilant sessions are included in the shared-identity cleanup boundary; a separate Sygilant administrative interface must call this SygShift authority rather than recreate the workflow.
+The forward-only central convergence retires authenticated execution of both the former direct account-state RPC and the superseded SygShift-local mutation RPCs. A stale browser cannot use either shortcut to clear or create an emergency marker. Sygilant is the single administrative control plane, while SygShift remains a session-enforcement participant.
 
 ## Verification status
 

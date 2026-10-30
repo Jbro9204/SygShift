@@ -120,8 +120,13 @@ describe('session context verification', () => {
     const controller = new AbortController()
     const abortSignal = vi.fn().mockResolvedValueOnce({
       data: {
+        accessGeneration: 4,
+        active: true,
+        authSessionActive: true,
         display_name: 'Jordan Brown',
         employee_id: 'a25a5f5f-45b6-4e43-87a6-79298ed9347f',
+        emergencyAccessEnforced: true,
+        emergencyAccessState: 'active',
         has_mfa: true,
         mfa_enrolled_at: '2026-01-01T00:00:00.000Z',
         mfa_required: true,
@@ -142,8 +147,36 @@ describe('session context verification', () => {
       username: 'jbrown',
     })
 
-    expect(supabaseMock.client.rpc).toHaveBeenCalledWith('get_session_context')
+    expect(supabaseMock.client.rpc).toHaveBeenCalledWith('get_session_context_emergency')
     expect(abortSignal).toHaveBeenCalledWith(controller.signal)
+  })
+
+  it('rejects a stale Auth session even when the legacy employee context is present', async () => {
+    supabaseMock.client.rpc.mockResolvedValueOnce({
+      data: {
+        accessGeneration: 5,
+        active: false,
+        authSessionActive: false,
+        display_name: 'Jordan Brown',
+        employee_id: 'a25a5f5f-45b6-4e43-87a6-79298ed9347f',
+        emergencyAccessEnforced: true,
+        emergencyAccessState: 'suspended',
+        has_mfa: true,
+        mfa_enrolled_at: '2026-01-01T00:00:00.000Z',
+        mfa_required: true,
+        must_change_password: false,
+        password_changed_at: '2026-01-01T00:00:00.000Z',
+        permissions: ['operations.view'],
+        role: 'admin',
+        time_zone: 'America/New_York',
+        username: 'jbrown',
+      },
+      error: null,
+      status: 200,
+    })
+
+    const rejection = await getSessionContext().catch((error: unknown) => error)
+    expect(isTransientSessionContextError(rejection)).toBe(false)
   })
 
   it('does not classify a rejected session as transient', async () => {

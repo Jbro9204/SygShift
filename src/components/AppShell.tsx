@@ -16,6 +16,10 @@ import { getActiveAnnouncementBanners, type AnnouncementBanner } from '../data/a
 import { getTimekeepingOperationsWorkspace, isOperationalAlertLive } from '../data/timeOperations'
 import { getRequiredActionCheckpoint } from '../data/actionCenter'
 import {
+  isTransientEmergencyPlatformSessionError,
+  registerEmergencyPlatformSession,
+} from '../data/emergencyAccessSession'
+import {
   authSessionIdFromAccessToken,
   getSessionContextWithSignal,
   isTransientSessionContextError,
@@ -51,6 +55,7 @@ import { OperationalTimeHeader } from './OperationalTimeHeader'
 import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
 import { PlatformPresenceReporter } from './PlatformPresenceReporter'
+import { EmergencyAccessRevocationListener } from './EmergencyAccessRevocationListener'
 import { RequiredActionsCheckpointNotice } from './RequiredActionsCheckpointNotice'
 import { SygSphereCommunicationsRuntimeProvider } from './communications/SygSphereCommunicationsRuntime'
 import { clearPushSession } from '../data/pushNotifications'
@@ -824,7 +829,11 @@ export function AppShell() {
       }
 
       try {
-        const context = await runSecureAccessRequest((signal) => getSessionContextWithSignal(signal))
+        const context = await runSecureAccessRequest(async (signal) => {
+          const verifiedContext = await getSessionContextWithSignal(signal)
+          await registerEmergencyPlatformSession(verifiedContext.accessGeneration, signal)
+          return verifiedContext
+        })
         if (!isCurrentSessionGeneration(generation)) return
         if (sharedRestoreOutcome !== 'retrying') clearSessionRecoveryTimer(true)
         queryClient.setQueryData(['session-context'], context)
@@ -834,10 +843,16 @@ export function AppShell() {
         setAuthRecoveryRequired(false)
       } catch (error) {
         if (!isCurrentSessionGeneration(generation)) return
-        if (error instanceof SecureAccessRequestTimeoutError || isTransientSessionContextError(error)) {
+        if (
+          error instanceof SecureAccessRequestTimeoutError
+          || isTransientSessionContextError(error)
+          || isTransientEmergencyPlatformSessionError(error)
+        ) {
+          clearSessionScopedQueryCaches(queryClient)
+          setSessionContext(null)
           scheduleSessionRecovery(getSharedIdentitySessionScope() !== null)
           showTransientSecureAccessRecovery(
-            'SygShift is reconnecting to secure account services. Your sign-in has been preserved.',
+            'SygShift is reconnecting to centralized access services. Your sign-in is preserved, but the workspace remains closed until verification succeeds.',
           )
           return
         }
@@ -1005,6 +1020,9 @@ export function AppShell() {
     document.addEventListener('visibilitychange', restoreVisibleSharedSession)
 
     const refreshSecurityContext = () => {
+      clearSessionScopedQueryCaches(queryClient)
+      setSessionContext(null)
+      setAuthLoading(true)
       setAccountRefreshVersion((current) => current + 1)
       void loadSessionContext(false)
     }
@@ -1062,6 +1080,26 @@ export function AppShell() {
     } catch (error) {
       setAuthMessage(error instanceof Error ? error.message : 'Sign out failed.')
     }
+  }
+
+  function handleEmergencyAccessRevoking() {
+    authSessionInvalidationRef.current?.()
+    clearSessionScopedQueryCaches(queryClient)
+    setSessionContext(null)
+    setAuthRecoveryRequired(false)
+    setAuthLoading(false)
+    setAuthMessage('Your access has been suspended. Contact an authorized administrator if access should be restored.')
+    navigate('/login', { replace: true })
+  }
+
+  async function handleEmergencyAccessRevoked() {
+    try {
+      await signOut()
+    } catch {
+      // Local session state is cleared in signOut even when the remote session is already gone.
+    }
+    setAuthMessage('Your access has been suspended. Contact an authorized administrator if access should be restored.')
+    navigate('/login', { replace: true })
   }
 
   useEffect(() => {
@@ -1419,6 +1457,12 @@ export function AppShell() {
         <MaintenanceNotice active={activeMaintenance} completed={completedMaintenance} upcoming={upcomingMaintenance} />
 
         <WorkspaceAlertStrip entries={workspaceAlerts} />
+        {sessionContext ? (
+          <EmergencyAccessRevocationListener
+            onRevoked={handleEmergencyAccessRevoked}
+            onRevoking={handleEmergencyAccessRevoking}
+          />
+        ) : null}
         {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive ? <LiveNotifications key={sessionContext.employeeId} employeeId={sessionContext.employeeId} username={sessionContext.username} /> : null}
         {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive && sharedIdentityScopeAllowsPath('/tasks', sharedIdentityScope) ? <SygTasksAlarmHost employeeId={sessionContext.employeeId} /> : null}
 

@@ -3,6 +3,7 @@ import type { SessionContext } from '../data/auth'
 import { completedSignInRecordKind, requiresSecurityCheckpoint } from '../lib/securityCheckpoint'
 
 const protectedSession: SessionContext = {
+  accessGeneration: 1,
   displayName: 'Shared User',
   employeeId: 'a25a5f5f-45b6-4e43-87a6-79298ed9347f',
   hasMfa: false,

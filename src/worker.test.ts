@@ -78,20 +78,12 @@ const configuredEnvironment = {
   SYGSHIFT_SOURCE_COMMIT: sourceCommit,
 }
 
-function emergencyAccessToken(
-  sessionId = '90000000-0000-4000-8000-000000000001',
-  verifiedAt = Math.floor(Date.now() / 1000),
-) {
-  const encode = (value: object) => btoa(JSON.stringify(value))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/g, '')
-  return `${encode({ alg: 'none', typ: 'JWT' })}.${encode({
-    aal: 'aal2',
-    amr: [{ method: 'totp', timestamp: verifiedAt }],
-    session_id: sessionId,
-    sub: '80000000-0000-4000-8000-000000000001',
-  })}.signature`
+const activeEmergencySessionContext = {
+  accessGeneration: 1,
+  active: true,
+  authSessionActive: true,
+  emergencyAccessEnforced: true,
+  emergencyAccessState: 'active',
 }
 
 async function bridgeRecoveryHeaders(
@@ -267,6 +259,7 @@ describe('Cloudflare Worker boundary', () => {
     const authUserId = '20000000-0000-4000-8000-000000000001'
     const token = `header.${btoa(JSON.stringify({ sub: authUserId })).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}.signature`
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ...activeEmergencySessionContext,
       employee_id: '10000000-0000-4000-8000-000000000001',
       has_mfa: false,
       permissions: ['admin.security.manage'],
@@ -285,6 +278,7 @@ describe('Cloudflare Worker boundary', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1)
 
       fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+        ...activeEmergencySessionContext,
         employee_id: '10000000-0000-4000-8000-000000000001',
         has_mfa: true,
         permissions: [],
@@ -665,326 +659,13 @@ describe('Cloudflare Worker boundary', () => {
     expect(payload.requestId).toBe(response.headers.get('x-request-id'))
   })
 
-  it('requires both user-management and security-management permissions for emergency access', async () => {
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const operationRequestId = '30000000-0000-4000-8000-000000000009'
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.endsWith('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: '10000000-0000-4000-8000-000000000001',
-          username: 'user-manager',
-          display_name: 'User Manager',
-          role: 'admin',
-          has_mfa: true,
-          permissions: ['admin.users.manage'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_has_required_action_checkpoint')) {
-        return new Response(JSON.stringify(false), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    const response = await worker.fetch(
-      new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/emergency-access/revoke`, {
-        body: JSON.stringify({
-          acknowledged: true,
-          confirmationUsername: 'employee',
-          operationRequestId,
-          reason: 'Security access needs immediate revocation for investigation.',
-        }),
-        headers: {
-          authorization: `Bearer ${emergencyAccessToken()}`,
-          'content-type': 'application/json',
-          'idempotency-key': operationRequestId,
-        },
-        method: 'POST',
-      }),
-      environment(new Response('asset'), configuredEnvironment),
-    )
-    const payload = await response.json() as { error: string }
-
-    expect(response.status).toBe(403)
-    expect(payload.error).toBe('emergency_access_permissions_required')
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    vi.unstubAllGlobals()
-  })
-
-  it('revokes emergency access by disabling first, rotating the password, banning Auth, and completing the receipt', async () => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
-    const operationRequestId = '30000000-0000-4000-8000-000000000010'
-    const token = emergencyAccessToken()
-    const calls: Array<{ body: Record<string, unknown>, method: string, url: string }> = []
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
-      calls.push({ body, method: init?.method ?? 'GET', url })
-      if (url.endsWith('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'admin',
-          display_name: 'Admin User',
-          role: 'admin',
-          has_mfa: true,
-          permissions: ['admin.users.manage', 'admin.security.manage'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_has_required_action_checkpoint')) {
-        return new Response(JSON.stringify(false), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_verify_recent_hr_mfa')) {
-        return new Response(JSON.stringify({ method: 'authenticator', verifiedAt: new Date().toISOString() }), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_begin_emergency_access_revoke')) {
-        return new Response(JSON.stringify({
-          authUserId: targetAuthUserId,
-          operationId: operationRequestId,
-          status: 'provider_pending',
-          state: {
-            accountState: 'revocation_pending',
-            authUserId: targetAuthUserId,
-            employeeId: targetEmployeeId,
-            username: 'mswinney',
-          },
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url === `https://example.supabase.co/auth/v1/admin/users/${targetAuthUserId}`) {
-        return new Response(JSON.stringify({
-          id: targetAuthUserId,
-          banned_until: '2126-10-29T00:00:00.000Z',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_complete_emergency_access_operation')) {
-        return new Response(JSON.stringify({
-          operationId: operationRequestId,
-          status: 'completed',
-          state: {
-            accountState: 'revoked',
-            authBanned: true,
-            employeeId: targetEmployeeId,
-            username: 'mswinney',
-          },
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    const response = await worker.fetch(
-      new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/emergency-access/revoke`, {
-        body: JSON.stringify({
-          acknowledged: true,
-          confirmationUsername: 'mswinney',
-          operationRequestId,
-          reason: 'Immediate security access revocation requested by the system owner.',
-        }),
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-          'idempotency-key': operationRequestId,
-        },
-        method: 'POST',
-      }),
-      environment(new Response('asset'), configuredEnvironment),
-    )
-    const payload = await response.json() as { state: { accountState: string }, status: string }
-
-    expect(response.status).toBe(200)
-    expect(payload).toMatchObject({ state: { accountState: 'revoked' }, status: 'completed' })
-    const begin = calls.find((call) => call.url.endsWith('/service_begin_emergency_access_revoke'))
-    expect(calls.some((call) => call.url.endsWith('/service_has_required_action_checkpoint'))).toBe(false)
-    expect(begin?.body).toMatchObject({
-      target_acknowledged: true,
-      target_actor_auth_session_id: '90000000-0000-4000-8000-000000000001',
-      target_actor_id: actorEmployeeId,
-      target_confirmation_username: 'mswinney',
-      target_employee_id: targetEmployeeId,
-      target_operation_request_id: operationRequestId,
-    })
-    const authUpdate = calls.find((call) => call.url === `https://example.supabase.co/auth/v1/admin/users/${targetAuthUserId}`)
-    expect(authUpdate?.method).toBe('PUT')
-    expect(authUpdate?.body).toEqual({
-      ban_duration: '876000h',
-      password: expect.stringMatching(/^Aa9![A-Za-z0-9_-]{60,}$/),
-    })
-    expect(JSON.stringify(authUpdate?.body)).not.toContain('mswinney')
-    const complete = calls.find((call) => call.url.endsWith('/service_complete_emergency_access_operation'))
-    expect(complete?.body).toMatchObject({
-      target_action: 'revoke',
-      target_auth_provider_result: {
-        banned: true,
-        passwordRotated: true,
-      },
-      target_auth_provider_succeeded: true,
-      target_operation_request_id: operationRequestId,
-    })
-    vi.unstubAllGlobals()
-  })
-
-  it('restores emergency access only after a recovery email is delivered and the Auth ban is removed', async () => {
-    const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
-    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
-    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
-    const operationRequestId = '30000000-0000-4000-8000-000000000011'
-    const token = emergencyAccessToken()
-    const calls: Array<{ body: Record<string, unknown>, method: string, url: string }> = []
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
-      calls.push({ body, method: init?.method ?? 'GET', url })
-      if (url.endsWith('/rest/v1/rpc/get_session_context')) {
-        return new Response(JSON.stringify({
-          employee_id: actorEmployeeId,
-          username: 'admin',
-          display_name: 'Admin User',
-          role: 'admin',
-          has_mfa: true,
-          permissions: ['admin.users.manage', 'admin.security.manage'],
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_has_required_action_checkpoint')) {
-        return new Response(JSON.stringify(false), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_verify_recent_hr_mfa')) {
-        return new Response(JSON.stringify({ method: 'authenticator', verifiedAt: new Date().toISOString() }), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_get_employee_login_email_target')) {
-        return new Response(JSON.stringify({
-          authEmail: 'employee@accounts.sygshift.invalid',
-          contactEmail: 'employee@example.com',
-          displayName: 'Example Employee',
-          employeeId: targetEmployeeId,
-          employmentType: 'hourly',
-          existingAuthUserId: targetAuthUserId,
-          requiresMfa: false,
-          role: 'guard',
-          status: 'active',
-          username: 'employee',
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_begin_emergency_access_restore')) {
-        return new Response(JSON.stringify({
-          authUserId: targetAuthUserId,
-          operationId: operationRequestId,
-          providerResult: {},
-          status: 'provider_pending',
-          state: {
-            accountState: 'restoration_pending',
-            authUserId: targetAuthUserId,
-            employeeId: targetEmployeeId,
-            username: 'employee',
-          },
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/auth/v1/admin/generate_link')) {
-        return new Response(JSON.stringify({ hashed_token: 'r'.repeat(64) }), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_log_email_delivery')) {
-        return new Response(JSON.stringify(null), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_record_emergency_access_provider_progress')) {
-        return new Response(JSON.stringify({
-          operationId: operationRequestId,
-          providerResult: body.target_provider_progress,
-          status: 'provider_pending',
-          state: { accountState: 'restoration_pending', employeeId: targetEmployeeId, username: 'employee' },
-        }), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url.endsWith('/rest/v1/rpc/service_complete_emergency_access_operation')) {
-        const result = body.target_auth_provider_succeeded === true
-          ? {
-              operationId: operationRequestId,
-              status: 'completed',
-              state: { accountState: 'active', authBanned: false, employeeId: targetEmployeeId, username: 'employee' },
-            }
-          : {
-              operationId: operationRequestId,
-              providerResult: body.target_auth_provider_result,
-              status: 'provider_failed',
-              state: { accountState: 'restoration_pending', employeeId: targetEmployeeId, username: 'employee' },
-            }
-        return new Response(JSON.stringify(result), { headers: { 'content-type': 'application/json' } })
-      }
-      if (url === `https://example.supabase.co/auth/v1/admin/users/${targetAuthUserId}`) {
-        return new Response(JSON.stringify({ id: targetAuthUserId, banned_until: null }), {
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    const send = vi.fn().mockResolvedValue({ messageId: 'restoration-message' })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
-
-    const response = await worker.fetch(
-      new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/emergency-access/restore`, {
-        body: JSON.stringify({
-          acknowledged: true,
-          confirmationUsername: 'employee',
-          operationRequestId,
-          reason: 'Security review complete and account ownership has been verified.',
-        }),
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-          'idempotency-key': operationRequestId,
-        },
-        method: 'POST',
-      }),
-      environment(new Response('asset'), {
-        ...configuredEnvironment,
-        EMAIL: { send },
-        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
-      }),
-    )
-    const payload = await response.json() as { recoveryEmailMasked: string, state: { accountState: string }, status: string }
-
-    expect(response.status).toBe(200)
-    expect(payload).toMatchObject({
-      recoveryEmailMasked: 'em******@example.com',
-      state: { accountState: 'active' },
-      status: 'completed',
-    })
-    expect(send).toHaveBeenCalledTimes(1)
-    const checkpointIndex = calls.findIndex((call) => (
-      call.url.endsWith('/service_record_emergency_access_provider_progress')
-    ))
-    const unbanIndex = calls.findIndex((call) => call.url === `https://example.supabase.co/auth/v1/admin/users/${targetAuthUserId}`)
-    const finalIndex = calls.findIndex((call) => (
-      call.url.endsWith('/service_complete_emergency_access_operation')
-      && call.body.target_auth_provider_succeeded === true
-    ))
-    expect(checkpointIndex).toBeGreaterThan(-1)
-    expect(unbanIndex).toBeGreaterThan(checkpointIndex)
-    expect(finalIndex).toBeGreaterThan(unbanIndex)
-    expect(calls[unbanIndex]?.body).toEqual({ ban_duration: 'none' })
-    expect(calls[finalIndex]?.body).toMatchObject({
-      target_action: 'restore',
-      target_auth_provider_result: {
-        recoveryDelivered: true,
-        recoveryEmailMasked: 'em******@example.com',
-        unbanned: true,
-      },
-      target_auth_provider_succeeded: true,
-    })
-    vi.unstubAllGlobals()
-  })
-
   it.each([
     '/api/v1/admin/users/login-emails',
     '/api/v1/admin/users/10000000-0000-4000-8000-000000000010/login-email',
     '/api/v1/admin/users/10000000-0000-4000-8000-000000000010/welcome-email',
   ])('requires the effective New User Invites permission for %s', async (pathname) => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ...activeEmergencySessionContext,
       employee_id: '10000000-0000-4000-8000-000000000001',
       username: 'admin',
       display_name: 'Admin User',
@@ -1015,6 +696,7 @@ describe('Cloudflare Worker boundary', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
+        ...activeEmergencySessionContext,
         employee_id: '10000000-0000-4000-8000-000000000002',
         username: 'invitemanager',
         display_name: 'Invite Manager',
@@ -1074,6 +756,7 @@ describe('Cloudflare Worker boundary', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
+        ...activeEmergencySessionContext,
         employee_id: '10000000-0000-4000-8000-000000000002',
         username: 'invitemanager',
         display_name: 'Invite Manager',
@@ -1120,6 +803,7 @@ describe('Cloudflare Worker boundary', () => {
 
   it('does not let invitation-only access mutate account security controls', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ...activeEmergencySessionContext,
       employee_id: '10000000-0000-4000-8000-000000000002',
       username: 'invitemanager',
       display_name: 'Invite Manager',
@@ -1383,6 +1067,7 @@ describe('Cloudflare Worker boundary', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
+        ...activeEmergencySessionContext,
         employee_id: actorEmployeeId,
         username: 'admin',
         display_name: 'Admin User',
@@ -1461,6 +1146,7 @@ describe('Cloudflare Worker boundary', () => {
   it('does not let password-reset assistance change MFA or security keys', async () => {
     const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      ...activeEmergencySessionContext,
       employee_id: '10000000-0000-4000-8000-000000000001',
       username: 'operations-manager',
       display_name: 'Operations Manager',
@@ -1494,6 +1180,7 @@ describe('Cloudflare Worker boundary', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
+        ...activeEmergencySessionContext,
         employee_id: actorEmployeeId,
         username: 'admin',
         display_name: 'Admin User',
@@ -1579,6 +1266,7 @@ describe('Cloudflare Worker boundary', () => {
 
   it('does not claim notification work until email sending is configured', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ...activeEmergencySessionContext,
       employee_id: '10000000-0000-4000-8000-000000000001',
       username: 'admin',
       display_name: 'Admin User',
@@ -1607,6 +1295,7 @@ describe('Cloudflare Worker boundary', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
+        ...activeEmergencySessionContext,
         employee_id: '10000000-0000-4000-8000-000000000002',
         username: 'scheduler',
         display_name: 'Schedule User',
@@ -1681,6 +1370,7 @@ describe('Cloudflare Worker boundary', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
+        ...activeEmergencySessionContext,
         employee_id: '10000000-0000-4000-8000-000000000002',
         username: 'scheduler',
         display_name: 'Schedule User',

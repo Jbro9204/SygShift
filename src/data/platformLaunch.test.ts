@@ -39,10 +39,13 @@ describe('Sygilant platform launch boundary', () => {
     expect(isOfficialSygShiftOrigin('https://app.sygilant.us.evil.example')).toBe(false)
   })
 
-  it('allows only the dashboard or one exact operational destination', () => {
+  it('allows only the Security Center, dashboard, or one exact operational destination', () => {
     const callId = '4896f7c0-7143-48f9-9978-d1f6a342186f'
     const reportId = 'eacdc293-e7ff-4d14-8f8e-38340e26a2c5'
+    const employeeId = 'a25a5f5f-45b6-4e43-87a6-79298ed9347f'
     expect(parseSygilantPlatformDestination('/dashboard')).toBe('/dashboard')
+    expect(parseSygilantPlatformDestination('/security')).toBe('/security')
+    expect(parseSygilantPlatformDestination(`/security?employeeId=${employeeId}`)).toBe(`/security?employeeId=${employeeId}`)
     expect(parseSygilantPlatformDestination(`/dispatch?call=${callId}`)).toBe(`/dispatch?call=${callId}`)
     expect(parseSygilantPlatformDestination(`/daily-activity-reports?report=${reportId}`)).toBe(`/daily-activity-reports?report=${reportId}`)
     expect(parseSygilantPlatformDestination(`/incident-reports?report=${reportId}`)).toBe(`/incident-reports?report=${reportId}`)
@@ -50,7 +53,26 @@ describe('Sygilant platform launch boundary', () => {
     expect(parseSygilantPlatformDestination(`/dispatch?call=${callId}&view=all`)).toBeNull()
     expect(parseSygilantPlatformDestination(`/incident-reports?report=${reportId}&edit=true`)).toBeNull()
     expect(parseSygilantPlatformDestination('/dispatch')).toBeNull()
+    expect(parseSygilantPlatformDestination('/security?employeeId=someone')).toBeNull()
+    expect(parseSygilantPlatformDestination(`/security?employeeId=${employeeId}&action=suspend`)).toBeNull()
     expect(parseSygilantPlatformDestination('//sygilant.us/dispatch')).toBeNull()
+  })
+
+  it('binds the exact employee Security Center destination to the signed launch', async () => {
+    const destination = '/security?employeeId=a25a5f5f-45b6-4e43-87a6-79298ed9347f' as const
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      launch: {
+        applicationId: 'sygilant',
+        applicationUrl: 'https://sygilant.us',
+        assertion: `ssli_v1.${'a'.repeat(80)}.${'b'.repeat(64)}`,
+        destination,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        requestId: crypto.randomUUID(),
+      },
+    }), { status: 201 }))
+
+    await expect(launchSygilantPlatform(destination)).resolves.toMatchObject({ destination })
+    expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ destination }))
   })
 
   it('requests a launch from the same-origin protected endpoint without placing credentials in the URL', async () => {

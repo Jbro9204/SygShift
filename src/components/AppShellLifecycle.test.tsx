@@ -43,6 +43,7 @@ const shared = vi.hoisted(() => ({
   announcementBannerError: null as Error | null,
   announcementBanners: [] as AnnouncementBanner[],
   browserListener: null as ((action: 'cleared' | 'updated') => void) | null,
+  emergencyRegistrationError: null as Error | null,
   hydrateError: null as Error | null,
   hydrateTransient: true,
   hydrateResult: null as null | { accessToken: string; expiresAt: number; refreshToken: string; scope: 'platform' | 'sygsphere' },
@@ -121,6 +122,7 @@ vi.mock('../data/auth', () => ({
   getSessionContext: vi.fn(async () => {
     if (shared.sessionContextError) throw shared.sessionContextError
     return {
+      accessGeneration: 1,
       displayName: 'Shared User',
       employeeId,
       hasMfa: false,
@@ -137,6 +139,7 @@ vi.mock('../data/auth', () => ({
   getSessionContextWithSignal: vi.fn(async () => {
     if (shared.sessionContextError) throw shared.sessionContextError
     return {
+      accessGeneration: 1,
       displayName: 'Shared User',
       employeeId,
       hasMfa: false,
@@ -151,8 +154,23 @@ vi.mock('../data/auth', () => ({
     }
   }),
   isTransientSessionContextError: vi.fn((error: unknown) => error === shared.sessionContextError),
+  notifySessionContextChanged: vi.fn(),
   recordCompletedSignInWithRetry: vi.fn(async () => undefined),
   signOut: vi.fn(async () => undefined),
+}))
+
+vi.mock('../data/emergencyAccessSession', () => ({
+  isTransientEmergencyPlatformSessionError: vi.fn((error: unknown) => error === shared.emergencyRegistrationError),
+  registerEmergencyPlatformSession: vi.fn(async () => {
+    if (shared.emergencyRegistrationError) throw shared.emergencyRegistrationError
+    return {
+      accessGeneration: 1,
+      application: 'sygshift',
+      expiresAt: '2026-10-29T23:00:00.000Z',
+      id: 'f7658ad9-c43a-45b7-973f-f531649d0f29',
+      registered: true,
+    }
+  }),
 }))
 
 vi.mock('../data/announcements', async (loadOriginal) => ({
@@ -223,6 +241,7 @@ beforeEach(() => {
   shared.announcementBannerError = null
   shared.announcementBanners = []
   shared.browserListener = null
+  shared.emergencyRegistrationError = null
   shared.hydrateError = null
   shared.hydrateTransient = true
   shared.hydrateResult = null
@@ -530,6 +549,7 @@ describe('AppShell shared-session lifecycle', () => {
 
     await act(async () => {
       resolveContext?.({
+        accessGeneration: 1,
         displayName: 'Stale Shared User',
         employeeId,
         hasMfa: false,
@@ -568,6 +588,7 @@ describe('AppShell shared-session lifecycle', () => {
     expect(await screen.findByText('Native login')).toBeInTheDocument()
     await act(async () => {
       resolveContext?.({
+        accessGeneration: 1,
         displayName: 'Stale Signed-out User',
         employeeId,
         hasMfa: false,
@@ -630,6 +651,7 @@ describe('AppShell shared-session lifecycle', () => {
 
     await act(async () => {
       resolveContext?.({
+        accessGeneration: 1,
         displayName: 'Shared User',
         employeeId,
         hasMfa: false,
@@ -862,7 +884,7 @@ describe('AppShell shared-session lifecycle', () => {
     view.unmount()
   })
 
-  it('does not sign out an authenticated user when session context has a transient connection failure', async () => {
+  it('closes the workspace but preserves sign-in when centralized revalidation is transiently unavailable', async () => {
     prepareSharedSession('platform')
     renderShell('/')
     await screen.findByText('Platform home')
@@ -873,7 +895,8 @@ describe('AppShell shared-session lifecycle', () => {
       window.dispatchEvent(new Event('sygshift:session-context-refresh'))
     })
 
-    expect(screen.getByText('Platform home')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
     expect(shared.activeAccessToken).toBe(accessToken)
     const { signOut } = await import('../data/auth')
     const { clearSharedIdentityServerSession } = await import('../lib/sharedIdentitySession')
@@ -881,6 +904,18 @@ describe('AppShell shared-session lifecycle', () => {
     expect(signOut).not.toHaveBeenCalled()
     expect(clearSharedIdentityServerSession).not.toHaveBeenCalled()
     expect(deactivateSharedIdentitySupabaseSession).not.toHaveBeenCalled()
+  })
+
+  it('does not open a verified workspace until the platform session registry accepts it', async () => {
+    shared.emergencyRegistrationError = new Error('registry unavailable')
+    prepareSharedSession('platform')
+    renderShell('/')
+
+    expect(await screen.findByRole('heading', { name: 'Secure access is temporarily unavailable' })).toBeInTheDocument()
+    expect(screen.queryByText('Platform home')).not.toBeInTheDocument()
+    expect(shared.activeAccessToken).toBe(accessToken)
+    const { signOut } = await import('../data/auth')
+    expect(signOut).not.toHaveBeenCalled()
   })
 
   it('purges Client Communications and session context caches when the authenticated session ends', async () => {

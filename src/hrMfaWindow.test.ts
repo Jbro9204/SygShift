@@ -25,8 +25,13 @@ function hrWindowRequest(ageMinutes: number, aal: 'aal1' | 'aal2' = 'aal2') {
 
 function installTransport(verification: Record<string, unknown> | null = null) {
   const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-    if (String(url).endsWith('/get_session_context')) return Response.json({
+    if (String(url).endsWith('/get_session_context_emergency')) return Response.json({
+      accessGeneration: 1,
+      active: true,
+      authSessionActive: true,
       employee_id: actorId,
+      emergencyAccessEnforced: true,
+      emergencyAccessState: 'active',
       has_mfa: false,
       permissions: [],
       role: 'admin',

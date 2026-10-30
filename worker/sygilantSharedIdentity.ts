@@ -6,6 +6,7 @@ const assertionPattern = /^ssli_v1\.[A-Za-z0-9_-]{20,5000}\.[a-f0-9]{64}$/i
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const dispatchDestinationPattern = /^\/dispatch\?call=[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const reportDestinationPattern = /^\/(?:daily-activity-reports|incident-reports|vehicle-inspections)\?report=[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const securityDestinationPattern = /^\/security\?employeeId=[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const assuranceLevels = new Set(['aal1', 'aal2', 'security_key', 'trusted_device', 'external_mfa'])
 const redirectStatuses = new Set([301, 302, 303, 307, 308])
 const encoder = new TextEncoder()
@@ -40,7 +41,12 @@ type Configuration = {
 }
 
 type SessionContext = {
+  accessGeneration?: number
+  active?: boolean
+  authSessionActive?: boolean
   employee_id?: string
+  emergencyAccessEnforced?: boolean
+  emergencyAccessState?: string
   has_mfa?: boolean
   mfa_required?: boolean
   permissions?: string[]
@@ -55,6 +61,8 @@ type SygilantDestination =
   | `/daily-activity-reports?report=${string}`
   | `/incident-reports?report=${string}`
   | `/vehicle-inspections?report=${string}`
+  | `/security?employeeId=${string}`
+  | '/security'
   | '/dashboard'
 
 type AssertionPayload = {
@@ -398,11 +406,13 @@ async function sessionContext(token: string, request: Request, config: Configura
   if (trustedDeviceFallback) headers['x-sygshift-trusted-device-fallback'] = trustedDeviceFallback
   if (securityKey) headers['x-sygshift-security-key'] = securityKey
   if (sharedIdentity) headers['x-sygshift-shared-identity'] = sharedIdentity
-  const payload = await upstreamJson(`${config.supabaseUrl}/rest/v1/rpc/get_session_context`, {
+  const payload = await upstreamJson(`${config.supabaseUrl}/rest/v1/rpc/get_session_context_emergency`, {
     body: '{}', headers, method: 'POST',
   }) as SessionContext[] | SessionContext
   const context = Array.isArray(payload) ? payload[0] : payload
-  if (!context?.employee_id) throw new SharedLaunchError('authentication_required', 401, 'A verified SygShift session is required.')
+  if (!isActiveEmergencySessionContext(context)) {
+    throw new SharedLaunchError('access_revoked', 401, 'A verified active SygShift session is required.')
+  }
   return context
 }
 
@@ -499,10 +509,30 @@ function bearerToken(request: Request): string {
 
 function isSygilantDestination(value: unknown): value is SygilantDestination {
   return value === dashboardDestination
+    || value === '/security'
     || (typeof value === 'string' && (
       dispatchDestinationPattern.test(value)
       || reportDestinationPattern.test(value)
+      || securityDestinationPattern.test(value)
     ))
+}
+
+function isActiveEmergencySessionContext(context: SessionContext | undefined): context is SessionContext & {
+  accessGeneration: number
+  active: true
+  authSessionActive: true
+  emergencyAccessEnforced: true
+  emergencyAccessState: 'active'
+} {
+  return Boolean(
+    context?.employee_id
+    && context.emergencyAccessEnforced === true
+    && context.emergencyAccessState === 'active'
+    && context.authSessionActive === true
+    && context.active === true
+    && Number.isInteger(context.accessGeneration)
+    && (context.accessGeneration ?? 0) > 0,
+  )
 }
 
 async function boundedJson(request: Request, maximumBytes: number): Promise<Record<string, unknown> | null> {

@@ -124,7 +124,12 @@ interface SygSphereResumableUploadOperation {
 }
 
 interface SessionContext {
+  accessGeneration: number
+  active: boolean
+  authSessionActive: boolean
   employee_id: string
+  emergencyAccessEnforced: boolean
+  emergencyAccessState: string
   username: string
   display_name: string
   role: 'guard' | 'dispatcher' | 'scheduler' | 'recruiting_licensing' | 'supervisor' | 'admin'
@@ -167,43 +172,8 @@ interface SelfServiceUsernameClaim {
 }
 
 interface AuthUser {
-  banned_until?: string | null
   id: string
   email?: string
-}
-
-interface EmergencyAccessState {
-  accountState?: string
-  authBanned?: boolean | null
-  authUserId?: string | null
-  counts?: Record<string, number>
-  disabledAt?: string | null
-  displayName?: string
-  employeeId?: string
-  operation?: EmergencyAccessOperation | null
-  revocationId?: string | null
-  username?: string
-  [key: string]: unknown
-}
-
-interface EmergencyAccessOperation {
-  action?: 'revoke' | 'restore'
-  id?: string
-  operationId?: string
-  providerResult?: Record<string, unknown> | null
-  requestId?: string
-  status?: string
-  [key: string]: unknown
-}
-
-interface EmergencyAccessOperationStart {
-  authUserId?: string | null
-  operation?: EmergencyAccessOperation | null
-  operationId?: string
-  providerResult?: Record<string, unknown> | null
-  state?: EmergencyAccessState
-  status?: string
-  [key: string]: unknown
 }
 
 interface AuthMfaFactor {
@@ -242,6 +212,22 @@ interface AccessTokenClaims {
   exp?: number
   session_id?: string
   sub?: string
+}
+
+interface EmergencyPlatformSessionRegistration {
+  accessGeneration?: number
+  application?: string
+  expiresAt?: string
+  id?: string
+}
+
+interface EmergencyPlatformSessionAcknowledgement {
+  accessGeneration?: number
+  acknowledged?: boolean
+  acknowledgedAt?: string
+  application?: string
+  closed?: boolean
+  operationId?: string
 }
 
 interface SygSphereCommunicationsAuthorizationDecision {
@@ -506,10 +492,6 @@ const maxWebAuthnBodyBytes = 64 * 1024
 const maxHrDocumentBytes = 25 * 1024 * 1024
 const maxHrDocumentMetadataBytes = 16 * 1024
 const recentDocumentMfaSeconds = 15 * 60
-const recentEmergencyAccessMfaSeconds = 15 * 60
-// Keep this shorter than the database's 15-minute restoration evidence
-// window. A stale delivered link is never treated as current authorization.
-const emergencyRecoveryLinkReuseSeconds = 12 * 60
 const recentHrMfaSeconds = 30 * 60
 const defaultAppUrl = 'https://app.sygilant.us'
 const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
@@ -1226,8 +1208,8 @@ function forwardedAssuranceHeaders(request: Request): Record<string, string> | u
 
 function requiredActionCheckpointAllowsMutation(pathname: string): boolean {
   return pathname.startsWith('/api/v1/account/')
+    || pathname === emergencyPlatformSessionRegisterPath
     || pathname === '/api/v1/time/attendance/report'
-    || /^\/api\/v1\/admin\/users\/[0-9a-f-]{36}\/emergency-access\/revoke$/i.test(pathname)
     || /^\/api\/v1\/hr\/automation\/tasks\/[0-9a-f-]{36}\/(?:viewed|complete)$/i.test(pathname)
     || /^\/api\/v1\/hr\/documents\/assignments\/[0-9a-f-]{36}\/(?:access|complete)$/i.test(pathname)
     || /^\/api\/v1\/hr\/documents\/signatures\/[0-9a-f-]{36}\/(?:access|actions)$/i.test(pathname)
@@ -1258,15 +1240,15 @@ async function requireAuthenticatedSession(request: Request, environment: Enviro
   const token = authorization.slice('Bearer '.length)
   const payload = await callRpc<SessionContext[] | SessionContext>(
     { publishableKey: config.publishableKey, url: config.url },
-    'get_session_context',
+    'get_session_context_emergency',
     {},
     token,
     forwardedAssuranceHeaders(request),
   )
   const context = Array.isArray(payload) ? payload[0] : payload
 
-  if (!context?.employee_id) {
-    throw new Response(JSON.stringify({ error: 'auth_required' }), {
+  if (!isActiveEmergencySessionContext(context)) {
+    throw new Response(JSON.stringify({ error: 'access_revoked' }), {
       headers: { 'content-type': 'application/json; charset=utf-8' },
       status: 401,
     })
@@ -1293,6 +1275,132 @@ async function requireAuthenticatedSession(request: Request, environment: Enviro
   }
 
   return { config, context, token }
+}
+
+const emergencyPlatformSessionRegisterPath = '/api/v1/security/emergency-session/register'
+const emergencyPlatformSessionAcknowledgementPath = '/api/v1/security/emergency-session/revocation-acknowledgement'
+
+function requiredBearerToken(request: Request): string {
+  const authorization = request.headers.get('authorization')
+  if (!authorization?.startsWith('Bearer ')) {
+    throw new ApiError('auth_required', 401, 'A protected session is required.')
+  }
+  const token = authorization.slice('Bearer '.length).trim()
+  if (!token) throw new ApiError('auth_required', 401, 'A protected session is required.')
+  return token
+}
+
+function exactEmergencySessionClaims(token: string): Required<Pick<AccessTokenClaims, 'exp' | 'session_id' | 'sub'>> {
+  const claims = accessTokenClaims(token)
+  if (!claims
+    || !validUuid(claims.session_id ?? '')
+    || !validUuid(claims.sub ?? '')
+    || !Number.isInteger(claims.exp)
+    || (claims.exp ?? 0) * 1000 <= Date.now()) {
+    throw new ApiError('auth_required', 401, 'The protected session token is invalid or expired.')
+  }
+  return {
+    exp: claims.exp as number,
+    session_id: claims.session_id as string,
+    sub: claims.sub as string,
+  }
+}
+
+async function handleEmergencyPlatformSessionApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  const body = await readJsonBody(request)
+
+  if (url.pathname === emergencyPlatformSessionRegisterPath) {
+    const expectedAccessGeneration = body.expectedAccessGeneration
+    if (!Number.isInteger(expectedAccessGeneration) || Number(expectedAccessGeneration) <= 0) {
+      throw new ApiError('invalid_access_generation', 422, 'The expected access generation is required.')
+    }
+    const session = await requireAuthenticatedSession(request, environment)
+    if (session.context.accessGeneration !== expectedAccessGeneration) {
+      throw new ApiError('access_generation_changed', 409, 'The centralized access generation changed during verification.')
+    }
+    const claims = exactEmergencySessionClaims(session.token)
+    let registration: EmergencyPlatformSessionRegistration
+    try {
+      registration = await callRpc<EmergencyPlatformSessionRegistration>(
+        { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+        'sygilant_service_register_emergency_platform_session',
+        {
+          target_access_generation: session.context.accessGeneration,
+          target_application: 'sygshift',
+          target_auth_user_id: claims.sub,
+          target_employee_id: session.context.employee_id,
+          target_expires_at: new Date(claims.exp * 1000).toISOString(),
+          target_provider_session_hash: await sha256Hex(claims.session_id),
+        },
+        session.config.serviceRoleKey,
+      )
+    } catch (error) {
+      if (error instanceof SupabaseRequestError && error.status < 500) {
+        throw new ApiError('access_revoked', 401, 'The centralized access session is no longer active.')
+      }
+      throw new ApiError('platform_session_registration_unavailable', 503, 'The centralized session registry is unavailable.')
+    }
+    if (!validUuid(registration.id ?? '')
+      || registration.application !== 'sygshift'
+      || registration.accessGeneration !== session.context.accessGeneration
+      || typeof registration.expiresAt !== 'string') {
+      throw new ApiError('invalid_platform_session_registration', 502, 'The centralized session registry returned an invalid response.')
+    }
+    return json({ ...registration, registered: true, requestId })
+  }
+
+  if (url.pathname === emergencyPlatformSessionAcknowledgementPath) {
+    const operationId = typeof body.operationId === 'string' ? body.operationId : ''
+    const accessGeneration = body.accessGeneration
+    if (!validUuid(operationId)
+      || !Number.isInteger(accessGeneration)
+      || Number(accessGeneration) <= 0) {
+      throw new ApiError('invalid_revocation_acknowledgement', 422, 'The exact revocation operation and access generation are required.')
+    }
+    const config = configuredSupabase(environment)
+    if (!config) throw new ApiError('server_not_configured', 503, 'Centralized access services are not configured.')
+    const token = requiredBearerToken(request)
+    const claims = exactEmergencySessionClaims(token)
+    let acknowledgement: EmergencyPlatformSessionAcknowledgement
+    try {
+      acknowledgement = await callRpc<EmergencyPlatformSessionAcknowledgement>(
+        { publishableKey: config.publishableKey, url: config.url },
+        'acknowledge_emergency_platform_session_revocation',
+        {
+          target_access_generation: accessGeneration,
+          target_application: 'sygshift',
+          target_operation_id: operationId,
+          target_provider_session_hash: await sha256Hex(claims.session_id),
+        },
+        token,
+      )
+    } catch (error) {
+      if (error instanceof SupabaseRequestError && [401, 403].includes(error.status)) {
+        throw new ApiError('auth_required', 401, 'The revoked session token was not accepted for acknowledgement.')
+      }
+      if (error instanceof SupabaseRequestError && error.status < 500) {
+        throw new ApiError('revocation_acknowledgement_rejected', 409, 'The exact revoked session was not eligible for acknowledgement.')
+      }
+      throw new ApiError('revocation_acknowledgement_unavailable', 503, 'The revocation acknowledgement service is unavailable.')
+    }
+    if (acknowledgement.acknowledged !== true
+      || acknowledgement.closed !== true
+      || acknowledgement.application !== 'sygshift'
+      || acknowledgement.operationId !== operationId
+      || acknowledgement.accessGeneration !== accessGeneration
+      || typeof acknowledgement.acknowledgedAt !== 'string') {
+      throw new ApiError('invalid_revocation_acknowledgement', 502, 'The revocation acknowledgement service returned an invalid response.')
+    }
+    return json({ ...acknowledgement, requestId })
+  }
+
+  return errorJson('not_found', requestId, 404)
 }
 
 const sygsphereCommunicationsRuntimeEnabled = (environment: Environment): boolean =>
@@ -2127,14 +2235,21 @@ async function requireVerifiedOperationsSession(
   const token = authorization.slice('Bearer '.length)
   const payload = await callRpc<SessionContext[] | SessionContext>(
     { publishableKey: config.publishableKey, url: config.url },
-    'get_session_context',
+    'get_session_context_emergency',
     {},
     token,
     forwardedAssuranceHeaders(request),
   )
   const context = Array.isArray(payload) ? payload[0] : payload
 
-  if (!context || !context.has_mfa) {
+  if (!isActiveEmergencySessionContext(context)) {
+    throw new Response(JSON.stringify({ error: 'access_revoked' }), {
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      status: 401,
+    })
+  }
+
+  if (!context.has_mfa) {
     throw new Response(JSON.stringify({ error: mfaError }), {
       headers: { 'content-type': 'application/json; charset=utf-8' },
       status: 403,
@@ -2142,6 +2257,18 @@ async function requireVerifiedOperationsSession(
   }
 
   return { config, context, token }
+}
+
+function isActiveEmergencySessionContext(context: SessionContext | undefined): context is SessionContext {
+  return Boolean(
+    context?.employee_id
+    && context.emergencyAccessEnforced === true
+    && context.emergencyAccessState === 'active'
+    && context.authSessionActive === true
+    && context.active === true
+    && Number.isInteger(context.accessGeneration)
+    && context.accessGeneration > 0,
+  )
 }
 
 function randomFrom(values: string): string {
@@ -2220,13 +2347,6 @@ function generateOpaqueToken(size = 48): string {
   const bytes = new Uint8Array(size)
   crypto.getRandomValues(bytes)
   return encodeBase64Url(bytes)
-}
-
-function generateEmergencyRevocationPassword(): string {
-  // The random token supplies more than enough entropy; the prefix guarantees
-  // every configured Auth password-class rule is met before the value is
-  // discarded. This password is never returned, logged, or emailed.
-  return `Aa9!${generateOpaqueToken(48)}`
 }
 
 function expectedWebAuthnOrigins(request: Request): string[] {
@@ -6822,22 +6942,6 @@ async function updateAuthUser(
   })
 }
 
-async function updateAuthUserEmergencyAccess(
-  config: NonNullable<ReturnType<typeof configuredSupabase>>,
-  userId: string,
-  update: { ban_duration: '876000h', password: string } | { ban_duration: 'none' },
-): Promise<AuthUser> {
-  return supabaseJson<AuthUser>(`${config.url}/auth/v1/admin/users/${userId}`, {
-    body: JSON.stringify(update),
-    headers: {
-      apikey: config.serviceRoleKey,
-      authorization: `Bearer ${config.serviceRoleKey}`,
-      'content-type': 'application/json',
-    },
-    method: 'PUT',
-  })
-}
-
 async function provisionOne(
   config: NonNullable<ReturnType<typeof configuredSupabase>>,
   target: AuthTarget,
@@ -7991,530 +8095,8 @@ async function handleMyAccountApi(request: Request, environment: Environment, re
   return errorJson('not_found', requestId, 404)
 }
 
-type EmergencyAccessAction = 'revoke' | 'restore'
-
-type EmergencyAccessMutationInput = {
-  acknowledged: true
-  confirmationUsername: string
-  operationRequestId: string
-  reason: string
-}
-
-function emergencyAccessOperation(payload: EmergencyAccessOperationStart): EmergencyAccessOperation | null {
-  return payload.operation ?? payload.state?.operation ?? null
-}
-
-function emergencyAccessOperationId(payload: EmergencyAccessOperationStart, fallback: string): string {
-  return payload.operationId
-    ?? emergencyAccessOperation(payload)?.operationId
-    ?? emergencyAccessOperation(payload)?.id
-    ?? fallback
-}
-
-function emergencyAccessProviderResult(payload: EmergencyAccessOperationStart): Record<string, unknown> {
-  return payload.providerResult
-    ?? emergencyAccessOperation(payload)?.providerResult
-    ?? {}
-}
-
-function emergencyAccessOperationComplete(payload: EmergencyAccessOperationStart): boolean {
-  return [payload.status, emergencyAccessOperation(payload)?.status]
-    .some((status) => status === 'completed')
-}
-
-function emergencyAccessState(payload: EmergencyAccessOperationStart): EmergencyAccessState {
-  const state = payload.state ?? payload as EmergencyAccessState
-  const {
-    authEmail: _authEmail,
-    recoveryEmail,
-    ...safeState
-  } = state
-  return {
-    ...safeState,
-    recoveryEmailMasked: typeof recoveryEmail === 'string' && recoveryEmail.includes('@')
-      ? maskEmailAddress(recoveryEmail)
-      : null,
-  }
-}
-
-function parseEmergencyAccessMutationInput(request: Request, body: Record<string, unknown>): EmergencyAccessMutationInput {
-  const bodyOperationId = typeof body.operationRequestId === 'string' ? body.operationRequestId.trim() : ''
-  const headerOperationId = request.headers.get('idempotency-key')?.trim() ?? ''
-  if (bodyOperationId && headerOperationId && bodyOperationId !== headerOperationId) {
-    throw new ApiError('emergency_access_request_mismatch', 409, 'The request identifier does not match the Idempotency-Key header.')
-  }
-  const operationRequestId = bodyOperationId || headerOperationId
-  if (!validUuid(operationRequestId)) {
-    throw new ApiError('invalid_emergency_access_request_id', 422, 'A stable UUID request identifier is required.')
-  }
-
-  const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
-  if (reason.length < 10 || reason.length > 1000) {
-    throw new ApiError('invalid_emergency_access_reason', 422, 'Enter a reason between 10 and 1,000 characters.')
-  }
-  const confirmationUsername = typeof body.confirmationUsername === 'string'
-    ? body.confirmationUsername.trim()
-    : ''
-  if (!confirmationUsername || confirmationUsername.length > 120) {
-    throw new ApiError('invalid_emergency_access_confirmation', 422, 'Enter the employee username exactly as shown.')
-  }
-  if (body.acknowledged !== true) {
-    throw new ApiError('emergency_access_acknowledgment_required', 422, 'Confirm that employment and historical records will remain unchanged.')
-  }
-  return { acknowledged: true, confirmationUsername, operationRequestId, reason }
-}
-
-async function requireEmergencyAccessSession(
-  request: Request,
-  environment: Environment,
-  requireFreshMfa: boolean,
-) {
-  let session: Awaited<ReturnType<typeof requireAuthenticatedSession>>
-  try {
-    session = await requireAuthenticatedSession(request, environment)
-  } catch (error) {
-    if (error instanceof Response) {
-      const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
-      throw new ApiError(payload.error ?? 'auth_required', error.status, 'Sign in again before managing emergency access.')
-    }
-    throw error
-  }
-
-  if (
-    session.context.permissions?.includes('admin.users.manage') !== true
-    || session.context.permissions?.includes('admin.security.manage') !== true
-  ) {
-    throw new ApiError(
-      'emergency_access_permissions_required',
-      403,
-      'User-account and security-management permissions are both required.',
-    )
-  }
-
-  if (!requireFreshMfa) return { ...session, authSessionId: null, mfa: null }
-
-  let mfa: Awaited<ReturnType<typeof requireRecentHrMfa>>
-  try {
-    mfa = await requireRecentHrMfa(request, session)
-  } catch (error) {
-    if (error instanceof ApiError && error.code === 'recent_hr_mfa_required') {
-      throw new ApiError(
-        'recent_security_mfa_required',
-        403,
-        'Verify with your authenticator or security key before changing emergency access.',
-      )
-    }
-    throw error
-  }
-  const verifiedAtMs = Date.parse(mfa.verifiedAt)
-  const nowMs = Date.now()
-  if (
-    !Number.isFinite(verifiedAtMs)
-    || verifiedAtMs < nowMs - recentEmergencyAccessMfaSeconds * 1000
-    || verifiedAtMs > nowMs + 60_000
-  ) {
-    throw new ApiError(
-      'recent_security_mfa_required',
-      403,
-      'Verify with your authenticator or security key before changing emergency access.',
-    )
-  }
-
-  const authSessionId = accessTokenClaims(session.token)?.session_id ?? ''
-  if (!validUuid(authSessionId)) {
-    throw new ApiError('active_security_session_required', 403, 'Sign in again before changing emergency access.')
-  }
-  return { ...session, authSessionId, mfa }
-}
-
-function safeEmergencyAccessProviderError(error: unknown): Record<string, unknown> {
-  if (error instanceof SupabaseRequestError) {
-    return {
-      code: error.code,
-      operation: error.operation,
-      status: error.status,
-    }
-  }
-  return {
-    code: error instanceof ApiError ? error.code : 'provider_request_failed',
-    status: error instanceof ApiError ? error.status : 503,
-  }
-}
-
-async function completeEmergencyAccessOperation(
-  session: Awaited<ReturnType<typeof requireEmergencyAccessSession>>,
-  action: EmergencyAccessAction,
-  operationRequestId: string,
-  providerSucceeded: boolean,
-  providerResult: Record<string, unknown>,
-): Promise<EmergencyAccessOperationStart> {
-  return callRpc<EmergencyAccessOperationStart>(
-    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
-    'service_complete_emergency_access_operation',
-    {
-      target_action: action,
-      target_actor_id: session.context.employee_id,
-      target_auth_provider_result: providerResult,
-      target_auth_provider_succeeded: providerSucceeded,
-      target_operation_request_id: operationRequestId,
-    },
-    session.config.serviceRoleKey,
-  )
-}
-
-async function recordEmergencyAccessProviderProgress(
-  session: Awaited<ReturnType<typeof requireEmergencyAccessSession>>,
-  action: EmergencyAccessAction,
-  operationRequestId: string,
-  providerProgress: Record<string, unknown>,
-): Promise<EmergencyAccessOperationStart> {
-  return callRpc<EmergencyAccessOperationStart>(
-    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
-    'service_record_emergency_access_provider_progress',
-    {
-      target_action: action,
-      target_actor_id: session.context.employee_id,
-      target_operation_request_id: operationRequestId,
-      target_provider_progress: providerProgress,
-    },
-    session.config.serviceRoleKey,
-  )
-}
-
-async function handleEmergencyAccessApi(
-  request: Request,
-  environment: Environment,
-  requestId: string,
-  employeeId: string,
-  action: EmergencyAccessAction | 'state',
-): Promise<Response> {
-  const mutation = action !== 'state'
-  const session = await requireEmergencyAccessSession(request, environment, mutation)
-  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
-
-  if (!mutation) {
-    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
-    const state = await callRpc<EmergencyAccessState>(
-      serviceConfig,
-      'service_get_employee_emergency_access_state',
-      {
-        target_actor_id: session.context.employee_id,
-        target_employee_id: employeeId,
-      },
-      session.config.serviceRoleKey,
-    )
-    return json({ requestId, state: emergencyAccessState(state) })
-  }
-
-  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
-  if (action === 'restore') await requireMaintenanceWriteAccess(serviceConfig, 'user_accounts')
-
-  const input = parseEmergencyAccessMutationInput(request, await readJsonBody(request))
-  let restoreTarget: LoginEmailTarget | null = null
-  let restoreRecipient: string | null = null
-  if (action === 'restore') {
-    restoreTarget = await callRpc<LoginEmailTarget>(
-      serviceConfig,
-      'service_get_employee_login_email_target',
-      { target_employee_id: employeeId },
-      session.config.serviceRoleKey,
-    )
-    if (!restoreTarget?.existingAuthUserId) {
-      throw new ApiError('employee_login_missing', 422, 'This employee does not have a login account to restore.')
-    }
-    restoreRecipient = requireApprovedEmployeeEmail(environment, restoreTarget)
-  }
-  const beginRpc = action === 'revoke'
-    ? 'service_begin_emergency_access_revoke'
-    : 'service_begin_emergency_access_restore'
-  const begin = await callRpc<EmergencyAccessOperationStart>(
-    serviceConfig,
-    beginRpc,
-    {
-      target_acknowledged: input.acknowledged,
-      target_actor_auth_session_id: session.authSessionId,
-      target_actor_id: session.context.employee_id,
-      target_confirmation_username: input.confirmationUsername,
-      target_employee_id: employeeId,
-      target_mfa_method: session.mfa?.method,
-      target_mfa_verified_at: session.mfa?.verifiedAt,
-      target_operation_request_id: input.operationRequestId,
-      target_reason: input.reason,
-    },
-    session.config.serviceRoleKey,
-  )
-  const operationId = emergencyAccessOperationId(begin, input.operationRequestId)
-  if (emergencyAccessOperationComplete(begin)) {
-    return json({
-      action,
-      operationId,
-      requestId,
-      state: emergencyAccessState(begin),
-      status: 'completed',
-    })
-  }
-
-  const beginState = emergencyAccessState(begin)
-  const authUserId = begin.authUserId ?? beginState.authUserId
-  if (!authUserId || !validUuid(authUserId)) {
-    const providerResult = {
-      error: { code: 'employee_login_missing', status: 422 },
-      errorCode: 'employee_login_missing',
-    }
-    const failed = await completeEmergencyAccessOperation(session, action, input.operationRequestId, false, providerResult)
-    return json({
-      action,
-      detail: 'The employee login is missing. Access remains blocked until an administrator repairs the account link.',
-      error: 'employee_login_missing',
-      operationId,
-      requestId,
-      state: emergencyAccessState(failed),
-      status: 'partial',
-    }, 422)
-  }
-
-  if (action === 'revoke') {
-    try {
-      const authUser = await updateAuthUserEmergencyAccess(session.config, authUserId, {
-        ban_duration: '876000h',
-        password: generateEmergencyRevocationPassword(),
-      })
-      const providerResult = {
-        banned: true,
-        bannedUntil: authUser.banned_until ?? null,
-        passwordRotated: true,
-      }
-      const completed = await completeEmergencyAccessOperation(
-        session,
-        action,
-        input.operationRequestId,
-        true,
-        providerResult,
-      )
-      return json({
-        action,
-        operationId,
-        requestId,
-        state: emergencyAccessState(completed),
-        status: 'completed',
-      })
-    } catch (error) {
-      const providerError = safeEmergencyAccessProviderError(error)
-      const providerResult = { error: providerError, errorCode: providerError.code }
-      let failed: EmergencyAccessOperationStart = begin
-      try {
-        failed = await completeEmergencyAccessOperation(
-          session,
-          action,
-          input.operationRequestId,
-          false,
-          providerResult,
-        )
-      } catch {
-        // The database begin step already disabled the account. Never report
-        // success or attempt to compensate by reopening access.
-      }
-      return json({
-        action,
-        detail: 'Application access remains blocked, but the identity-provider cleanup needs administrator attention.',
-        error: 'emergency_access_revoke_partial',
-        operationId,
-        requestId,
-        state: emergencyAccessState(failed),
-        status: 'partial',
-      }, 503)
-    }
-  }
-
-  const target = restoreTarget as LoginEmailTarget
-  if (target.existingAuthUserId !== authUserId) {
-    const providerResult = {
-      error: { code: 'employee_login_mismatch', status: 409 },
-      errorCode: 'employee_login_mismatch',
-    }
-    const failed = await completeEmergencyAccessOperation(session, action, input.operationRequestId, false, providerResult)
-    return json({
-      action,
-      detail: 'The employee login link changed while access was being restored. Access remains blocked.',
-      error: 'employee_login_mismatch',
-      operationId,
-      requestId,
-      state: emergencyAccessState(failed),
-      status: 'partial',
-    }, 409)
-  }
-  const recipient = restoreRecipient as string
-  const maskedEmail = maskEmailAddress(recipient)
-  const priorProviderResult = emergencyAccessProviderResult(begin)
-  const priorRecoveryUsableUntil = typeof priorProviderResult.recoveryUsableUntil === 'string'
-    ? Date.parse(priorProviderResult.recoveryUsableUntil)
-    : Number.NaN
-  let recoveryDelivered = priorProviderResult.recoveryDelivered === true
-    && Number.isFinite(priorRecoveryUsableUntil)
-    && priorRecoveryUsableUntil > Date.now() + 60_000
-  let recoveryDeliveredAt = recoveryDelivered && typeof priorProviderResult.recoveryDeliveredAt === 'string'
-    ? priorProviderResult.recoveryDeliveredAt
-    : null
-  let recoveryUsableUntil = recoveryDelivered && typeof priorProviderResult.recoveryUsableUntil === 'string'
-    ? priorProviderResult.recoveryUsableUntil
-    : null
-
-  if (!recoveryDelivered) {
-    try {
-      const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
-      const generated = await supabaseJson<GeneratedPasswordRecoveryLink>(`${session.config.url}/auth/v1/admin/generate_link`, {
-        body: JSON.stringify({
-          email: target.authEmail,
-          redirect_to: `${appUrl}/password-recovery`,
-          type: 'recovery',
-        }),
-        headers: {
-          apikey: session.config.serviceRoleKey,
-          authorization: `Bearer ${session.config.serviceRoleKey}`,
-          'content-type': 'application/json',
-        },
-        method: 'POST',
-      })
-      const recoveryLink = buildApplicationPasswordRecoveryLink(generated, appUrl)
-      const delivery = await sendAuditedEmail(
-        environment,
-        recipient,
-        buildPasswordResetEmail(target, recoveryLink),
-        {
-          notificationType: 'emergency_access_restoration',
-          relatedRecordId: employeeId,
-          relatedRecordType: 'employee',
-        },
-        defaultSupportEmail,
-      )
-      if (delivery.suppressed.length > 0) {
-        throw new ApiError('email_recipient_suppressed', 409, 'The recovery email was suppressed by the active recipient safeguards.')
-      }
-      if (delivery.failed.length > 0) {
-        throw new ApiError('email_delivery_failed', 502, delivery.failed[0].error)
-      }
-      recoveryDelivered = true
-      const deliveredAt = new Date()
-      recoveryDeliveredAt = deliveredAt.toISOString()
-      recoveryUsableUntil = new Date(deliveredAt.getTime() + emergencyRecoveryLinkReuseSeconds * 1000).toISOString()
-      await recordEmergencyAccessProviderProgress(
-        session,
-        action,
-        input.operationRequestId,
-        {
-          recoveryDelivered: true,
-          recoveryDeliveredAt,
-          recoveryEmailMasked: maskedEmail,
-          recoveryUsableUntil,
-        },
-      )
-    } catch (error) {
-      const providerError = safeEmergencyAccessProviderError(error)
-      const providerResult = {
-        error: providerError,
-        errorCode: providerError.code,
-        recoveryDelivered: false,
-        recoveryEmailMasked: maskedEmail,
-      }
-      let failed: EmergencyAccessOperationStart = begin
-      try {
-        failed = await completeEmergencyAccessOperation(
-          session,
-          action,
-          input.operationRequestId,
-          false,
-          providerResult,
-        )
-      } catch {
-        // Restoration is fail-closed: the account remains disabled and banned.
-      }
-      return json({
-        action,
-        detail: 'The recovery message was not completed. Access remains blocked.',
-        error: 'emergency_access_restore_partial',
-        operationId,
-        recoveryEmailMasked: maskedEmail,
-        requestId,
-        state: emergencyAccessState(failed),
-        status: 'partial',
-      }, 503)
-    }
-  }
-
-  let authUnbanned = false
-  try {
-    await updateAuthUserEmergencyAccess(session.config, authUserId, { ban_duration: 'none' })
-    authUnbanned = true
-    const completed = await completeEmergencyAccessOperation(
-      session,
-      action,
-      input.operationRequestId,
-      true,
-      {
-        recoveryDelivered,
-        recoveryDeliveredAt,
-        recoveryEmailMasked: maskedEmail,
-        recoveryUsableUntil,
-        unbanned: true,
-      },
-    )
-    return json({
-      action,
-      operationId,
-      recoveryEmailMasked: maskedEmail,
-      requestId,
-      state: emergencyAccessState(completed),
-      status: 'completed',
-    })
-  } catch (error) {
-    const providerError = safeEmergencyAccessProviderError(error)
-    const providerResult = {
-      error: providerError,
-      errorCode: providerError.code,
-      recoveryDelivered,
-      recoveryDeliveredAt,
-      recoveryEmailMasked: maskedEmail,
-      recoveryUsableUntil,
-      unbanned: authUnbanned,
-    }
-    let failed: EmergencyAccessOperationStart = begin
-    try {
-      failed = await completeEmergencyAccessOperation(
-        session,
-        action,
-        input.operationRequestId,
-        false,
-        providerResult,
-      )
-    } catch {
-      // The database marker remains in place, so a provider-only success can
-      // never silently reopen the application account.
-    }
-    return json({
-      action,
-      detail: 'The recovery email was sent, but access remains blocked until the identity-provider restore is verified.',
-      error: 'emergency_access_restore_partial',
-      operationId,
-      recoveryEmailMasked: maskedEmail,
-      requestId,
-      state: emergencyAccessState(failed),
-      status: 'partial',
-    }, 503)
-  }
-}
-
 async function handleAdminUsersApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
   const url = new URL(request.url)
-  const emergencyAccessMatch = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/emergency-access(?:\/(revoke|restore))?$/i.exec(url.pathname)
-  if (emergencyAccessMatch) {
-    return handleEmergencyAccessApi(
-      request,
-      environment,
-      requestId,
-      emergencyAccessMatch[1],
-      (emergencyAccessMatch[2]?.toLowerCase() as EmergencyAccessAction | undefined) ?? 'state',
-    )
-  }
   const isNewUserInviteRequest = url.pathname === '/api/v1/admin/users/login-emails'
     || /^\/api\/v1\/admin\/users\/[0-9a-f-]{36}\/(?:login-email|welcome-email)$/i.test(url.pathname)
   const isPasswordResetRequest = /^\/api\/v1\/admin\/users\/[0-9a-f-]{36}\/password-reset$/i.test(url.pathname)
@@ -10438,6 +10020,22 @@ export default {
     } else if (url.pathname === '/api/v1/apps/sygilant/launch' || url.pathname === '/api/v1/apps/sygilant/introspect') {
       response = await handleSygilantSharedIdentityRequest(request, environment, requestId)
         ?? errorJson('not_found', requestId, 404)
+    } else if (
+      url.pathname === emergencyPlatformSessionRegisterPath
+      || url.pathname === emergencyPlatformSessionAcknowledgementPath
+    ) {
+      try {
+        response = await handleEmergencyPlatformSessionApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('emergency_platform_session_failed', requestId, 503, 'The centralized access session request failed.')
+        }
+      }
     } else if (url.pathname === '/api/v1/auth/password-reset/request') {
       try {
         response = await handleSelfServicePasswordResetApi(request, environment, requestId)

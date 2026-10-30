@@ -284,6 +284,7 @@ describe('time command center model', () => {
 
   it('keeps employee access separate from team-wide access', () => {
     const guardSession: SessionContext = {
+      accessGeneration: 1,
       displayName: 'Zach Ward',
       employeeId: dashboard.employee.id,
       hasMfa: false,

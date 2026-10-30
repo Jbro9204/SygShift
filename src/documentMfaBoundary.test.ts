@@ -27,8 +27,9 @@ function installTransport(
   availableWorkspaceVersion: 'v1' | 'v2' | 'v3' = 'v3',
 ) {
   const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-    if (String(url).endsWith('/get_session_context')) return Response.json({
-      employee_id: actorId, has_mfa: true, role: 'admin',
+    if (String(url).endsWith('/get_session_context_emergency')) return Response.json({
+      accessGeneration: 1, active: true, authSessionActive: true,
+      employee_id: actorId, emergencyAccessEnforced: true, emergencyAccessState: 'active', has_mfa: true, role: 'admin',
       permissions: permitted ? ['documents.workspace.view', 'hr.documents.view'] : [],
     })
     if (String(url).endsWith('/service_verify_security_key_document_mfa')) return verification()

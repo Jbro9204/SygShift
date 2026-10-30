@@ -88,6 +88,7 @@ const sites: Site[] = [
 
 function session(permissions: string[]): SessionContext {
   return {
+    accessGeneration: 1,
     displayName: 'Jordan Brown',
     employeeId: '31111111-1111-4111-8111-111111111111',
     hasMfa: true,

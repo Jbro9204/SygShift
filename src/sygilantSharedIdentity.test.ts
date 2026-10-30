@@ -8,6 +8,13 @@ const authUserId = 'cc65cc0f-1715-4c58-9a86-001731f67376'
 const employeeId = 'a25a5f5f-45b6-4e43-87a6-79298ed9347f'
 const apiRequestId = 'eacdc293-e7ff-4d14-8f8e-38340e26a2c5'
 const authSessionId = '7c21701a-56ed-4c64-8c47-c9dc516e4398'
+const activeEmergencySession = {
+  accessGeneration: 1,
+  active: true,
+  authSessionActive: true,
+  emergencyAccessEnforced: true,
+  emergencyAccessState: 'active',
+}
 const environment: SygilantSharedIdentityEnvironment = {
   SUPABASE_PUBLISHABLE_KEY: 'publishable-key',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
@@ -91,13 +98,13 @@ describe('SygShift to Sygilant protected platform launch', () => {
       const url = String(input)
       requests.push({ body: init.body, url })
       const body = typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {}
-      if (url.endsWith('/rest/v1/rpc/get_session_context')) {
+      if (url.endsWith('/rest/v1/rpc/get_session_context_emergency')) {
         return new Response(null, {
-          headers: { location: '/rest/v1/rpc/get_session_context?canonical=true' },
+          headers: { location: '/rest/v1/rpc/get_session_context_emergency?canonical=true' },
           status: 307,
         })
       }
-      if (url.includes('/rest/v1/rpc/get_session_context?canonical=true')) {
+      if (url.includes('/rest/v1/rpc/get_session_context_emergency?canonical=true')) {
         return json({ employee_id: employeeId, has_mfa: true, permissions: ['apps.sygilant.access'], role: 'admin', username: 'jordan' })
       }
       if (url.includes('/auth/v1/user')) return json({ id: authUserId })
@@ -111,8 +118,8 @@ describe('SygShift to Sygilant protected platform launch', () => {
 
     expect(response?.status).toBe(201)
     expect(requests.slice(0, 2)).toEqual([
-      { body: '{}', url: 'https://project.supabase.co/rest/v1/rpc/get_session_context' },
-      { body: '{}', url: 'https://project.supabase.co/rest/v1/rpc/get_session_context?canonical=true' },
+      { body: '{}', url: 'https://project.supabase.co/rest/v1/rpc/get_session_context_emergency' },
+      { body: '{}', url: 'https://project.supabase.co/rest/v1/rpc/get_session_context_emergency?canonical=true' },
     ])
   })
 
@@ -174,7 +181,37 @@ describe('SygShift to Sygilant protected platform launch', () => {
     expect(assertionPayload).not.toHaveProperty('sourceAuthSessionId')
   })
 
+  it('rejects a centrally suspended or stale session before issuing a handoff', async () => {
+    const upstream = vi.fn(async (input) => {
+      const url = String(input)
+      if (url.includes('/rest/v1/rpc/get_session_context_emergency')) {
+        return json({
+          accessGeneration: 9,
+          active: false,
+          authSessionActive: false,
+          employee_id: employeeId,
+          emergencyAccessEnforced: true,
+          emergencyAccessState: 'suspended',
+          has_mfa: true,
+          permissions: ['apps.sygilant.access'],
+          role: 'admin',
+          username: 'jordan',
+        })
+      }
+      return json({ error: 'unexpected' }, 500)
+    })
+    vi.stubGlobal('fetch', upstream)
+
+    const response = await handleSygilantSharedIdentityRequest(launchRequest(), environment, apiRequestId)
+
+    expect(response?.status).toBe(401)
+    await expect(response?.json()).resolves.toMatchObject({ error: 'access_revoked' })
+    expect(upstream).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
+    '/security',
+    '/security?employeeId=a25a5f5f-45b6-4e43-87a6-79298ed9347f',
     '/dispatch?call=4896f7c0-7143-48f9-9978-d1f6a342186f',
     '/daily-activity-reports?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
     '/incident-reports?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
@@ -211,6 +248,8 @@ describe('SygShift to Sygilant protected platform launch', () => {
     '/dispatch?call=not-a-uuid',
     '/dispatch?call=4896f7c0-7143-48f9-9978-d1f6a342186f&admin=true',
     '/incident-reports?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5&edit=true',
+    '/security?employeeId=not-a-uuid',
+    '/security?employeeId=a25a5f5f-45b6-4e43-87a6-79298ed9347f&action=suspend',
     '/review-queues?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
   ])('rejects a non-allowlisted launch destination %s before an upstream call', async (destination) => {
     const upstream = vi.fn()
@@ -651,5 +690,8 @@ function decodeAssertion(assertion: string) {
 }
 
 function json(payload: unknown, status = 200) {
-  return Response.json(payload, { status })
+  const body = payload && typeof payload === 'object' && !Array.isArray(payload) && 'employee_id' in payload
+    ? { ...activeEmergencySession, ...payload }
+    : payload
+  return Response.json(body, { status })
 }

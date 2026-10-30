@@ -15,14 +15,13 @@
 
 ## Emergency access revocation and restoration
 
-- The User Accounts emergency control is the only supported way to revoke or restore an existing employee login. A browser RPC or a database-only disabled flag is not a complete sign-out.
-- Revocation requires both user-management and security-management permission, recent authenticator or registered security-key verification, a documented reason, exact username confirmation, an explicit preservation acknowledgment, and a stable idempotency identifier.
-- The database deny boundary is applied before the identity-provider request. Provider, network, or verification failure therefore leaves the account blocked; the workflow must never reopen access as compensation.
-- Revocation rotates the employee's provider password to an unknown high-entropy value, applies the provider ban, invalidates observed SygShift sessions, and clears app-owned trusted-device, security-key-session, shared-identity, connected-platform, presence, push, and pending-launch access. Completion requires verified zero active provider sessions and refresh tokens.
+- Sygilant Security Center is the sole emergency-access mutation authority. SygShift User Accounts links authorized administrators to that control plane; it does not implement an independent revoke or restore endpoint.
+- SygShift registers its exact platform sessions with the central authority, honors forced-logout events, revalidates after offline return, and acknowledges only the exact session that was cleared locally.
+- The shared database deny boundary is checked for every authenticated SygShift request. A provider, network, or downstream cleanup failure therefore cannot reopen application access.
 - Emergency revocation never changes employment status, identity, roles, permissions, schedules, punches, payroll, licensing, client records, or historical audit records. It does not remove registered MFA factors unless an administrator separately authorizes the established MFA-reset workflow.
-- Restoration may clear only the matching emergency marker for an employee who is still active. It generates and successfully delivers a fresh recovery link while the account remains blocked, removes the provider ban, verifies that old sessions remain absent, and then clears the database marker. Old passwords, sessions, remembered devices, and shared sessions never return.
-- Every phase has a durable operation receipt and append-only event evidence. A partial operation remains visibly blocked and retryable with the same idempotency identifier; it is never reported as complete.
-- Self-revocation is prohibited and the database preserves at least one recovery-capable active Admin. Connected Sygilant access is invalidated through the shared-identity boundary; Sygilant must delegate future account-security controls to this authority rather than create a second source of truth.
+- Restoration is initiated only in Sygilant Security Center and creates new sessions after password recovery and MFA verification. Old passwords, sessions, remembered devices, and shared sessions never return.
+- Every phase has a durable central receipt and append-only evidence. A partial operation remains blocked and retryable; SygShift never reports central completion from a local-only cleanup.
+- The already-applied October 29 SygShift emergency database artifacts are retained as immutable historical evidence and compatibility state. Their legacy mutation entry points are retired during central-control-plane convergence; they are not a second supported authority.
 
 ## Data handling
 

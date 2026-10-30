@@ -45,6 +45,7 @@ const baseRow: AttendanceReconciliationRow = {
 }
 
 const session: SessionContext = {
+  accessGeneration: 1,
   employeeId: '81000000-0000-4000-8000-000000000005',
   username: 'reviewer',
   displayName: 'Attendance Reviewer',

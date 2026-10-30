@@ -44,6 +44,7 @@ const workspace = {
 }
 
 const session = {
+  accessGeneration: 1,
   employeeId: '44444444-4444-4444-8444-444444444444',
   username: 'approver',
   displayName: 'HR Approver',

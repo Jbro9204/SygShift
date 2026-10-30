@@ -62,8 +62,18 @@ function onboardingPrehire(role?: WorkforceRole) {
 function installTransport(actorRole: WorkforceRole, permissions: string[]) {
   const fetchMock = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => {
     const endpoint = String(url)
-    if (endpoint.endsWith('/get_session_context')) {
-      return Response.json({ employee_id: actorId, has_mfa: true, permissions, role: actorRole })
+    if (endpoint.endsWith('/get_session_context_emergency')) {
+      return Response.json({
+        accessGeneration: 1,
+        active: true,
+        authSessionActive: true,
+        employee_id: actorId,
+        emergencyAccessEnforced: true,
+        emergencyAccessState: 'active',
+        has_mfa: true,
+        permissions,
+        role: actorRole,
+      })
     }
     if (endpoint.endsWith('/service_has_required_action_checkpoint')) return Response.json(false)
     if (endpoint.endsWith('/service_verify_recent_hr_mfa')) {

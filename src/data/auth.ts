@@ -12,7 +12,12 @@ export const USERNAME_PATTERN = /^[a-z][a-z0-9]{1,62}$/
 export const SESSION_CONTEXT_REFRESH_EVENT = 'sygshift:session-context-refresh'
 
 const sessionContextSchema = z.object({
+  accessGeneration: z.number().int().positive(),
+  active: z.literal(true),
+  authSessionActive: z.literal(true),
   employee_id: z.string().uuid(),
+  emergencyAccessEnforced: z.literal(true),
+  emergencyAccessState: z.literal('active'),
   username: z.string().min(1),
   display_name: z.string().min(1),
   role: z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin']),
@@ -31,6 +36,7 @@ const recoveryRequestSchema = z.object({
 })
 
 export type SessionContext = {
+  accessGeneration: number
   employeeId: string
   username: string
   displayName: string
@@ -169,7 +175,7 @@ export async function signOut(): Promise<void> {
 async function requestSessionContext(signal?: AbortSignal): Promise<SessionContext> {
   let response
   try {
-    const request = getSupabaseClient().rpc('get_session_context')
+    const request = getSupabaseClient().rpc('get_session_context_emergency')
     response = signal ? await request.abortSignal(signal) : await request
   } catch {
     throw new SessionContextError(true)
@@ -198,6 +204,7 @@ async function requestSessionContext(signal?: AbortSignal): Promise<SessionConte
   const parsed = parsedResult.data
 
   return {
+    accessGeneration: parsed.accessGeneration,
     employeeId: parsed.employee_id,
     username: parsed.username,
     displayName: parsed.display_name,

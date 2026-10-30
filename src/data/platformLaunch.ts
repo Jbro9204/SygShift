@@ -8,19 +8,24 @@ export const OFFICIAL_SYGSHIFT_ORIGIN = 'https://app.sygilant.us'
 const uuidPattern = '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
 const sygilantDispatchDestinationPattern = new RegExp(`^/dispatch\\?call=${uuidPattern}$`, 'i')
 const sygilantReportDestinationPattern = new RegExp(`^/(?:daily-activity-reports|incident-reports|vehicle-inspections)\\?report=${uuidPattern}$`, 'i')
+const sygilantSecurityDestinationPattern = new RegExp(`^/security\\?employeeId=${uuidPattern}$`, 'i')
 export type SygilantPlatformDestination =
   | `/dispatch?call=${string}`
   | `/daily-activity-reports?report=${string}`
   | `/incident-reports?report=${string}`
   | `/vehicle-inspections?report=${string}`
+  | `/security?employeeId=${string}`
+  | '/security'
   | '/dashboard'
 
 const sygilantPlatformDestinationSchema = z.custom<SygilantPlatformDestination>(
   (value) => typeof value === 'string'
     && (
       value === '/dashboard'
+      || value === '/security'
       || sygilantDispatchDestinationPattern.test(value)
       || sygilantReportDestinationPattern.test(value)
+      || sygilantSecurityDestinationPattern.test(value)
     ),
   'Invalid Sygilant destination.',
 )

@@ -24,7 +24,17 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 function mockApi({ permissions = ['reports.account_activity.view'], mfa = true, reportAllowed = true, roles = catalog } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = new URL(String(input))
-    if (url.pathname.endsWith('/get_session_context')) return json({ employee_id: employeeId, role: 'guard', has_mfa: true, permissions })
+    if (url.pathname.endsWith('/get_session_context_emergency')) return json({
+      accessGeneration: 1,
+      active: true,
+      authSessionActive: true,
+      employee_id: employeeId,
+      emergencyAccessEnforced: true,
+      emergencyAccessState: 'active',
+      role: 'guard',
+      has_mfa: true,
+      permissions,
+    })
     if (url.pathname.endsWith('/service_verify_recent_hr_mfa')) return json(mfa ? { method: 'security_key', verifiedAt: new Date().toISOString() } : null)
     if (url.pathname.endsWith('/service_get_user_account_activity_report')) return reportAllowed ? json(userAccountActivityReportFixture({ roleOptions: undefined })) : json({ message: 'Report permission denied.' }, 403)
     if (url.pathname === '/rest/v1/access_roles') {
