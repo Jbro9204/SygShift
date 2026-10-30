@@ -48,3 +48,16 @@ These three entries remain review findings rather than being silently relabeled 
 Comparison with the reviewed pre-activation evidence established that all 421 earlier applied versions retain the same name, owner, and exact statement-array checksum; every earlier owning source retains the same normalized checksum; and exactly one applied version was added: `20261029225323_emergency_access_revocation_control_plane`. The new ledger entry contains one exact statement whose ordered-source SHA-256 is `f9bc9d56659662adaa8ec42fcebfa4412be00d890f57d44c0b19c80eda0a0335`. It does not authorize bulk replay or migration-history rewriting.
 
 The three canonical HR entries remain explicit review findings outside the default migration chain. Their statement counts and ordered hashes remain unchanged. Both installed rollback-only regressions passed after activation and retained no synthetic fixtures.
+
+## Reviewed centralized precursor evidence
+
+`migration-ownership-pre-worker-v2.json` was captured read-only after the centralized Sygilant control plane, authenticated-wrapper ACL repair, employee Storage session boundary, and SygSphere session boundary committed in production. It contains 426 applied migration identities, 408 SygShift owning sources, and 151 Sygilant default-chain owning sources. Its file SHA-256 is `481f2b362166292cc4c16761b7c1f397de496cff3865aed219bf8e1b288df28d`.
+
+Comparison with the reviewed 422-entry post-activation evidence found zero earlier version, name, owner, statement-array checksum, owning-source identity, or owning-source checksum changes. Exactly four applied Sygilant identities were added:
+
+- `20261029230000_emergency_access_control_plane`;
+- `20261029230500_emergency_access_authenticated_wrapper_acl_repair`;
+- `20261029231000_employee_storage_session_uploads`; and
+- `20261029232000_sygsphere_session_bound_uploads`.
+
+The separately reviewed `20261029233000_activate_emergency_access_control_plane` source is present but remains unapplied at this checkpoint. This baseline is the required nondrift input for the coordinated Worker release; it authorizes neither bulk migration replay nor history rewriting. The three canonical HR source findings and eighteen historical NULL/empty statement-array findings remain unchanged.
