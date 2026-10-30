@@ -2,7 +2,7 @@
 
 Date: October 29, 2026
 Application: SygShift, with connected Sygilant session invalidation
-Status: implementation and release verification in progress
+Status: database authority active; exact application release pending
 
 ## Why this change is needed
 
@@ -67,12 +67,16 @@ Completed during implementation:
 - post-rehearsal verification of zero candidate ledger rows, tables, columns, RPCs, employee fixtures, Auth sessions, and refresh-token fixtures retained;
 - clean-checkout gate repair of the pre-existing Schedule account-handoff race, keeping queries paused until the new account's state and URL agree, with repeated date-retention regressions passing;
 - fresh pre-activation ownership capture of 421 production migration identities, reconciliation of the 22 entries added after the prior reviewed baseline to current Sygilant default-chain and canonical-HR source evidence, and confirmation that no prior identity, statement-array checksum, owner, or owning-source checksum changed;
-- generated rollback-only artifact SHA-256 `f3056421f8a4284cea679dbe94ffa964ba7a2591bc5e1ee5a1b50daa90f06964` and atomic release artifact SHA-256 `41a510b37c0bd9a90024329a1b0db6c9cd9cb50dfbc7bf094afe113fd9d4b1e8`.
+- generated rollback-only artifact SHA-256 `f3056421f8a4284cea679dbe94ffa964ba7a2591bc5e1ee5a1b50daa90f06964` and atomic release artifact SHA-256 `41a510b37c0bd9a90024329a1b0db6c9cd9cb50dfbc7bf094afe113fd9d4b1e8`;
+- exact source `27b203420391865a3d73568b4aaac12984954a88` pushed to `origin/main`, followed by successful GitHub Actions run `40976027648`: CodeQL JavaScript and TypeScript job `123804148736` and Exact candidate quality gate job `123804148950`;
+- production activation of only migration `20261029225323` through the reviewed atomic artifact, with all in-transaction preflight, schema/function/ACL/RLS/index/trigger postflight, and exact-ledger checks passing;
+- independent live verification of a 422-entry migration ledger, one exact stored migration statement with source SHA-256 `f9bc9d56659662adaa8ec42fcebfa4412be00d890f57d44c0b19c80eda0a0335`, and the required operation, event, session-tombstone, revoke, and restore contracts;
+- installed rollback-only emergency-access and atomic-role regressions passing against production without retained synthetic employee, Auth, session, schedule, punch, payroll, or emergency-operation data;
+- post-activation ownership evidence at `docs/work-orders/2026-10-29-emergency-access-revocation/migration-ownership-post-activation-v2.json`, file SHA-256 `5245048ac9ba03b2982506bb2a21f53878d6c694d4223288130d8964ce244541`, preserving every earlier applied identity, statement-array checksum, owner, and owning-source checksum while adding only version `20261029225323`; and
+- pre-deployment production checks returning HTTP 200 for the root, login, health, and readiness routes, with `ready=true`, scheduled runtime `closed`, and zero consecutive failures.
 
 Pending completion of:
 
-- exact migration-ledger activation and post-migration verification;
-- exact-source push and green GitHub quality/CodeQL results;
 - exact-source Cloudflare release, health/readiness, and live non-mutating Admin workflow verification.
 
 Production evidence will be recorded here only after each corresponding check succeeds.

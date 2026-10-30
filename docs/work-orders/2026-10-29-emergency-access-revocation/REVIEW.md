@@ -40,3 +40,11 @@ These three entries remain review findings rather than being silently relabeled 
 - After activation, capture a separately tracked post-activation baseline and verify the new ledger identity and all function, ACL, RLS, trigger, index, and marker contracts.
 - A Worker rollback must leave revocation markers and session invalidation intact; it must never restore access.
 - Sygilant's native administrator UI remains a separate consumer that must proxy the same SygShift authority rather than create a second revocation system.
+
+## Reviewed post-activation ownership evidence
+
+`migration-ownership-post-activation-v2.json` was captured read-only after the guarded production transaction committed. It contains 422 applied migration identities, 408 SygShift owning sources, and 146 Sygilant default-chain owning sources. Its file SHA-256 is `5245048ac9ba03b2982506bb2a21f53878d6c694d4223288130d8964ce244541`.
+
+Comparison with the reviewed pre-activation evidence established that all 421 earlier applied versions retain the same name, owner, and exact statement-array checksum; every earlier owning source retains the same normalized checksum; and exactly one applied version was added: `20261029225323_emergency_access_revocation_control_plane`. The new ledger entry contains one exact statement whose ordered-source SHA-256 is `f9bc9d56659662adaa8ec42fcebfa4412be00d890f57d44c0b19c80eda0a0335`. It does not authorize bulk replay or migration-history rewriting.
+
+The three canonical HR entries remain explicit review findings outside the default migration chain. Their statement counts and ordered hashes remain unchanged. Both installed rollback-only regressions passed after activation and retained no synthetic fixtures.
