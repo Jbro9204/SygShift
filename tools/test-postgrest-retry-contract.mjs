@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { performance } from 'node:perf_hooks'
@@ -28,10 +28,32 @@ const delay = (milliseconds) => new Promise((resolveDelay) => setTimeout(resolve
 const base = `http://127.0.0.1:${httpPort}`
 let api
 let databaseStarted = false
+async function stopApi() {
+  const child = api
+  api = null
+  if (!child || child.exitCode !== null || child.signalCode !== null) return
+  let timer
+  try {
+    const exited = new Promise((resolveExit) => child.once('exit', resolveExit))
+    child.kill()
+    await Promise.race([exited, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Isolated PostgREST did not stop within five seconds')), 5_000)
+    })])
+  } finally { clearTimeout(timer) }
+}
 try {
   mkdirSync(data)
   run(join(postgresBin, `initdb${extension}`), ['-D', data, '-U', 'postgres', '--auth-local=trust', '--auth-host=trust', '--encoding=UTF8', '--locale=C'])
-  run(join(postgresBin, `pg_ctl${extension}`), ['-D', data, '-l', join(directory, 'postgres.log'), '-o', `-p ${databasePort} -h 127.0.0.1 -c max_connections=20`, '-w', 'start'])
+  // Distribution packages can default to a protected global Unix-socket
+  // directory. This private fixture uses TCP loopback only on every platform.
+  writeFileSync(join(data, 'postgresql.auto.conf'), "unix_socket_directories = ''\n")
+  try {
+    run(join(postgresBin, `pg_ctl${extension}`), ['-D', data, '-l', join(directory, 'postgres.log'), '-o', `-p ${databasePort} -h 127.0.0.1 -c max_connections=20`, '-w', 'start'])
+  } catch (error) {
+    let log = ''
+    try { log = readFileSync(join(directory, 'postgres.log'), 'utf8') } catch { /* report original startup failure */ }
+    throw new Error(`${error.message}\nIsolated PostgreSQL startup log:\n${log.slice(-8_000)}`, { cause: error })
+  }
   databaseStarted = true
   sql(`
     create role retry_test_authenticator login noinherit;
@@ -88,9 +110,7 @@ try {
   assert.equal(Number(sql("select count(*) from pg_stat_activity where usename='retry_test_authenticator' and state='active'")), 0)
   // Close the local API pool so each backend flushes its final statistics. An
   // early statistics snapshot alone can conceal an unflushed retry counter.
-  api.kill()
-  await new Promise((resolveExit) => api.once('exit', resolveExit))
-  api = null
+  await stopApi()
   let rollbackAfter = rollbackBefore
   for (let attempt = 0; attempt < 50; attempt += 1) {
     rollbackAfter = Number(sql("select xact_rollback from pg_stat_database where datname='postgres'"))
@@ -113,9 +133,9 @@ try {
   if (output) writeFileSync(resolve(output), `${JSON.stringify(result, null, 2)}\n`)
   console.log(JSON.stringify(result, null, 2))
 } finally {
-  if (api && api.exitCode === null) {
-    api.kill()
-    await new Promise((resolveExit) => { api.once('exit', resolveExit); setTimeout(resolveExit, 3_000).unref() })
+  try {
+    await stopApi()
+  } finally {
+    if (databaseStarted) run(join(postgresBin, `pg_ctl${extension}`), ['-D', data, '-m', 'fast', '-w', 'stop'])
   }
-  if (databaseStarted) run(join(postgresBin, `pg_ctl${extension}`), ['-D', data, '-m', 'fast', '-w', 'stop'])
 }

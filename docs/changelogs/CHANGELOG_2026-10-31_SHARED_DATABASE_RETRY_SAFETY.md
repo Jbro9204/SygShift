@@ -55,6 +55,9 @@ The local PostgreSQL 18.3 / PostgREST 14.5 test completed 60 conflict requests
 with exactly 60 rollbacks while 20 access probes succeeded, with no lingering
 requests or synthetic source changes. This proves transport/error behavior,
 not every business workflow in the 46-function set.
+The disposable server explicitly disables Unix sockets, so Linux package
+defaults cannot make it depend on a protected system socket directory. Startup
+failures retain their server diagnostic log; process shutdown is bounded.
 
 Source delivery still requires the full exact-candidate release gate, desktop
 and mobile Time Clock matrix, GitHub checks, behavior-neutral lifecycle
