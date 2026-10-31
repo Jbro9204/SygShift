@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 10/31/2026 - Shared Database Retry Safety
+
+- Audited the effective shared-database function catalog after the overnight report retry storm. Reviewed and atomically corrected another 46 functions / 75 deterministic rejection clauses without changing business conditions or security metadata.
+- Preserved earlier migration entries and the selected incident report/history fingerprints; added a service-only read-only probe that measured the existing eight-second PostgREST statement timeout without changing it.
+- Added effective-definition and source guards plus an actual PostgREST 14.5 regression using a synthetic, disposable database. Sixty conflict requests produced sixty rollbacks while twenty access probes succeeded.
+- Added an inert report-only coordination class for the separately governed Sygilant rollout; it does not replace authentication or alter Time Clock, payroll, schedules or SygSphere.
+- Technical details, boundaries and rollback rules: `docs/changelogs/CHANGELOG_2026-10-31_SHARED_DATABASE_RETRY_SAFETY.md`. App deployment remains subject to exact-source release verification and runtime evidence.
+
 ## 10/29/2026 - Emergency Access Revocation Control Plane
 
 - Replaced the misleading browser-direct login toggle in the release candidate with one SygShift-owned emergency access workflow for verified state, full revocation, and controlled restoration.

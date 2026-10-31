@@ -40,6 +40,10 @@
       {
         "name": "SCHEDULE_COORDINATOR",
         "class_name": "ScheduledRuntimeCoordinator"
+      },
+      {
+        "name": "REPORT_WORKLOAD",
+        "class_name": "ReportWorkloadCoordinator"
       }
     ]
   },
@@ -59,6 +63,10 @@
     {
       "tag": "v4-scheduled-runtime-coordinator",
       "new_sqlite_classes": ["ScheduledRuntimeCoordinator"]
+    },
+    {
+      "tag": "v5-report-workload-coordinator",
+      "new_sqlite_classes": ["ReportWorkloadCoordinator"]
     }
   ],
   "send_email": [

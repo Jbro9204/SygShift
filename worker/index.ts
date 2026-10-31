@@ -23,6 +23,7 @@ import type {
 } from '@simplewebauthn/server'
 import { isSecurityKeyPilotEligible, securityKeyFeatureEnabled } from './securityKeyPilot'
 import { TenantCommsDurableObject } from './comms/tenantCommsDurableObject'
+import { ReportWorkloadCoordinator } from './reportWorkloadCoordinator'
 import {
   ScheduledRuntimeCoordinator,
   scheduledRuntimeLeaseHeartbeatMs,
@@ -42,7 +43,7 @@ import { buildSygSphereCommsUsageResponse } from './comms/usageContract'
 import { parseSygSphereCommsCommand } from '../shared/sygsphere-communications/v1/contract'
 import { isHrDocumentSourceVersionTimestamp, normalizeHrDocumentLibraryTimestamps } from './hrDocumentLibraryPayload'
 
-export { ScheduledRuntimeCoordinator, TenantCommsDurableObject }
+export { ReportWorkloadCoordinator, ScheduledRuntimeCoordinator, TenantCommsDurableObject }
 
 interface WorkerScheduledController {
   cron: string

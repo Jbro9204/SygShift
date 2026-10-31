@@ -1,0 +1,37 @@
+{
+  "formatVersion": 1,
+  "projectRef": "eqkdfrbwtioiqtjsyglg",
+  "baseline": {
+    "migrationCount": 436,
+    "ledgerMd5": "5b1e5b26c308eca716389e31aeca80b6"
+  },
+  "migrations": [
+    {
+      "owner": "SygShift",
+      "path": "supabase/migrations/20261031183447_deterministic_conflict_retry_safety.sql",
+      "version": "20261031183447",
+      "name": "deterministic_conflict_retry_safety",
+      "sourceSha256": "f29a0608ecaec0c28a318d12bd6bf3efe82aac7b32b5679f386454770c79f97b",
+      "ledgerSha256": "59ac51864bad0800c59ef2a637be0771282c5074300273720fea65afebfccefc",
+      "statementCount": 5
+    },
+    {
+      "owner": "Sygilant",
+      "path": "supabase/migrations/20261031183448_sygilant_deterministic_conflict_retry_safety.sql",
+      "version": "20261031183448",
+      "name": "sygilant_deterministic_conflict_retry_safety",
+      "sourceSha256": "b92da955e22c71b4f580a3f29c92a4d546e1648a44cf5b75adff14a57d97b4b3",
+      "ledgerSha256": "252cdf63ac903bbf6c4e0561a753bd9abbd7a718ee26d59dddd387a77992633d",
+      "statementCount": 5
+    },
+    {
+      "owner": "Sygilant",
+      "path": "supabase/migrations/20261031183920_sygilant_service_runtime_budget_diagnostic.sql",
+      "version": "20261031183920",
+      "name": "sygilant_service_runtime_budget_diagnostic",
+      "sourceSha256": "d7c28399ff8aaf854d69a274dccab40dd721637a1d73bb4ab68e8dc6b6e83bab",
+      "ledgerSha256": "a7a73cf5520f6c0c4a31641138317b98b061c9662aea07ae536827600a074f65",
+      "statementCount": 8
+    }
+  ]
+}

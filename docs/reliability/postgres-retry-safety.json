@@ -1,0 +1,338 @@
+{
+  "formatVersion": 1,
+  "historicalHashNormalization": "UTF-8 with LF newlines; no other normalization",
+  "owner": "SygShift",
+  "capturedAt": "2026-10-31T18:33:18.271Z",
+  "targetProject": "eqkdfrbwtioiqtjsyglg",
+  "migration": "supabase/migrations/20261031183447_deterministic_conflict_retry_safety.sql",
+  "ledgerBefore": {
+    "migrationCount": 436,
+    "latestVersion": "20261031121233",
+    "md5": "5b1e5b26c308eca716389e31aeca80b6",
+    "capturedAt": "2026-10-31T18:38:00Z",
+    "semantics": "MD5 string_agg(version:name:to_jsonb(statements), newline order by version); not a source-to-ledger equivalence claim"
+  },
+  "interpretation": "Catalog definitions and function metadata are live observations. Historical source fingerprints protect immutability only; they do not assert historical migrations reproduce live definitions.",
+  "expectedFunctionCount": 7,
+  "expectedRaiseCount": 19,
+  "runtimeExceptions": [],
+  "immutableHistoricalSources": [
+    {
+      "path": "supabase/migrations/20260810180000_employee_action_center.sql",
+      "sha256": "48356d5ebeb67413d1267f9d9dcd332aedd03eb33808862ff85733edfa9960a5",
+      "historicalRaiseCount": 1
+    },
+    {
+      "path": "supabase/migrations/20260909010000_sygtasks_work_management_foundation.sql",
+      "sha256": "8fc96e6e3f7c35523cdf3d69df08cbe5b3428ede907d234e1d9647260651e7e4",
+      "historicalRaiseCount": 5
+    },
+    {
+      "path": "supabase/migrations/20260912160000_sygtasks_recurring_work.sql",
+      "sha256": "8489395bd13a5e33be5381cb9b8bb2b43518a9ac3608d7c82e57934449b4f6bd",
+      "historicalRaiseCount": 1
+    },
+    {
+      "path": "supabase/migrations/20260925182312_enforce_schedule_dst_boundaries.sql",
+      "sha256": "39fa974db196654f4ab1b94ef5e8e1d0b0993455677ad9170b2d80fce1af303c",
+      "historicalRaiseCount": 1
+    },
+    {
+      "path": "supabase/migrations/20261001183000_hr_document_workspace_source_metadata.sql",
+      "sha256": "189feb153e86dfc7d0e4e289f975357cbdf185520cc479f7912314bc96d66925",
+      "historicalRaiseCount": 4
+    },
+    {
+      "path": "supabase/migrations/20261026151000_schedule_edit_copy_on_write.sql",
+      "sha256": "60aaaf98d2b326f44fda7cb1a7330b76b2bdcdb0b47be5866e945fa1e183f03b",
+      "historicalRaiseCount": 7
+    }
+  ],
+  "functions": [
+    {
+      "identity": "public.manage_sygtasks_recurring_series(uuid, text, jsonb, uuid, integer)",
+      "beforeMd5": "1c92fa57b175b4fedb83eb437058aae6",
+      "afterMd5": "5c78be3714981065869e626445fca519",
+      "metadataMd5": "ee859418df687efd4baf32c140742f6e",
+      "security": {
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "securityDefiner": true,
+        "volatility": "v"
+      },
+      "classification": "deterministic_application_conflict",
+      "decision": "Return PT409 without changing conditions, locks, writes, privileges or genuine engine errors.",
+      "sites": [
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 3210,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This recurring task changed. Refresh it and try again.';"
+        }
+      ]
+    },
+    {
+      "identity": "public.mutate_sygtasks(text, jsonb, uuid, integer)",
+      "beforeMd5": "44e0a461d57c07091530c3919449e53d",
+      "afterMd5": "7360c0b8ec973c52ef71411f63205e59",
+      "metadataMd5": "dc2ec0459b61a33b0836e0e0337099e6",
+      "security": {
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "securityDefiner": true,
+        "volatility": "v"
+      },
+      "classification": "deterministic_application_conflict",
+      "decision": "Return PT409 without changing conditions, locks, writes, privileges or genuine engine errors.",
+      "sites": [
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 10298,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This board changed. Refresh it and try again.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 23048,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This task changed. Refresh it and try again.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 36323,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This label changed. Refresh it and try again.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 44283,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This checklist item changed. Refresh it and try again.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 49708,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This comment changed. Refresh it and try again.';"
+        }
+      ]
+    },
+    {
+      "identity": "public.revise_templated_announcement(uuid, jsonb, timestamp with time zone, boolean, timestamp with time zone)",
+      "beforeMd5": "da2f8a5b3bd0e3f63386ec3433828887",
+      "afterMd5": "7bf00c0c554cfcb7cbfd5b118325d98b",
+      "metadataMd5": "c3a5c4e9efb15a4220ce8b2645794067",
+      "security": {
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "securityDefiner": true,
+        "volatility": "v"
+      },
+      "classification": "deterministic_application_conflict",
+      "decision": "Return PT409 without changing conditions, locks, writes, privileges or genuine engine errors.",
+      "sites": [
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 1986,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'A newer announcement version already exists. Reload before revising it.';"
+        }
+      ]
+    },
+    {
+      "identity": "public.scheduler_create_coverage_plan_batch_v1(date, uuid, text, text, uuid, text, date[], time without time zone, time without time zone, integer, integer, boolean, text, text, boolean, uuid, boolean, text, text, text, text, boolean, boolean, text)",
+      "beforeMd5": "6042ce76dc2a11efdd7a539d7bf38035",
+      "afterMd5": "ea09cd0746132e4e17a45dfed9df6e6f",
+      "metadataMd5": "63bb99023f125cadfd0fe0f2e70e6d2f",
+      "security": {
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "securityDefiner": true,
+        "volatility": "v"
+      },
+      "classification": "deterministic_application_conflict",
+      "decision": "Return PT409 without changing conditions, locks, writes, privileges or genuine engine errors.",
+      "sites": [
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 4048,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = format(\n      'The schedule time zone changed before save (expected %s, current %s). Refresh and review the shift before trying again.',\n      coalesce(expected_time_zone, 'unknown'),\n      coalesce(authoritative_time_zone, 'unknown')\n    );"
+        }
+      ]
+    },
+    {
+      "identity": "public.scheduler_materialize_and_update_shift_v1(uuid, text, date, time without time zone, time without time zone, integer, boolean, boolean, text, text, uuid, text, text, text, text, text)",
+      "beforeMd5": "09fbdbe870c1f39418f4afddde6f391f",
+      "afterMd5": "6929e16105d0d222af3ca72294b7fd9a",
+      "metadataMd5": "71bf307ebba59f2dc9ef5be1fc9e109a",
+      "security": {
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,authenticated=X/postgres}",
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "securityDefiner": true,
+        "volatility": "v"
+      },
+      "classification": "deterministic_application_conflict",
+      "decision": "Return PT409 without changing conditions, locks, writes, privileges or genuine engine errors.",
+      "sites": [
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 3038,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This shift changed while the editor was saving. Refresh the schedule and review the current values before retrying.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 3299,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This schedule was published after the editor opened. Refresh before making another change.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 3584,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This schedule revision changed while the editor was saving. Refresh before retrying.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 4108,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This shift changed after the editor opened. Refresh the schedule and review the current values before saving.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 4771,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'The schedule changed after this shift was opened. Refresh and review the current revision before saving.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 5232,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'A working draft was created after this published shift was opened. Refresh and edit the current draft before saving.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 5980,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This pre-existing draft does not contain verified one-to-one shift lineage. Open the current draft and select its exact shift before editing.';"
+        }
+      ]
+    },
+    {
+      "identity": "public.service_adopt_hr_library_source(uuid, uuid, timestamp with time zone, text, text, text)",
+      "beforeMd5": "365a5ed1334f35cad03afbf0516027d2",
+      "afterMd5": "90cecd126f41b07a03555c09a2c7c46f",
+      "metadataMd5": "979975fe747fb53703c1b6acf887283e",
+      "security": {
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "securityDefiner": true,
+        "volatility": "v"
+      },
+      "classification": "deterministic_application_conflict",
+      "decision": "Return PT409 without changing conditions, locks, writes, privileges or genuine engine errors.",
+      "sites": [
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 3344,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'The protected PDF changed after catalog review. Re-register and review the current draft before adopting it.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 4194,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This source changed after it was reviewed. Refresh and review the latest version before adopting it.';"
+        }
+      ]
+    },
+    {
+      "identity": "public.service_retire_hr_library_source(uuid, uuid, timestamp with time zone, text, text, text)",
+      "beforeMd5": "95ff4a3051de65d770cc1edb6ca4720b",
+      "afterMd5": "cc02a3cb2ba1ecf2c6e30f45d358b6ce",
+      "metadataMd5": "501b731556e94553298a6f81f824d1ff",
+      "security": {
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "securityDefiner": true,
+        "volatility": "v"
+      },
+      "classification": "deterministic_application_conflict",
+      "decision": "Return PT409 without changing conditions, locks, writes, privileges or genuine engine errors.",
+      "sites": [
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 3314,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'The protected PDF changed after catalog review. Refresh before retiring it.';"
+        },
+        {
+          "kind": "condition",
+          "original": "serialization_failure",
+          "replacement": "sqlstate 'PT409'",
+          "startCharacter": 4056,
+          "lengthCharacters": 21,
+          "statement": "raise serialization_failure using message = 'This source changed after it was reviewed. Refresh before retiring it.';"
+        }
+      ]
+    }
+  ]
+}

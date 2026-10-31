@@ -54,6 +54,20 @@ jobs:
       - name: Reject high-severity production advisories
         run: pnpm audit --prod --audit-level high
 
+      - name: Verify actual PostgREST conflict behavior in an isolated database
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/postgrest-retry-contract"
+          mkdir -p "$runtime"
+          curl --fail --location --retry 2 --output "$runtime/postgrest.tar.xz" \
+            https://github.com/PostgREST/postgrest/releases/download/v14.5/postgrest-v14.5-linux-static-x86-64.tar.xz
+          echo "ab5cc7e974d4940447991804588cfb8b3f7b2c57b691f0905df04d51ede69470  $runtime/postgrest.tar.xz" | sha256sum --check
+          tar -xJf "$runtime/postgrest.tar.xz" -C "$runtime"
+          RETRY_TEST_POSTGRES_BIN="$(pg_config --bindir)" \
+            RETRY_TEST_POSTGREST_BIN="$runtime/postgrest" \
+            node tools/test-postgrest-retry-contract.mjs
+
       - name: Run the complete exact-candidate release gate
         run: pnpm release:verify
 

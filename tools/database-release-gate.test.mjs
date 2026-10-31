@@ -6,6 +6,7 @@ import test from 'node:test'
 import { buildOwnershipManifest, readSourceTree } from './database-migration-ownership.mjs'
 import { requireDatabaseReleaseBaseline } from './database-release-gate.mjs'
 import { executeProductionRelease, parseProductionReleaseArguments } from './release-production.mjs'
+import { retrySafetyCatalogSql } from './postgres-retry-safety.mjs'
 
 function fixture(t, ledger = [{ version: '11', name: 'one', statements: ["select 'PRIVATE_LEDGER_BODY'"] }]) {
   const folder = mkdtempSync(join(tmpdir(), 'sygshift-database-gate-'))
@@ -13,6 +14,10 @@ function fixture(t, ledger = [{ version: '11', name: 'one', statements: ["select
   const cwd = join(folder, 'SygShift')
   const sygilant = join(folder, 'Sygilant')
   for (const root of [cwd, sygilant]) mkdirSync(join(root, 'supabase/migrations'), { recursive: true })
+  for (const root of [cwd, sygilant]) {
+    mkdirSync(join(root, 'docs/reliability'), { recursive: true })
+    writeFileSync(join(root, 'docs/reliability/postgres-retry-safety.json'), JSON.stringify({ formatVersion: 1, immutableHistoricalSources: [], runtimeExceptions: [], functions: [] }))
+  }
   const docs = join(cwd, 'docs/work-orders/2026-10-19-overnight')
   mkdirSync(docs, { recursive: true })
   writeFileSync(join(docs, 'migration-source-ownership-decisions.json'), '{}')
@@ -28,7 +33,7 @@ function fixture(t, ledger = [{ version: '11', name: 'one', statements: ["select
   }
   const run = async (args, runOptions) => {
     calls.push({ args, runOptions })
-    return { stdout: args[0] === 'dlx' ? JSON.stringify({ rows: ledger }) : 'docs/reviewed-v2.json\n', stderr: '' }
+    return { stdout: args[0] === 'dlx' ? JSON.stringify({ rows: args.includes(retrySafetyCatalogSql) ? [] : ledger }) : 'docs/reviewed-v2.json\n', stderr: '' }
   }
   return { options, calls, run, ledger, sourceFile, baselinePath }
 }
@@ -40,13 +45,22 @@ test('gate captures the fresh explicit production ledger and exposes only nonsec
   assert.equal(result.freshProductionLedger, true)
   assert.equal(result.claimsHistoryEquivalence, false)
   assert.equal(result.bulkMigrationPushAuthorized, false)
-  assert.equal(f.calls.length, 3)
+  assert.equal(f.calls.length, 4)
   assert.deepEqual(f.calls[0].args.slice(0, 4), ['exec', 'git', 'ls-files', '--error-unmatch'])
   assert.deepEqual(f.calls[1].args.slice(0, 6), ['exec', 'git', 'diff', '--quiet', 'HEAD', '--'])
   assert.deepEqual(f.calls[2].args, ['dlx', 'supabase@2.121.0', 'db', 'query', '--linked', '--project-ref', 'eqkdfrbwtioiqtjsyglg', 'select version,name,statements from supabase_migrations.schema_migrations order by version', '-o', 'json'])
   assert.equal(f.calls[2].runOptions.timeoutMs, 45_000)
   assert.equal(f.calls[2].runOptions.env.SYGSHIFT_RELEASE_CANARY_PASSWORD, undefined)
+  assert.equal(result.retrySafetyVerified, true)
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE_LEDGER_BODY|CANARY_SECRET/u)
+})
+
+test('unsafe effective runtime definitions block release even with an unchanged migration ledger', async (t) => {
+  const f = fixture(t)
+  const run = async (args, options) => args.includes(retrySafetyCatalogSql)
+    ? { stdout: JSON.stringify({ rows: [{ identity: 'public.unsafe()', body: "begin raise sqlstate '40001'; end;", definition_md5: 'bad' }] }) }
+    : f.run(args, options)
+  await assert.rejects(requireDatabaseReleaseBaseline(f.options, { run }), /retry-safety gate refused/u)
 })
 
 test('missing configuration and wrong target fail before any CLI or release command', async (t) => {

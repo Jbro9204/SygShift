@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildOwnershipManifest, readSourceTree, verifyOwnershipBaseline } from './database-migration-ownership.mjs'
 import { commandEnvironment, createCommandRunner } from './production-release-core.mjs'
+import { assertReviewedFunctionFingerprints, assertRuntimeRetrySafety, checkMigrationRetrySafety, retrySafetyCatalogSql } from './postgres-retry-safety.mjs'
 
 const productionProject = 'eqkdfrbwtioiqtjsyglg'
 const ledgerQuery = 'select version,name,statements from supabase_migrations.schema_migrations order by version'
@@ -75,11 +76,29 @@ export async function requireDatabaseReleaseBaseline(options, injected = {}) {
   if (!verification.accepted) {
     throw new Error(`Database migration release gate refused: ${[...verification.driftErrors, ...verification.reconciliationErrors].join('; ')}`)
   }
+  let retrySafety
+  try {
+    const retryManifests = [cwd, sygilantRoot].map((root) => {
+      const manifest = JSON.parse(readFileSync(resolve(root, 'docs/reliability/postgres-retry-safety.json'), 'utf8'))
+      checkMigrationRetrySafety(root, manifest)
+      return manifest
+    })
+    const result = await run([
+      'dlx', 'supabase@2.121.0', 'db', 'query', '--linked', '--project-ref', productionProject,
+      retrySafetyCatalogSql, '-o', 'json',
+    ], commandOptions)
+    const catalog = JSON.parse(result.stdout)
+    retrySafety = assertRuntimeRetrySafety(catalog.rows, retryManifests.flatMap((manifest) => manifest.runtimeExceptions ?? []))
+    for (const manifest of retryManifests) assertReviewedFunctionFingerprints(catalog.rows, manifest)
+  } catch {
+    throw new Error('The mandatory PostgreSQL retry-safety gate refused the release. Check immutable migration sources and live effective function definitions. No release command ran; catalog bodies were withheld.')
+  }
   return {
     accepted: true, appliedMigrations: current.entries.length,
     freshProductionLedger: true, reviewedBaselineCompared: true,
     claimsHistoryEquivalence: false, bulkMigrationPushAuthorized: false,
     requireReconciled: verification.requireReconciled,
+    retrySafetyVerified: true, retrySafetyCheckedFunctions: retrySafety.checkedFunctions,
   }
 }
 
