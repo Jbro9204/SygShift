@@ -1,13 +1,13 @@
 {
   "formatVersion": 2,
-  "capturedAt": "2026-10-31T21:31:04.438Z",
-  "ledgerSha256": "ccc2ffb2e9369e0a31895a473dbdeb1b7913ffd6a699c9a9558fd0169f19a3f0",
+  "capturedAt": "2026-10-31T22:56:59.911Z",
+  "ledgerSha256": "18cb470bfa0aa2f14f8f8eb058bd7b430d3471b5187ff1ec62fb2cbd63ee3d4f",
   "purpose": "Read-only cross-repository ownership and source-recovery evidence; does not authorize replay or rewrite migration history.",
   "identityAuthority": "SygShift owns the shared workforce identity boundary; Sygilant owns client identities and its application objects.",
   "checksumNote": "Exact statement-array checksums preserve NULL versus empty arrays. Whole-file source and ordered ledger statements have different envelopes. A matching name or version does not prove SQL equivalence.",
   "summary": {
-    "appliedMigrations": 440,
-    "sygshiftSources": 409,
+    "appliedMigrations": 441,
+    "sygshiftSources": 410,
     "sygilantSources": 163,
     "nameVersionDifferences": 20,
     "missingSources": 3,
@@ -11035,6 +11035,31 @@
       "orderedStatementsSha256": "2c40a2ea34acd2c19fc9f13bf65d4e63378f5ca63c464e150dcada20e69e78e2",
       "recoveryStatus": "captured-exact-statement-array",
       "replayAuthorization": "none-no-bulk-push"
+    },
+    {
+      "version": "20261031224853",
+      "name": "time_correction_effective_permission_repair",
+      "owner": "SygShift",
+      "sourceMatch": "exact-version-and-name",
+      "ownershipDecision": null,
+      "sourceCandidates": [
+        {
+          "owner": "SygShift",
+          "path": "C:\\Users\\Jordan\\Projects\\SygShift-release-candidate-20261026\\supabase\\migrations\\20261031224853_time_correction_effective_permission_repair.sql",
+          "filename": "20261031224853_time_correction_effective_permission_repair.sql",
+          "version": "20261031224853",
+          "name": "time_correction_effective_permission_repair",
+          "normalizedSourceSha256": "1f686fd596359fa4d0ac51a815f7e0d373134c14bb9812f191f66093a94f554b",
+          "rawSourceSha256": "1f686fd596359fa4d0ac51a815f7e0d373134c14bb9812f191f66093a94f554b",
+          "disposition": "requires-ledger-reconciliation"
+        }
+      ],
+      "statementCount": 3,
+      "statementArrayState": "array",
+      "statementArraySha256": "fd7b953c7a8568f470a6a2edf38cc7436fc20a0ae739e6ad74d19479628a1f8f",
+      "orderedStatementsSha256": "613e20ac84feeef55018384bf11aeb0f439a3d3cdd904fb7a8758af68080b84a",
+      "recoveryStatus": "captured-exact-statement-array",
+      "replayAuthorization": "none-no-bulk-push"
     }
   ],
   "localSources": [
@@ -15126,6 +15151,16 @@
       "name": "deterministic_conflict_retry_safety",
       "normalizedSourceSha256": "f29a0608ecaec0c28a318d12bd6bf3efe82aac7b32b5679f386454770c79f97b",
       "rawSourceSha256": "f29a0608ecaec0c28a318d12bd6bf3efe82aac7b32b5679f386454770c79f97b",
+      "disposition": "applied-identity-source-checksum-review-required"
+    },
+    {
+      "owner": "SygShift",
+      "path": "C:\\Users\\Jordan\\Projects\\SygShift-release-candidate-20261026\\supabase\\migrations\\20261031224853_time_correction_effective_permission_repair.sql",
+      "filename": "20261031224853_time_correction_effective_permission_repair.sql",
+      "version": "20261031224853",
+      "name": "time_correction_effective_permission_repair",
+      "normalizedSourceSha256": "1f686fd596359fa4d0ac51a815f7e0d373134c14bb9812f191f66093a94f554b",
+      "rawSourceSha256": "1f686fd596359fa4d0ac51a815f7e0d373134c14bb9812f191f66093a94f554b",
       "disposition": "applied-identity-source-checksum-review-required"
     },
     {

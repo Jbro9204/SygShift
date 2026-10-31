@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 10/31/2026 - Time-Correction Effective-Permission Repair
+
+- Repaired the newer correction RPC's obsolete primary-role gate, restoring reviewed effective time-management/manual-edit capabilities while retaining mandatory MFA and direct-deny semantics.
+- Preserved all correction validation, pending decisions, original punches, append-only audit and function security metadata. No identities, grants, roles, sessions, schedules or payroll records changed.
+- Added an isolated native PostgreSQL authorization/correction/void regression and source contract guards. The exact production rollback rehearsal and atomic one-migration activation passed; the reviewed ledger advances from 440 to 441 with prior entries unchanged.
+- Verified the installed authorized/MFA and denied/non-MFA paths with read-only NULL-event probes. The existing deployed DST application is retained; no Worker or browser update is needed for this database-only correction. Full source release gates remain part of the reconciled main-candidate process.
+- Details and preservation boundaries: `docs/changelogs/CHANGELOG_2026-10-31_TIME_CORRECTION_PERMISSION_REPAIR.md`.
+
 ## 10/31/2026 - Daylight-Saving Scheduling and Manual Time Safety
 
 - Added offset/elapsed-duration context and actor/snapshot-bound confirmation for supported repeated-hour schedule entry; unsafe first-occurrence reinterpretation stops before mutation.
