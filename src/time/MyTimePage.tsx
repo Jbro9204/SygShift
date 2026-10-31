@@ -60,6 +60,7 @@ import {
   payrollOccurrenceMinutes,
 } from './payrollAllocations'
 import { currentPayrollPeriod, formatUsDateKey, payrollPeriodFromBoundary } from './timeRules'
+import { ZonedTimeOccurrenceChoice } from './ZonedDateTimeField'
 import {
   TimeAlertCard,
   TimeButton,
@@ -830,28 +831,39 @@ function MissingTimeRequestModal({
   const [postId, setPostId] = useState('')
   const [unpaidBreakMinutes, setUnpaidBreakMinutes] = useState(0)
   const [reason, setReason] = useState('')
+  const [conversionError, setConversionError] = useState<string | null>(null)
   const selectedPost = posts.find((post) => post.id === postId)
   const ready = Boolean(selectedPost && workDate && clockInTime && clockOutTime && reason.trim().length >= 10)
+  const startMinutes = Number(clockInTime.slice(0, 2)) * 60 + Number(clockInTime.slice(3, 5))
+  const endMinutes = Number(clockOutTime.slice(0, 2)) * 60 + Number(clockOutTime.slice(3, 5))
+  const endDate = endMinutes <= startMinutes
+    ? format(addDays(new Date(`${workDate}T12:00:00`), 1), 'yyyy-MM-dd')
+    : workDate
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!ready || !selectedPost) return
+    if (!ready || !selectedPost || pending) return
 
     const startLocal = `${workDate}T${clockInTime}`
-    const startMinutes = Number(clockInTime.slice(0, 2)) * 60 + Number(clockInTime.slice(3, 5))
-    const endMinutes = Number(clockOutTime.slice(0, 2)) * 60 + Number(clockOutTime.slice(3, 5))
-    const endDate = endMinutes <= startMinutes
-      ? format(addDays(new Date(`${workDate}T12:00:00`), 1), 'yyyy-MM-dd')
-      : workDate
-
-    onSubmit({
-      postId,
-      reason: reason.trim(),
-      requestedClockInAt: zonedLocalDateTimeToUtc(startLocal, selectedPost.timeZone),
-      requestedClockOutAt: zonedLocalDateTimeToUtc(`${endDate}T${clockOutTime}`, selectedPost.timeZone),
-      unpaidBreakMinutes,
-      workDate,
-    })
+    const data = new FormData(event.currentTarget)
+    try {
+      const input = {
+        postId,
+        reason: reason.trim(),
+        requestedClockInAt: zonedLocalDateTimeToUtc(startLocal, selectedPost.timeZone, {
+          occurrenceInstant: String(data.get('missingClockInOccurrence') ?? '') || undefined,
+        }),
+        requestedClockOutAt: zonedLocalDateTimeToUtc(`${endDate}T${clockOutTime}`, selectedPost.timeZone, {
+          occurrenceInstant: String(data.get('missingClockOutOccurrence') ?? '') || undefined,
+        }),
+        unpaidBreakMinutes,
+        workDate,
+      }
+      setConversionError(null)
+      onSubmit(input)
+    } catch (failure) {
+      setConversionError(failure instanceof Error ? failure.message : 'Check the requested times and their time zone.')
+    }
   }
 
   return (
@@ -884,6 +896,10 @@ function MissingTimeRequestModal({
             <input disabled={pending} onChange={(event) => setClockOutTime(event.target.value)} required type="time" value={clockOutTime} />
             <small>Choose the morning time for an overnight shift. SygShift will use the next day automatically.</small>
           </label>
+          {selectedPost ? <>
+            <ZonedTimeOccurrenceChoice disabled={pending} label="Clock-in time" name="missingClockIn" showError={false} timeZone={selectedPost.timeZone} value={`${workDate}T${clockInTime}`} />
+            <ZonedTimeOccurrenceChoice disabled={pending} label="Clock-out time" name="missingClockOut" showError={false} timeZone={selectedPost.timeZone} value={`${endDate}T${clockOutTime}`} />
+          </> : null}
           <label>
             <span>Unpaid break</span>
             <select disabled={pending} onChange={(event) => setUnpaidBreakMinutes(Number(event.target.value))} value={unpaidBreakMinutes}>
@@ -896,6 +912,7 @@ function MissingTimeRequestModal({
           </label>
         </div>
 
+        {conversionError ? <p className="form-feedback form-feedback--error" role="alert">{conversionError}</p> : null}
         <label className="missing-time-request-post">
           <span>Site / Post</span>
           <select disabled={pending} onChange={(event) => setPostId(event.target.value)} required value={postId}>
@@ -1087,7 +1104,11 @@ function TimeCorrectionRequestModal({
     if (mode === 'void') replacementTime = null
     if (mode === 'change_time') {
       try {
-        replacementTime = zonedLocalDateTimeToUtc(`${date}T${time}`, employeeTimeZone)
+        replacementTime = zonedLocalDateTimeToUtc(`${date}T${time}`, employeeTimeZone, {
+          occurrenceInstant: String(new FormData(formEvent.currentTarget).get('requestedCorrectionOccurrence') ?? '') || undefined,
+          originalInstant: event.effectiveAt ?? event.recordedAt,
+          originalTimeZone: employeeTimeZone,
+        })
       } catch (error) {
         setConversionError(error instanceof Error ? error.message : 'Enter a valid date and time for your time zone.')
         return
@@ -1144,6 +1165,7 @@ function TimeCorrectionRequestModal({
               <span>Correct time / {continentalUsTimeZoneLabel(employeeTimeZone)}</span>
               <input disabled={pending} onChange={(inputEvent) => { setConversionError(null); setTime(inputEvent.target.value) }} required type="time" value={time} />
             </label>
+            <ZonedTimeOccurrenceChoice disabled={pending} label="Corrected time" name="requestedCorrection" originalInstant={event.effectiveAt ?? event.recordedAt} originalTimeZone={employeeTimeZone} showError={false} timeZone={employeeTimeZone} value={`${date}T${time}`} />
           </div>
         ) : null}
 

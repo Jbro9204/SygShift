@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 10/31/2026 - Daylight-Saving Scheduling and Manual Time Safety
+
+- Added offset/elapsed-duration context and actor/snapshot-bound confirmation for supported repeated-hour schedule entry; unsafe first-occurrence reinterpretation stops before mutation.
+- Preserved exact original/recommended instants and added explicit first/second choices for manual time and corrections. Skipped times fail without writes; pending saves keep submitted context.
+- Added DST payroll reconciliation and existing-clock protection tests, valid midnight entry, and the reviewed v2 baseline for the already-applied Sygilant receipt migration.
+- No clock route, published schedule, source punch, payroll policy/calculation, rate, permission or database migration changed. Full release gates and remaining limitations are in the dated DST changelog.
+
 ## 10/31/2026 - Shared Database Retry Safety
 
 - Audited the effective shared-database function catalog after the overnight report retry storm. Reviewed and atomically corrected another 46 functions / 75 deterministic rejection clauses without changing business conditions or security metadata.

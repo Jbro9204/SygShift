@@ -1,14 +1,14 @@
 {
   "formatVersion": 2,
-  "capturedAt": "2026-10-31T18:44:07.214Z",
-  "ledgerSha256": "50ba3cab9d9c0192a118fb9897a019189e971aefb335b41cf9ab7e38bec84cc0",
+  "capturedAt": "2026-10-31T21:31:04.438Z",
+  "ledgerSha256": "ccc2ffb2e9369e0a31895a473dbdeb1b7913ffd6a699c9a9558fd0169f19a3f0",
   "purpose": "Read-only cross-repository ownership and source-recovery evidence; does not authorize replay or rewrite migration history.",
   "identityAuthority": "SygShift owns the shared workforce identity boundary; Sygilant owns client identities and its application objects.",
   "checksumNote": "Exact statement-array checksums preserve NULL versus empty arrays. Whole-file source and ordered ledger statements have different envelopes. A matching name or version does not prove SQL equivalence.",
   "summary": {
-    "appliedMigrations": 439,
+    "appliedMigrations": 440,
     "sygshiftSources": 409,
-    "sygilantSources": 162,
+    "sygilantSources": 163,
     "nameVersionDifferences": 20,
     "missingSources": 3,
     "missingStatementArrays": 18,
@@ -11010,6 +11010,31 @@
       "orderedStatementsSha256": "a7a73cf5520f6c0c4a31641138317b98b061c9662aea07ae536827600a074f65",
       "recoveryStatus": "captured-exact-statement-array",
       "replayAuthorization": "none-no-bulk-push"
+    },
+    {
+      "version": "20261031194837",
+      "name": "report_write_authoritative_version_receipts",
+      "owner": "Sygilant",
+      "sourceMatch": "exact-version-and-name",
+      "ownershipDecision": null,
+      "sourceCandidates": [
+        {
+          "owner": "Sygilant",
+          "path": "C:\\Users\\Jordan\\Documents\\Codex\\2026-10-29\\sygilant-hr-build\\supabase\\migrations\\20261031194837_report_write_authoritative_version_receipts.sql",
+          "filename": "20261031194837_report_write_authoritative_version_receipts.sql",
+          "version": "20261031194837",
+          "name": "report_write_authoritative_version_receipts",
+          "normalizedSourceSha256": "d0aa4d0995b6e6a688446dec2a7dabfe1e0dc7cf30e15fecbf86230fafdd191a",
+          "rawSourceSha256": "d0aa4d0995b6e6a688446dec2a7dabfe1e0dc7cf30e15fecbf86230fafdd191a",
+          "disposition": "requires-ledger-reconciliation"
+        }
+      ],
+      "statementCount": 5,
+      "statementArrayState": "array",
+      "statementArraySha256": "e55944fb348faed61257659cb75f2fd3181c2a15f7244a6b55894dc2a476cb6e",
+      "orderedStatementsSha256": "2c40a2ea34acd2c19fc9f13bf65d4e63378f5ca63c464e150dcada20e69e78e2",
+      "recoveryStatus": "captured-exact-statement-array",
+      "replayAuthorization": "none-no-bulk-push"
     }
   ],
   "localSources": [
@@ -16721,6 +16746,16 @@
       "name": "sygilant_service_runtime_budget_diagnostic",
       "normalizedSourceSha256": "d7c28399ff8aaf854d69a274dccab40dd721637a1d73bb4ab68e8dc6b6e83bab",
       "rawSourceSha256": "d7c28399ff8aaf854d69a274dccab40dd721637a1d73bb4ab68e8dc6b6e83bab",
+      "disposition": "applied-identity-source-checksum-review-required"
+    },
+    {
+      "owner": "Sygilant",
+      "path": "C:\\Users\\Jordan\\Documents\\Codex\\2026-10-29\\sygilant-hr-build\\supabase\\migrations\\20261031194837_report_write_authoritative_version_receipts.sql",
+      "filename": "20261031194837_report_write_authoritative_version_receipts.sql",
+      "version": "20261031194837",
+      "name": "report_write_authoritative_version_receipts",
+      "normalizedSourceSha256": "d0aa4d0995b6e6a688446dec2a7dabfe1e0dc7cf30e15fecbf86230fafdd191a",
+      "rawSourceSha256": "d0aa4d0995b6e6a688446dec2a7dabfe1e0dc7cf30e15fecbf86230fafdd191a",
       "disposition": "applied-identity-source-checksum-review-required"
     }
   ]

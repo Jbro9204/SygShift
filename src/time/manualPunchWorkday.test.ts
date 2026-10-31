@@ -51,4 +51,9 @@ describe('manual punch workday defaults', () => {
     expect(recommendedManualPunchTimestamp(overnightShift, 'break_start')).toBeNull()
     expect(recommendedManualPunchTimestamp(overnightShift, 'break_end')).toBeNull()
   })
+
+  it('uses a valid 00:00 input at local midnight, including a DST boundary date', () => {
+    expect(recommendedManualPunchTimestamp({ ...overnightShift, startsAt: '2026-11-01T06:00:12.345Z' }, 'clock_in'))
+      .toEqual({ date: '2026-11-01', time: '00:00' })
+  })
 })

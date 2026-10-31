@@ -74,9 +74,12 @@ import { copyWeekFailureMessage } from '../schedule/copyWeekFeedback'
 import { usePersonalScheduleDateBasis } from '../schedule/personalScheduleDate'
 import {
   runAfterScheduleWallClockPreflight,
+  inspectScheduleWallClockRange,
+  inspectScheduleWallClockRangesForDates,
+  requireScheduleRepeatedTimeConfirmation,
+  scheduleRepeatedTimeConfirmationKey,
   scheduleTimeBasisLabel,
-  scheduleWallClockRangeToInstants,
-  scheduleWallClockRangesForDates,
+  storedScheduleRepeatedTimeEditError,
 } from '../schedule/timeBasis'
 
 interface OpenShiftFormState {
@@ -1023,6 +1026,8 @@ function EditShiftDialog({
   const [shiftDate, setShiftDate] = useState(shiftOperationalDate(shift))
   const [startTime, setStartTime] = useState(shiftLocalTimeValue(shift, shift.starts_at))
   const [endTime, setEndTime] = useState(shiftLocalTimeValue(shift, shift.ends_at))
+  const [confirmedRepeatedTimeKey, setConfirmedRepeatedTimeKey] = useState<string | null>(null)
+  const [repeatedTimeError, setRepeatedTimeError] = useState<string | null>(null)
   const [headcount, setHeadcount] = useState(String(shift.headcount_required))
   const [notes, setNotes] = useState(shift.notes ?? '')
   const [isOpen, setIsOpen] = useState(shift.is_open)
@@ -1048,9 +1053,11 @@ function EditShiftDialog({
     || shift.payrollCategory !== 'regular'
   const editTimePreview = useMemo(() => {
     try {
+      const range = inspectScheduleWallClockRange(shiftDate, startTime, endTime, shift.time_zone)
+      const serializationError = storedScheduleRepeatedTimeEditError({ startsAt: shift.starts_at, endsAt: shift.ends_at }, range, shift.time_zone)
       return {
-        error: null,
-        range: scheduleWallClockRangeToInstants(shiftDate, startTime, endTime, shift.time_zone),
+        error: serializationError,
+        range: serializationError ? { ...range, startsAt: shift.starts_at, endsAt: shift.ends_at } : range,
       }
     } catch (error) {
       return {
@@ -1058,7 +1065,18 @@ function EditShiftDialog({
         range: null,
       }
     }
-  }, [endTime, shift.time_zone, shiftDate, startTime])
+  }, [endTime, shift.ends_at, shift.starts_at, shift.time_zone, shiftDate, startTime])
+  const preservesStoredRange = editTimePreview.range
+    && Date.parse(editTimePreview.range.startsAt) === Date.parse(shift.starts_at)
+    && Date.parse(editTimePreview.range.endsAt) === Date.parse(shift.ends_at)
+  const editRepeatedTimeKey = !preservesStoredRange && editTimePreview.range
+    ? scheduleRepeatedTimeConfirmationKey([editTimePreview.range], shift.time_zone)
+    : null
+  const editRepeatedTimeNeedsConfirmation = Boolean(editRepeatedTimeKey && confirmedRepeatedTimeKey !== editRepeatedTimeKey)
+  useEffect(() => {
+    setConfirmedRepeatedTimeKey(null)
+    setRepeatedTimeError(null)
+  }, [shiftDate, startTime, endTime, shift.time_zone])
   const editTimePreviewRows: ScheduleTimePreviewRow[] = [
     {
       label: scheduleTimeBasisLabel(shift.time_zone_source, shift.time_zone),
@@ -1130,6 +1148,16 @@ function EditShiftDialog({
     event.preventDefault()
     mutation.reset()
     const form = new FormData(event.currentTarget)
+    try {
+      const requested = inspectScheduleWallClockRange(String(form.get('shiftDate')), String(form.get('startTime')), String(form.get('endTime')), shift.time_zone)
+      const serializationError = storedScheduleRepeatedTimeEditError({ startsAt: shift.starts_at, endsAt: shift.ends_at }, requested, shift.time_zone)
+      if (serializationError) throw new Error(serializationError)
+      const unchanged = Date.parse(requested.startsAt) === Date.parse(shift.starts_at) && Date.parse(requested.endsAt) === Date.parse(shift.ends_at)
+      if (!unchanged) requireScheduleRepeatedTimeConfirmation([requested], shift.time_zone, confirmedRepeatedTimeKey)
+    } catch (error) {
+      setRepeatedTimeError(error instanceof Error ? error.message : 'The shift time could not be confirmed. No shift was changed.')
+      return
+    }
     mutation.mutate({
       shiftId: shift.id,
       expectedVersionToken: shift.versionToken ?? '',
@@ -1168,6 +1196,14 @@ function EditShiftDialog({
           endsAt={editTimePreview.range?.endsAt}
           previewError={editTimePreview.error}
           previewRows={editTimePreviewRows}
+          repeatedTimes={editTimePreview.error ? [] : editTimePreview.range?.repeatedTimes}
+          repeatedTimeConfirmation={editRepeatedTimeKey ? {
+            checked: confirmedRepeatedTimeKey === editRepeatedTimeKey,
+            onChange: (checked) => {
+              setConfirmedRepeatedTimeKey(checked ? editRepeatedTimeKey : null)
+              setRepeatedTimeError(null)
+            },
+          } : undefined}
           startsAt={editTimePreview.range?.startsAt}
         />
         <div className="form-grid schedule-edit-form__timing">
@@ -1312,6 +1348,7 @@ function EditShiftDialog({
           </div>
         ) : null}
         {mutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{mutation.error.message}</p> : null}
+        {repeatedTimeError ? <p className="form-feedback form-feedback--error" role="alert">{repeatedTimeError}</p> : null}
         <div className="modal-actions">
           <button
             className="secondary-button danger-button"
@@ -1325,7 +1362,7 @@ function EditShiftDialog({
             Remove from draft
           </button>
           <button className="secondary-button" onClick={requestClose} type="button">Cancel</button>
-          <button className="primary-action" disabled={mutation.isPending || Boolean(editTimePreview.error) || Boolean(availabilityConflict && !overrideNote.trim()) || !credentialOverrideReady || overtimePreviewBlocksSave || !overtimeOverrideReady} type="submit">
+          <button className="primary-action" disabled={mutation.isPending || Boolean(editTimePreview.error) || editRepeatedTimeNeedsConfirmation || Boolean(availabilityConflict && !overrideNote.trim()) || !credentialOverrideReady || overtimePreviewBlocksSave || !overtimeOverrideReady} type="submit">
             {mutation.isPending ? 'Saving...' : 'Save draft shift'}
           </button>
         </div>
@@ -2210,6 +2247,7 @@ function CopyWeekDialog({
       title="Copy week"
     >
       <form className="scheduler-workflow-modal" onSubmit={handleSubmit}>
+        <p className="form-note">Week copy preserves each shift’s local start and end clock times in its current Employee or Site time zone. A daylight-saving change can make an overnight shift longer or shorter in elapsed time. Repeated clock times resolve to the second (standard-time) occurrence; a nonexistent spring-forward time stops the whole copy. Review the destination draft’s dates, offsets, and elapsed hours before publishing.</p>
         <div className="scheduler-workflow-summary">
           <article>
             <span>Source week</span>
@@ -2410,6 +2448,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const [employeeFilter, setEmployeeFilter] = useState('all')
   const [reviewOnly, setReviewOnly] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
+  const [confirmedOpenRepeatedTimeKey, setConfirmedOpenRepeatedTimeKey] = useState<string | null>(null)
   const [resolvingShift, setResolvingShift] = useState<ScheduleShift | null>(null)
   const [shiftEditor, setShiftEditor] = useState<ShiftEditorState | null>(null)
   const [removingShift, setRemovingShift] = useState<ScheduleShift | null>(null)
@@ -2684,22 +2723,25 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     : openShiftSiteTimeZone
   const openShiftTimePreview = useMemo(() => {
     if (!openShiftTimeBasisZone || !openShiftForm.shiftDate || !openShiftForm.startTime || !openShiftForm.endTime) {
-      return { error: null, range: null }
+      return { error: null, range: null, ranges: [] }
     }
     try {
+      const ranges = inspectScheduleWallClockRangesForDates(
+        openShiftDateKeys,
+        openShiftForm.startTime,
+        openShiftForm.endTime,
+        openShiftTimeBasisZone,
+      )
       return {
         error: null,
-        range: scheduleWallClockRangesForDates(
-          openShiftDateKeys,
-          openShiftForm.startTime,
-          openShiftForm.endTime,
-          openShiftTimeBasisZone,
-        )[0] ?? null,
+        range: ranges[0] ?? null,
+        ranges,
       }
     } catch (error) {
       return {
         error: error instanceof Error ? error.message : 'The shift time could not be converted.',
         range: null,
+        ranges: [],
       }
     }
   }, [
@@ -2709,6 +2751,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     openShiftDateKeys,
     openShiftTimeBasisZone,
   ])
+  const openRepeatedTimeKey = openShiftTimeBasisZone
+    ? scheduleRepeatedTimeConfirmationKey(openShiftTimePreview.ranges, openShiftTimeBasisZone)
+    : null
+  const openRepeatedTimeNeedsConfirmation = Boolean(openRepeatedTimeKey && confirmedOpenRepeatedTimeKey !== openRepeatedTimeKey)
+  const openTimeSnapshot = JSON.stringify([activeSelectionOwnerId, openShiftTimeBasisZone, openShiftDateKeys, openShiftForm.startTime, openShiftForm.endTime])
+  useEffect(() => {
+    setConfirmedOpenRepeatedTimeKey(null)
+  }, [builderOpen, openTimeSnapshot])
   const openShiftTimePreviewRows: ScheduleTimePreviewRow[] = openShiftTimeBasisZone ? [
     {
       label: scheduleTimeBasisLabel(openShiftTimeBasisSource, openShiftTimeBasisZone),
@@ -2807,6 +2857,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const createOpenShiftMutation = useMutation({
     mutationFn: async () => {
       const requestedDates = selectedOpenShiftDateKeys(openShiftForm, weekKey, weekEndKey)
+      if (!openShiftTimeBasisZone) {
+        throw new Error('The shift time zone could not be confirmed. No new shifts were created.')
+      }
+      requireScheduleRepeatedTimeConfirmation(
+        inspectScheduleWallClockRangesForDates(requestedDates, openShiftForm.startTime, openShiftForm.endTime, openShiftTimeBasisZone),
+        openShiftTimeBasisZone,
+        confirmedOpenRepeatedTimeKey,
+      )
       const latestScheduleResult = await scheduleQuery.refetch()
       const latestSchedule = latestScheduleResult.data ?? scheduleQuery.data
       syncOpenScheduleWindows(latestSchedule)
@@ -4252,6 +4310,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 endsAt={openShiftTimePreview.range?.endsAt}
                 previewError={openShiftTimePreview.error}
                 previewRows={openShiftTimePreviewRows}
+                repeatedTimes={openShiftTimePreview.ranges.flatMap((range) => range.repeatedTimes)}
+                repeatedTimeConfirmation={openRepeatedTimeKey ? {
+                  checked: confirmedOpenRepeatedTimeKey === openRepeatedTimeKey,
+                  onChange: (checked) => {
+                    setConfirmedOpenRepeatedTimeKey(checked ? openRepeatedTimeKey : null)
+                    setBuilderMessage(null)
+                  },
+                } : undefined}
                 startsAt={openShiftTimePreview.range?.startsAt}
               />
             ) : (
@@ -4445,7 +4511,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </button>
               <button
                 className="primary-action"
-                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending || Boolean(openShiftTimePreview.error) || !openShiftTimeBasisZone || openShiftOvertimePreviewPending || openShiftOvertimePreviewFailed || openShiftDateKeys.length === 0 || Boolean(openShiftAvailabilityConflict && !openShiftForm.availabilityOverrideNote.trim()) || !openShiftCredentialOverrideReady || !openShiftOvertimeOverrideReady}
+                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending || Boolean(openShiftTimePreview.error) || openRepeatedTimeNeedsConfirmation || !openShiftTimeBasisZone || openShiftOvertimePreviewPending || openShiftOvertimePreviewFailed || openShiftDateKeys.length === 0 || Boolean(openShiftAvailabilityConflict && !openShiftForm.availabilityOverrideNote.trim()) || !openShiftCredentialOverrideReady || !openShiftOvertimeOverrideReady}
                 type="submit"
               >
                 {createOpenShiftMutation.isPending
@@ -4483,6 +4549,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           employees={builderOptionsQuery.data?.employees ?? []}
           focusEmployeeId={focusedEmployeeId}
           key={[
+            activeSelectionOwnerId,
             shiftEditor.editableShift.id,
             shiftEditor.editableShift.starts_at,
             shiftEditor.editableShift.ends_at,

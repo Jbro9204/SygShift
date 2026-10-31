@@ -7,6 +7,14 @@ import {
   scheduleWallClockRangeToInstants,
   scheduleWallClockRangesForDates,
   scheduleWallClockToInstant,
+  possibleScheduleWallClockInstants,
+  inspectScheduleWallClockRange,
+  inspectScheduleWallClockRangesForDates,
+  requireScheduleRepeatedTimeConfirmation,
+  scheduleRepeatedTimeConfirmationKey,
+  storedScheduleRepeatedTimeEditError,
+  formatScheduleInstantOffset,
+  scheduleElapsedTimeLabel,
 } from './timeBasis'
 
 describe('schedule time-basis contract', () => {
@@ -130,6 +138,64 @@ describe('schedule time-basis contract', () => {
       '01:30',
       'America/New_York',
     )).toBe('2026-11-01T06:30:00.000Z')
+  })
+
+  it.each([
+    ['America/New_York', ['2026-11-01T05:30:00.000Z', '2026-11-01T06:30:00.000Z']],
+    ['America/Chicago', ['2026-11-01T06:30:00.000Z', '2026-11-01T07:30:00.000Z']],
+    ['America/Denver', ['2026-11-01T07:30:00.000Z', '2026-11-01T08:30:00.000Z']],
+    ['America/Los_Angeles', ['2026-11-01T08:30:00.000Z', '2026-11-01T09:30:00.000Z']],
+    ['America/Phoenix', ['2026-11-01T08:30:00.000Z']],
+  ])('identifies the exact possible instants in %s without inventing a Phoenix transition', (zone, expected) => {
+    expect(possibleScheduleWallClockInstants('2026-11-01', '01:30', zone)).toEqual(expected)
+  })
+
+  it('exposes both endpoint offsets and actual elapsed hours for overnight DST coverage', () => {
+    const fall = inspectScheduleWallClockRange('2026-10-31', '22:00', '06:00', 'America/Denver')
+    const spring = inspectScheduleWallClockRange('2026-03-07', '22:00', '06:00', 'America/Denver')
+    const arizona = inspectScheduleWallClockRange('2026-10-31', '22:00', '06:00', 'America/Phoenix')
+    expect(scheduleElapsedTimeLabel(fall.startsAt, fall.endsAt)).toBe('9h elapsed before breaks')
+    expect(scheduleElapsedTimeLabel(spring.startsAt, spring.endsAt)).toBe('7h elapsed before breaks')
+    expect(scheduleElapsedTimeLabel(arizona.startsAt, arizona.endsAt)).toBe('8h elapsed before breaks')
+    expect(formatScheduleInstantOffset(fall.startsAt, 'America/Denver')).toBe('MDT (UTC-06:00)')
+    expect(formatScheduleInstantOffset(fall.endsAt, 'America/Denver')).toBe('MST (UTC-07:00)')
+  })
+
+  it('requires explicit confirmation for repeated starts and overnight repeated ends in every selected date', () => {
+    const ranges = inspectScheduleWallClockRangesForDates(['2026-10-31', '2026-11-01'], '01:30', '03:00', 'America/New_York')
+    expect(ranges[0].repeatedTimes).toEqual([])
+    expect(ranges[1].repeatedTimes[0]).toMatchObject({ endpoint: 'Start', selectedInstant: '2026-11-01T06:30:00.000Z' })
+    expect(() => requireScheduleRepeatedTimeConfirmation(ranges, 'America/New_York', null)).toThrow('Confirm the second')
+    const key = scheduleRepeatedTimeConfirmationKey(ranges, 'America/New_York')
+    expect(() => requireScheduleRepeatedTimeConfirmation(ranges, 'America/New_York', key)).not.toThrow()
+    const changed = inspectScheduleWallClockRangesForDates(['2026-10-31', '2026-11-01'], '01:45', '03:00', 'America/New_York')
+    expect(() => requireScheduleRepeatedTimeConfirmation(changed, 'America/New_York', key)).toThrow('Confirm the second')
+    const end = inspectScheduleWallClockRange('2026-10-31', '22:00', '01:30', 'America/New_York')
+    expect(end.repeatedTimes[0]).toMatchObject({ endpoint: 'End', dateKey: '2026-11-01', selectedInstant: '2026-11-01T06:30:00.000Z' })
+  })
+
+  it('binds repeated-time confirmation to all dates and the zone, including otherwise ordinary repeated dates', () => {
+    const first = inspectScheduleWallClockRangesForDates(['2026-11-01', '2026-11-02'], '01:30', '03:00', 'America/New_York')
+    const key = scheduleRepeatedTimeConfirmationKey(first, 'America/New_York')
+    const changedDates = inspectScheduleWallClockRangesForDates(['2026-11-01', '2026-11-03'], '01:30', '03:00', 'America/New_York')
+    expect(scheduleRepeatedTimeConfirmationKey(changedDates, 'America/New_York')).not.toBe(key)
+    const changedZone = inspectScheduleWallClockRangesForDates(['2026-11-01', '2026-11-02'], '01:30', '03:00', 'America/Denver')
+    expect(scheduleRepeatedTimeConfirmationKey(changedZone, 'America/Denver')).not.toBe(key)
+  })
+
+  it('preserves an existing second-fold range and blocks silent first-fold reinterpretation', () => {
+    const requested = inspectScheduleWallClockRange('2026-11-01', '01:30', '03:00', 'America/New_York')
+    expect(storedScheduleRepeatedTimeEditError(requested, requested, 'America/New_York')).toBeNull()
+    expect(storedScheduleRepeatedTimeEditError({ startsAt: '2026-11-01T05:30:00.000Z', endsAt: requested.endsAt }, requested, 'America/New_York'))
+      .toContain('first occurrence')
+    const overnight = inspectScheduleWallClockRange('2026-10-31', '22:00', '01:30', 'America/New_York')
+    expect(storedScheduleRepeatedTimeEditError({ startsAt: overnight.startsAt, endsAt: '2026-11-01T05:30:00.000Z' }, overnight, 'America/New_York'))
+      .toContain('first occurrence')
+  })
+
+  it('keeps spring gaps rejected throughout inspection, including a later repeated date', () => {
+    expect(() => inspectScheduleWallClockRangesForDates(['2026-03-07', '2026-03-08'], '02:30', '03:30', 'America/Denver'))
+      .toThrow('03/08/2026: That local time does not exist')
   })
 
   it('names employee, site, and preserved recorded bases explicitly', () => {

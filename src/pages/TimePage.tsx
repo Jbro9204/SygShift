@@ -82,10 +82,12 @@ import {
   type WorkType,
 } from '../data/timekeeping'
 import { getSessionContext } from '../data/auth'
+import { zonedLocalDateTimeToUtc } from '../data/timeOperations'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTime, OPERATIONAL_TIME_ZONE, operationalToday } from '../lib/time'
 import { personalDisplayTimeZone } from '../lib/usTimeZones'
 import { TimeCommandCenterPage } from '../time/TimeCommandCenterPage'
+import { ZonedTimeOccurrenceChoice } from '../time/ZonedDateTimeField'
 import { payrollLockBlocker, workedTimePayrollReview } from '../time/timePayroll'
 import { currentPayrollWeek } from '../time/timeRules'
 import { shouldRetryTimekeepingReview, timekeepingReviewErrorMessage } from '../time/timekeepingReviewRetry'
@@ -194,44 +196,13 @@ function dateInputValue(value: string): string {
 function timeInputValue(value: string): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     hour: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
     minute: '2-digit',
     timeZone: OPERATIONAL_TIME_ZONE,
   }).formatToParts(new Date(value))
   const hour = parts.find((part) => part.type === 'hour')?.value ?? '00'
   const minute = parts.find((part) => part.type === 'minute')?.value ?? '00'
   return `${hour}:${minute}`
-}
-
-function zonedDateTimeToIso(dateKey: string, timeValue: string): string {
-  const [year, month, day] = dateKey.split('-').map(Number)
-  const [hour, minute] = timeValue.split(':').map(Number)
-  const targetUtc = Date.UTC(year, month - 1, day, hour, minute)
-  let guess = targetUtc
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    hour: '2-digit',
-    hour12: false,
-    minute: '2-digit',
-    month: '2-digit',
-    timeZone: OPERATIONAL_TIME_ZONE,
-    year: 'numeric',
-  })
-
-  for (let index = 0; index < 3; index += 1) {
-    const parts = formatter.formatToParts(new Date(guess))
-    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? '0'
-    const renderedUtc = Date.UTC(
-      Number(part('year')),
-      Number(part('month')) - 1,
-      Number(part('day')),
-      Number(part('hour')),
-      Number(part('minute')),
-    )
-    guess += targetUtc - renderedUtc
-  }
-
-  return new Date(guess).toISOString()
 }
 
 function shortDigest(digest: string): string {
@@ -480,6 +451,7 @@ export function TimeMaintenanceWorkbench({
   const [addDate, setAddDate] = useState(defaultDate)
   const [addOperationalDate, setAddOperationalDate] = useState(defaultDate)
   const [addTime, setAddTime] = useState('08:00')
+  const [addOriginalInstant, setAddOriginalInstant] = useState<string | undefined>()
   const [addReason, setAddReason] = useState('')
   const [addShiftId, setAddShiftId] = useState<string | null>(null)
   const [addLocationPostId, setAddLocationPostId] = useState<string | null>(null)
@@ -567,13 +539,17 @@ export function TimeMaintenanceWorkbench({
     ])
   }
   const addMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (occurrenceInstant?: string) => {
       const activeLocation = locationOptionsQuery.data?.find((option) => option.postId === addLocationPostId) ?? null
       if (addLocationPostId && !activeLocation) {
         throw new Error('Choose an active Site/Post before saving this time event.')
       }
       return supervisorRecordTimeEvent({
-        effectiveAt: zonedDateTimeToIso(addDate, addTime),
+        effectiveAt: zonedLocalDateTimeToUtc(`${addDate}T${addTime}`, OPERATIONAL_TIME_ZONE, {
+          occurrenceInstant,
+          originalInstant: addOriginalInstant,
+          originalTimeZone: OPERATIONAL_TIME_ZONE,
+        }),
         employeeId: addEmployeeId,
         kind: addKind,
         locationName: activeLocation
@@ -593,8 +569,8 @@ export function TimeMaintenanceWorkbench({
       await refreshTimeQueries()
     },
   })
-  const correctionMutation = useMutation<unknown, Error>({
-    mutationFn: () => {
+  const correctionMutation = useMutation<unknown, Error, string | undefined>({
+    mutationFn: (occurrenceInstant?: string) => {
       if (!selectedEvent) throw new Error('Select a time event first.')
       if (correctionMode === 'site_post') {
         if (correctionShiftId === MANUAL_SITE_POST_OPTION) {
@@ -639,7 +615,11 @@ export function TimeMaintenanceWorkbench({
       return supervisorCorrectTimeEvent({
         reason: correctionReason.trim(),
         replacementKind: correctionMode === 'adjust' ? correctionKind : null,
-        replacementTime: correctionMode === 'adjust' ? zonedDateTimeToIso(correctionDate, correctionTime) : null,
+        replacementTime: correctionMode === 'adjust' ? zonedLocalDateTimeToUtc(`${correctionDate}T${correctionTime}`, OPERATIONAL_TIME_ZONE, {
+          occurrenceInstant,
+          originalInstant: selectedEvent.effectiveAt,
+          originalTimeZone: OPERATIONAL_TIME_ZONE,
+        }) : null,
         timeEventId: selectedEvent.id,
         voided: correctionMode === 'void',
       })
@@ -775,6 +755,7 @@ export function TimeMaintenanceWorkbench({
   }
 
   function prefillRelatedPunch(event: TimeMaintenanceEvent) {
+    if (addMutation.isPending) return
     setAddEmployeeId(event.employeeId)
     setAddShiftId(event.shiftId)
     setAddLocationPostId(null)
@@ -789,13 +770,15 @@ export function TimeMaintenanceWorkbench({
     setAddDate(dateInputValue(event.effectiveAt))
     setAddOperationalDate(event.operationalDate)
     setAddTime(timeInputValue(event.effectiveAt))
+    setAddOriginalInstant(event.effectiveAt)
     setAddReason('')
   }
 
   function chooseAddWorkday(nextWorkday: string) {
-    if (!nextWorkday) return
+    if (!nextWorkday || addMutation.isPending) return
     setAddOperationalDate(nextWorkday)
     setAddDate(nextWorkday)
+    setAddOriginalInstant(undefined)
     setAddShiftId(null)
     setAddLocationPostId(null)
     setAddManualLocation('')
@@ -807,6 +790,15 @@ export function TimeMaintenanceWorkbench({
 
   function moveAddWorkday(days: -1 | 1) {
     chooseAddWorkday(adjacentOperationalDate(addOperationalDate, days))
+  }
+
+  function applyRecommendedAddTime(option: TimeMaintenanceShiftOption, kind: TimeEventKind) {
+    const recommended = recommendedManualPunchTimestamp({ ...option, timeZone: OPERATIONAL_TIME_ZONE }, kind)
+    setAddOriginalInstant(recommended ? (kind === 'clock_in' ? option.startsAt : option.endsAt) : undefined)
+    if (recommended) {
+      setAddDate(recommended.date)
+      setAddTime(recommended.time)
+    }
   }
 
   return (
@@ -918,8 +910,9 @@ export function TimeMaintenanceWorkbench({
               className="time-maintenance-add"
               onSubmit={(event) => {
                 event.preventDefault()
+                if (addMutation.isPending) return
                 setAddSuccessMessage(null)
-                addMutation.mutate()
+                addMutation.mutate(String(new FormData(event.currentTarget).get('addPunchOccurrence') ?? '') || undefined)
               }}
             >
               <div>
@@ -929,6 +922,7 @@ export function TimeMaintenanceWorkbench({
               <label>
                 <span>Employee</span>
                 <select
+                  disabled={addMutation.isPending}
                   onChange={(event) => {
                     setAddEmployeeId(event.target.value)
                     setAddShiftId(null)
@@ -936,6 +930,7 @@ export function TimeMaintenanceWorkbench({
                     setAddManualLocation('')
                     setAddUsesManualLocation(false)
                     setAddContext(null)
+                    setAddOriginalInstant(undefined)
                   }}
                   required
                   value={addEmployeeId}
@@ -948,34 +943,34 @@ export function TimeMaintenanceWorkbench({
               </label>
               <label>
                 <span>Punch type</span>
-                <select onChange={(event) => {
+                <select disabled={addMutation.isPending} onChange={(event) => {
                   const nextKind = event.target.value as TimeEventKind
                   setAddKind(nextKind)
+                  setAddOriginalInstant(undefined)
                   const selectedShift = addShiftOptions.find((option) => option.shiftId === addShiftId)
                   if (!selectedShift) return
-                  const recommended = recommendedManualPunchTimestamp(selectedShift, nextKind)
-                  if (!recommended) return
-                  setAddDate(recommended.date)
-                  setAddTime(recommended.time)
+                  applyRecommendedAddTime(selectedShift, nextKind)
                 }} value={addKind}>
                   {Object.entries(actionLabels).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}
                 </select>
               </label>
-              <label><span>Punch date</span><input onChange={(event) => setAddDate(event.target.value)} required type="date" value={addDate} /></label>
-              <label><span>Time / Mountain</span><input onChange={(event) => setAddTime(event.target.value)} required type="time" value={addTime} /></label>
+              <label><span>Punch date</span><input disabled={addMutation.isPending} onChange={(event) => { setAddDate(event.target.value); setAddOriginalInstant(undefined) }} required type="date" value={addDate} /></label>
+              <label><span>Time / Mountain</span><input disabled={addMutation.isPending} onChange={(event) => { setAddTime(event.target.value); setAddOriginalInstant(undefined) }} required type="time" value={addTime} /></label>
+              <ZonedTimeOccurrenceChoice disabled={addMutation.isPending} label="Punch time" name="addPunch" originalInstant={addOriginalInstant} originalTimeZone={OPERATIONAL_TIME_ZONE} showError={false} timeZone={OPERATIONAL_TIME_ZONE} value={`${addDate}T${addTime}`} />
               <div className="time-maintenance-add__site-post">
                 <div className="time-maintenance-workday">
                   <label htmlFor="time-maintenance-workday">Workday</label>
                   <div className="time-maintenance-workday__controls">
-                    <button aria-label="Previous workday" className="secondary-button secondary-button--small" onClick={() => moveAddWorkday(-1)} type="button">Previous</button>
+                    <button aria-label="Previous workday" className="secondary-button secondary-button--small" disabled={addMutation.isPending} onClick={() => moveAddWorkday(-1)} type="button">Previous</button>
                     <input
                       id="time-maintenance-workday"
+                      disabled={addMutation.isPending}
                       onChange={(event) => chooseAddWorkday(event.target.value)}
                       required
                       type="date"
                       value={addOperationalDate}
                     />
-                    <button aria-label="Next workday" className="secondary-button secondary-button--small" onClick={() => moveAddWorkday(1)} type="button">Next</button>
+                    <button aria-label="Next workday" className="secondary-button secondary-button--small" disabled={addMutation.isPending} onClick={() => moveAddWorkday(1)} type="button">Next</button>
                   </div>
                   <small>
                     {addShiftId
@@ -986,7 +981,7 @@ export function TimeMaintenanceWorkbench({
                 <label>
                   <span>Site/Post</span>
                   <select
-                    disabled={!addEmployeeId || addShiftOptionsQuery.isPending || locationOptionsQuery.isPending}
+                    disabled={addMutation.isPending || !addEmployeeId || addShiftOptionsQuery.isPending || locationOptionsQuery.isPending}
                     onChange={(event) => {
                       const value = event.target.value
                       const useManualLocation = value === MANUAL_SITE_POST_OPTION
@@ -997,13 +992,10 @@ export function TimeMaintenanceWorkbench({
                       setAddShiftId(useManualLocation || activePostId || value === '' ? null : value)
                       if (!useManualLocation) setAddManualLocation('')
                       setAddContext(null)
+                      setAddOriginalInstant(undefined)
                       if (selectedShift) {
                         setAddOperationalDate(selectedShift.operationalDate)
-                        const recommended = recommendedManualPunchTimestamp(selectedShift, addKind)
-                        if (recommended) {
-                          setAddDate(recommended.date)
-                          setAddTime(recommended.time)
-                        }
+                        applyRecommendedAddTime(selectedShift, addKind)
                       }
                     }}
                     required
@@ -1047,6 +1039,7 @@ export function TimeMaintenanceWorkbench({
                   <label>
                     <span>Other location</span>
                     <input
+                      disabled={addMutation.isPending}
                       maxLength={180}
                       onChange={(event) => setAddManualLocation(event.target.value)}
                       placeholder="Enter the verified work location"
@@ -1061,6 +1054,7 @@ export function TimeMaintenanceWorkbench({
               <label className="time-maintenance-add__reason">
                 <span>Reason</span>
                 <textarea
+                  disabled={addMutation.isPending}
                   maxLength={700}
                   onChange={(event) => setAddReason(event.target.value)}
                   placeholder="Example: Employee forgot to clock out; verified by supervisor."
@@ -1075,11 +1069,13 @@ export function TimeMaintenanceWorkbench({
                   <strong>{addContext}</strong>
                   <button
                     className="text-button"
+                    disabled={addMutation.isPending}
                     onClick={() => {
                       setAddShiftId(null)
                       setAddManualLocation('')
                       setAddUsesManualLocation(false)
                       setAddContext(null)
+                      setAddOriginalInstant(undefined)
                     }}
                     type="button"
                   >
@@ -1115,7 +1111,8 @@ export function TimeMaintenanceWorkbench({
                 className="time-correction-editor time-correction-editor--modal"
                 onSubmit={(event) => {
                   event.preventDefault()
-                  correctionMutation.mutate()
+                  if (correctionMutation.isPending) return
+                  correctionMutation.mutate(String(new FormData(event.currentTarget).get('correctedPunchOccurrence') ?? '') || undefined)
                 }}
               >
               <div className="time-correction-editor__mode" role="radiogroup" aria-label="Correction type">
@@ -1138,12 +1135,13 @@ export function TimeMaintenanceWorkbench({
                 <div className="time-correction-editor__fields">
                   <label className="time-correction-editor__field--wide">
                     <span>Punch type</span>
-                    <select onChange={(event) => setCorrectionKind(event.target.value as TimeEventKind)} value={correctionKind}>
+                    <select disabled={correctionMutation.isPending} onChange={(event) => setCorrectionKind(event.target.value as TimeEventKind)} value={correctionKind}>
                       {Object.entries(actionLabels).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}
                     </select>
                   </label>
-                  <label><span>New date</span><input onChange={(event) => setCorrectionDate(event.target.value)} required type="date" value={correctionDate} /></label>
-                  <label><span>New time / Mountain</span><input onChange={(event) => setCorrectionTime(event.target.value)} required type="time" value={correctionTime} /></label>
+                  <label><span>New date</span><input disabled={correctionMutation.isPending} onChange={(event) => setCorrectionDate(event.target.value)} required type="date" value={correctionDate} /></label>
+                  <label><span>New time / Mountain</span><input disabled={correctionMutation.isPending} onChange={(event) => setCorrectionTime(event.target.value)} required type="time" value={correctionTime} /></label>
+                  <ZonedTimeOccurrenceChoice disabled={correctionMutation.isPending} label="Corrected punch" name="correctedPunch" originalInstant={selectedEvent.effectiveAt} originalTimeZone={OPERATIONAL_TIME_ZONE} showError={false} timeZone={OPERATIONAL_TIME_ZONE} value={`${correctionDate}T${correctionTime}`} />
                 </div>
               ) : null}
               {correctionMode === 'void' ? (
@@ -1384,7 +1382,7 @@ export function TimeMaintenanceWorkbench({
                       </td>
                       <td>
                         <div className="time-maintenance-actions">
-                          <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => prefillRelatedPunch(event)} type="button">
+                          <button className="secondary-button secondary-button--small" disabled={event.voided || addMutation.isPending} onClick={() => prefillRelatedPunch(event)} type="button">
                             Add punch
                           </button>
                           <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'adjust')} type="button">

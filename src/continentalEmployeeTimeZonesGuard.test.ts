@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { zonedLocalDateTimeToUtc } from './data/timeOperations'
 
 const root = process.cwd()
 const migration = readFileSync(
@@ -76,11 +77,29 @@ describe('continental employee time-zone release guard', () => {
     expect(timePage).toContain('Official server time')
     expect(myTimePage).toContain('employeeTimeZone={dashboard.employee.timeZone}')
     expect(myTimePage).toContain('groupRecentPunchesByDay(dashboard.recentEvents, employeeTimeZone)')
-    expect(myTimePage).toContain('zonedLocalDateTimeToUtc(`${date}T${time}`, employeeTimeZone)')
+    expect(myTimePage).toContain('zonedLocalDateTimeToUtc(`${date}T${time}`, employeeTimeZone, {')
+    expect(myTimePage).toContain("occurrenceInstant: String(new FormData(formEvent.currentTarget).get('requestedCorrectionOccurrence') ?? '') || undefined")
+    expect(myTimePage).toContain('originalInstant: event.effectiveAt ?? event.recordedAt')
+    expect(myTimePage).toContain('originalTimeZone: employeeTimeZone')
+    expect(myTimePage).toContain('name="requestedCorrection"')
+    expect(myTimePage).toContain('timeZone={employeeTimeZone} value={`${date}T${time}`}')
     expect(myTimePage).not.toContain("const OPERATIONAL_TIME_ZONE = 'America/Denver'")
     expect(timeWorkspace).toContain('const employeeTimeZone = dashboard?.employee.timeZone')
     expect(timeWorkspace).toContain('employeeShiftTimeLabel(shift, employeeTimeZone)')
     expect(timeWorkspace).toContain('Employee Time —')
     expect(timeWorkspace).toContain('Site Time —')
+  })
+
+  it('keeps personal Eastern corrections explicit across the repeated hour and preserves unchanged evidence', () => {
+    const employeeTimeZone = 'America/New_York'
+    const originalInstant = '2026-11-01T06:30:47.125Z'
+    expect(() => zonedLocalDateTimeToUtc('2026-11-01T01:30', employeeTimeZone)).toThrow('occurs twice')
+    expect(zonedLocalDateTimeToUtc('2026-11-01T01:30', employeeTimeZone, {
+      occurrenceInstant: '2026-11-01T06:30:00.000Z', originalInstant, originalTimeZone: employeeTimeZone,
+    })).toBe(originalInstant)
+    expect(zonedLocalDateTimeToUtc('2026-11-01T01:30', employeeTimeZone, {
+      occurrenceInstant: '2026-11-01T05:30:00.000Z', originalInstant, originalTimeZone: employeeTimeZone,
+    })).toBe('2026-11-01T05:30:00.000Z')
+    expect(() => zonedLocalDateTimeToUtc('2026-03-08T02:30', employeeTimeZone)).toThrow('does not exist')
   })
 })

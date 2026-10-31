@@ -25,8 +25,7 @@ import {
   reviewTimeAdjustmentRequest,
   submitTimeAdjustmentRequest,
   updateEmployeeCallOff,
-  toZonedLocalDateTimeInput,
-  zonedLocalDateTimeToUtc,
+  resolveZonedFormDateTime,
   type OperationalException,
   type ManualTimeEntry,
   type EmployeeCallOffReport,
@@ -37,6 +36,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { TimeButton, TimePageHeader, TimeStatusBadge } from './TimeKit'
 import { pendingTimeRequestCount, timeCorrectionReviewPath } from './timeCorrectionWorkflow'
+import { ZonedDateTimeField } from './ZonedDateTimeField'
 
 type DialogName = 'adjustment' | 'manual' | 'calloff' | null
 
@@ -250,27 +250,32 @@ function ManualEntryEditDialog({ entry, onClose, onSaved, workspace }: { entry: 
   const [confirmWarnings, setConfirmWarnings] = useState(false)
   const [shiftId, setShiftId] = useState(entry.shiftId ?? '')
   const [postId, setPostId] = useState(entry.postId ?? '')
+  const [formError, setFormError] = useState('')
   const mutation = useMutation({ mutationFn: editManualTimeEntry, onSuccess: async () => { await onSaved(); onClose() } })
   const shifts = workspace.shifts.filter((shift) => shift.employeeId === entry.employeeId)
   const linkedShift = shifts.find((shift) => shift.shiftId === shiftId)
+  const timeZone = linkedShift?.timeZone ?? workspace.posts.find((post) => post.id === postId)?.timeZone ?? 'America/Denver'
+  const originalTimeZone = shifts.find((shift) => shift.shiftId === entry.shiftId)?.timeZone
+    ?? workspace.posts.find((post) => post.id === entry.postId)?.timeZone ?? 'America/Denver'
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
     const shift = shifts.find((item) => item.shiftId === shiftId)
-    mutation.mutate({
+    setFormError('')
+    try { mutation.mutate({
       id: entry.id,
-      clockInAt: zonedLocalDateTimeToUtc(String(data.get('clockInAt')), shift?.timeZone ?? workspace.posts.find((post) => post.id === postId)?.timeZone),
-      clockOutAt: zonedLocalDateTimeToUtc(String(data.get('clockOutAt')), shift?.timeZone ?? workspace.posts.find((post) => post.id === postId)?.timeZone),
+      clockInAt: resolveZonedFormDateTime(data, 'clockInAt', timeZone, entry.clockInAt, originalTimeZone),
+      clockOutAt: resolveZonedFormDateTime(data, 'clockOutAt', timeZone, entry.clockOutAt, originalTimeZone),
       shiftId: shift?.shiftId ?? null,
       postId: shift ? shift.postId : (postId || null),
       reason: String(data.get('reason')),
       notes: String(data.get('notes') || '') || null,
       confirmWarnings,
-    })
+    }) } catch (failure) { setFormError(failure instanceof Error ? failure.message : 'Check the corrected date and time.') }
   }
   return (
     <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow" description="The source punches remain intact. SygShift appends corrections and a before-and-after audit record." onClose={onClose} title={`Edit ${entry.employeeName}'s manual time`}>
-      <form className="time-workflow-form" onSubmit={submit}>
+      <form className="time-workflow-form" inert={mutation.isPending} onSubmit={submit}>
         <label><span>Related scheduled shift</span><select onChange={(event) => setShiftId(event.target.value)} value={shiftId}><option value="">No related shift</option>{shifts.map((shift) => <option key={shift.shiftId} value={shift.shiftId}>{formatOperationalDateTime(shift.startsAt, { timeZone: shift.timeZone })} · {shift.location}</option>)}</select></label>
         <label>
           <span>Site / post</span>
@@ -280,11 +285,11 @@ function ManualEntryEditDialog({ entry, onClose, onSaved, workspace }: { entry: 
           </select>
           <small className="field-help">For patrol time, choose the exact client/accounting Site/Post, such as MG Properties, PERA, or Patrol Libraries and Elevon. Use a general Patrol post only when that was the actual assignment.</small>
         </label>
-        <div className="time-workflow-form__two"><label><span>Clock-in</span><input defaultValue={toZonedLocalDateTimeInput(entry.clockInAt, linkedShift?.timeZone)} name="clockInAt" required type="datetime-local" /></label><label><span>Clock-out</span><input defaultValue={toZonedLocalDateTimeInput(entry.clockOutAt, linkedShift?.timeZone)} name="clockOutAt" required type="datetime-local" /></label></div>
+        <div className="time-workflow-form__two"><ZonedDateTimeField label="Clock-in" name="clockInAt" originalInstant={entry.clockInAt} originalTimeZone={originalTimeZone} required showError={false} timeZone={timeZone} /><ZonedDateTimeField label="Clock-out" name="clockOutAt" originalInstant={entry.clockOutAt} originalTimeZone={originalTimeZone} required showError={false} timeZone={timeZone} /></div>
         <label><span>Edit reason</span><input maxLength={200} name="reason" required /></label>
         <label><span>Notes</span><textarea defaultValue={entry.notes ?? ''} maxLength={1000} name="notes" rows={3} /></label>
         <label className="time-workflow-confirm"><input checked={confirmWarnings} onChange={(event) => setConfirmWarnings(event.target.checked)} type="checkbox" /><span>I reviewed the corrected times and authorize saving if SygShift detects a disclosed warning.</span></label>
-        {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+        {formError || mutation.isError ? <div className="inline-alert" role="alert">{formError || mutation.error?.message}</div> : null}
         <div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="primary">Save correction</TimeButton></div>
       </form>
     </ModalDialog>
@@ -328,22 +333,34 @@ function RequestDecisionHistory({ actions }: { actions: TimeOperationsWorkspace[
 function AdjustmentDialog({ employeeId, onClose, onSaved, workspace }: { employeeId: string; onClose: () => void; onSaved: () => Promise<unknown>; workspace: TimeOperationsWorkspace }) {
   const employeeShifts = workspace.shifts.filter((shift) => shift.employeeId === employeeId)
   const [issueType, setIssueType] = useState<'clock_in' | 'clock_out' | 'both_punches' | 'missing_shift' | 'other'>('both_punches')
-  const mutation = useMutation({ mutationFn: submitTimeAdjustmentRequest, onSuccess: async () => { await onSaved(); onClose() } })
+  const [shiftId, setShiftId] = useState('')
+  const selectedShift = employeeShifts.find((shift) => shift.shiftId === shiftId)
+  const timeZone = selectedShift?.timeZone ?? 'America/Denver'
+  const mutation = useMutation({ mutationFn: ({ data, timeZone, issueType }: { data: FormData; timeZone: string; issueType: TimeAdjustmentRequest['issueType'] }) => submitTimeAdjustmentRequest({
+    shiftId: String(data.get('shiftId') || '') || null,
+    workDate: String(data.get('workDate')),
+    issueType,
+    requestedClockInAt: data.get('clockInAt') ? resolveZonedFormDateTime(data, 'clockInAt', timeZone) : null,
+    requestedClockOutAt: data.get('clockOutAt') ? resolveZonedFormDateTime(data, 'clockOutAt', timeZone) : null,
+    reason: String(data.get('reason')),
+    notes: String(data.get('notes') || '') || null,
+  }), onSuccess: async () => { await onSaved(); onClose() } })
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const data = new FormData(event.currentTarget)
-    const selectedShift = employeeShifts.find((shift) => shift.shiftId === data.get('shiftId'))
-    mutation.mutate({
-      shiftId: String(data.get('shiftId') || '') || null,
-      workDate: String(data.get('workDate')),
-      issueType,
-      requestedClockInAt: data.get('clockInAt') ? zonedLocalDateTimeToUtc(String(data.get('clockInAt')), selectedShift?.timeZone) : null,
-      requestedClockOutAt: data.get('clockOutAt') ? zonedLocalDateTimeToUtc(String(data.get('clockOutAt')), selectedShift?.timeZone) : null,
-      reason: String(data.get('reason')),
-      notes: String(data.get('notes') || '') || null,
-    })
+    mutation.mutate({ data: new FormData(event.currentTarget), timeZone, issueType })
   }
-  return <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow" description="Submitting a request does not change payroll until an authorized reviewer approves it." onClose={onClose} title="Request a time adjustment"><form className="time-workflow-form" onSubmit={submit}><label><span>Scheduled shift (optional)</span><select name="shiftId" onChange={(event) => { const shift = employeeShifts.find((item) => item.shiftId === event.target.value); if (shift) setIssueType('both_punches') }}><option value="">No scheduled shift / missing shift</option>{employeeShifts.map((shift) => <option key={shift.shiftId} value={shift.shiftId}>{formatOperationalDateTime(shift.startsAt, { timeZone: shift.timeZone })} · {shift.location}</option>)}</select></label><label><span>Work date</span><input name="workDate" required type="date" /></label><label><span>What needs correction?</span><select onChange={(event) => setIssueType(event.target.value as typeof issueType)} value={issueType}><option value="clock_in">Clock-in</option><option value="clock_out">Clock-out</option><option value="both_punches">Both punches</option><option value="missing_shift">Missing shift</option><option value="other">Other issue</option></select></label><div className="time-workflow-form__two"><label><span>Requested clock-in</span><input name="clockInAt" type="datetime-local" /></label><label><span>Requested clock-out</span><input name="clockOutAt" type="datetime-local" /></label></div><label><span>Reason</span><input maxLength={160} name="reason" required /></label><label><span>Notes</span><textarea maxLength={1000} name="notes" rows={4} /></label>{mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}<div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="primary">Submit request</TimeButton></div></form></ModalDialog>
+  return <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow" description="Submitting a request does not change payroll until an authorized reviewer approves it." onClose={onClose} title="Request a time adjustment">
+    <form className="time-workflow-form" inert={mutation.isPending} onSubmit={submit}>
+      <label><span>Scheduled shift (optional)</span><select name="shiftId" onChange={(event) => { setShiftId(event.target.value); if (event.target.value) setIssueType('both_punches') }} value={shiftId}><option value="">No scheduled shift / missing shift</option>{employeeShifts.map((shift) => <option key={shift.shiftId} value={shift.shiftId}>{formatOperationalDateTime(shift.startsAt, { timeZone: shift.timeZone })} · {shift.location}</option>)}</select></label>
+      <label><span>Work date</span><input name="workDate" required type="date" /></label>
+      <label><span>What needs correction?</span><select onChange={(event) => setIssueType(event.target.value as typeof issueType)} value={issueType}><option value="clock_in">Clock-in</option><option value="clock_out">Clock-out</option><option value="both_punches">Both punches</option><option value="missing_shift">Missing shift</option><option value="other">Other issue</option></select></label>
+      <div className="time-workflow-form__two"><ZonedDateTimeField label="Requested clock-in" name="clockInAt" showError={false} timeZone={timeZone} /><ZonedDateTimeField label="Requested clock-out" name="clockOutAt" showError={false} timeZone={timeZone} /></div>
+      <label><span>Reason</span><input maxLength={160} name="reason" required /></label>
+      <label><span>Notes</span><textarea maxLength={1000} name="notes" rows={4} /></label>
+      {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+      <div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="primary">Submit request</TimeButton></div>
+    </form>
+  </ModalDialog>
 }
 
 function ManualEntryDialog({ onClose, onSaved, workspace }: { onClose: () => void; onSaved: () => Promise<unknown>; workspace: TimeOperationsWorkspace }) {
@@ -351,13 +368,14 @@ function ManualEntryDialog({ onClose, onSaved, workspace }: { onClose: () => voi
   const [shiftId, setShiftId] = useState('')
   const [postId, setPostId] = useState('')
   const [confirmWarnings, setConfirmWarnings] = useState(false)
-  const mutation = useMutation({ mutationFn: createManualTimeEntry, onSuccess: async () => { await onSaved(); onClose() } })
   const shifts = workspace.shifts.filter((shift) => shift.employeeId === employeeId)
   const linkedShift = shifts.find((shift) => shift.shiftId === shiftId)
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const timeZone = linkedShift?.timeZone ?? workspace.posts.find((post) => post.id === postId)?.timeZone; mutation.mutate({ employeeId, workDate: String(data.get('workDate')), clockInAt: zonedLocalDateTimeToUtc(String(data.get('clockInAt')), timeZone), clockOutAt: zonedLocalDateTimeToUtc(String(data.get('clockOutAt')), timeZone), shiftId: linkedShift?.shiftId ?? null, postId: linkedShift ? linkedShift.postId : (postId || null), reason: String(data.get('reason')), notes: String(data.get('notes') || '') || null, exceptionId: String(data.get('exceptionId') || '') || null, confirmWarnings }) }
+  const timeZone = linkedShift?.timeZone ?? workspace.posts.find((post) => post.id === postId)?.timeZone ?? 'America/Denver'
+  const mutation = useMutation({ mutationFn: ({ data, timeZone, ...context }: { data: FormData; timeZone: string; employeeId: string; shiftId: string | null; postId: string | null; confirmWarnings: boolean }) => createManualTimeEntry({ ...context, workDate: String(data.get('workDate')), clockInAt: resolveZonedFormDateTime(data, 'clockInAt', timeZone), clockOutAt: resolveZonedFormDateTime(data, 'clockOutAt', timeZone), reason: String(data.get('reason')), notes: String(data.get('notes') || '') || null, exceptionId: String(data.get('exceptionId') || '') || null }), onSuccess: async () => { await onSaved(); onClose() } })
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); mutation.mutate({ data: new FormData(event.currentTarget), timeZone, employeeId, shiftId: linkedShift?.shiftId ?? null, postId: linkedShift ? linkedShift.postId : (postId || null), confirmWarnings }) }
   return (
     <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow" description="Creates one audited clock-in/clock-out pair. Existing punches are never overwritten." onClose={onClose} title="Add manual time">
-      <form className="time-workflow-form" onSubmit={submit}>
+      <form className="time-workflow-form" inert={mutation.isPending} onSubmit={submit}>
         <label><span>Employee</span><select onChange={(event) => { setEmployeeId(event.target.value); setShiftId('') }} required value={employeeId}><option value="">Choose employee</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
         <label><span>Related scheduled shift</span><select onChange={(event) => setShiftId(event.target.value)} value={shiftId}><option value="">No related shift</option>{shifts.map((shift) => <option key={shift.shiftId} value={shift.shiftId}>{formatOperationalDateTime(shift.startsAt, { timeZone: shift.timeZone })} · {shift.location}</option>)}</select></label>
         <label>
@@ -370,7 +388,7 @@ function ManualEntryDialog({ onClose, onSaved, workspace }: { onClose: () => voi
         </label>
         <label><span>Exception being resolved</span><select name="exceptionId"><option value="">None</option>{workspace.exceptions.filter((item) => item.employeeId === employeeId && item.status === 'unresolved').map((item) => <option key={item.id} value={item.id}>{readableStatus(item.exceptionCode)} · {formatOperationalDateTime(item.scheduledStartAt)}</option>)}</select></label>
         <label><span>Work date</span><input defaultValue={dateKey(new Date())} name="workDate" required type="date" /></label>
-        <div className="time-workflow-form__two"><label><span>Clock-in</span><input name="clockInAt" required type="datetime-local" /></label><label><span>Clock-out</span><input name="clockOutAt" required type="datetime-local" /></label></div>
+        <div className="time-workflow-form__two"><ZonedDateTimeField label="Clock-in" name="clockInAt" required showError={false} timeZone={timeZone} /><ZonedDateTimeField label="Clock-out" name="clockOutAt" required showError={false} timeZone={timeZone} /></div>
         <label><span>Entry reason</span><input maxLength={200} name="reason" required /></label>
         <label><span>Notes</span><textarea maxLength={1000} name="notes" rows={3} /></label>
         <label className="time-workflow-confirm"><input checked={confirmWarnings} onChange={(event) => setConfirmWarnings(event.target.checked)} type="checkbox" /><span>I reviewed the times and authorize saving if SygShift detects a schedule, overlap, or long-shift warning.</span></label>
@@ -384,11 +402,23 @@ function ManualEntryDialog({ onClose, onSaved, workspace }: { onClose: () => voi
 function CallOffDialog({ onClose, onSaved, workspace }: { onClose: () => void; onSaved: () => Promise<unknown>; workspace: TimeOperationsWorkspace }) {
   const [employeeId, setEmployeeId] = useState('')
   const [recordedCallOff, setRecordedCallOff] = useState<{ id: string; replacementNeeded: boolean } | null>(null)
-  const mutation = useMutation({ mutationFn: reportEmployeeCallOff, onSuccess: async (result, input) => { await onSaved(); setRecordedCallOff({ id: result.id, replacementNeeded: input.replacementNeeded }) } })
+  const mutation = useMutation({ mutationFn: ({ data, employeeId, originalInstant }: { data: FormData; employeeId: string; originalInstant: string }) => reportEmployeeCallOff({ employeeId, shiftId: String(data.get('shiftId')), callOffType: data.get('callOffType') as 'sick' | 'other', reason: String(data.get('reason')), callReceivedAt: resolveZonedFormDateTime(data, 'callReceivedAt', 'America/Denver', originalInstant, 'America/Denver'), notes: String(data.get('notes') || '') || null, replacementNeeded: data.get('replacementNeeded') === 'on', operationalDetails: String(data.get('operationalDetails') || '') || null }), onSuccess: async (result, input) => { await onSaved(); setRecordedCallOff({ id: result.id, replacementNeeded: input.data.get('replacementNeeded') === 'on' }) } })
   const shifts = workspace.shifts.filter((shift) => shift.employeeId === employeeId && new Date(shift.endsAt) >= new Date(workspace.serverTimestamp))
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); mutation.mutate({ employeeId, shiftId: String(data.get('shiftId')), callOffType: data.get('callOffType') as 'sick' | 'other', reason: String(data.get('reason')), callReceivedAt: zonedLocalDateTimeToUtc(String(data.get('callReceivedAt'))), notes: String(data.get('notes') || '') || null, replacementNeeded: data.get('replacementNeeded') === 'on', operationalDetails: String(data.get('operationalDetails') || '') || null }) }
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); mutation.mutate({ data: new FormData(event.currentTarget), employeeId, originalInstant: workspace.serverTimestamp }) }
   if (recordedCallOff) return <CoverageWorkflowDialog initialMode={recordedCallOff.replacementNeeded ? 'open_pool' : 'no_replacement'} onClose={onClose} onSaved={async () => { await onSaved() }} report={recordedCallOff} />
-  return <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow modal-dialog--call-off" description="Creates a persistent urgent alert and keeps the original scheduled shift in the audit record." onClose={onClose} title="Report Sick / Call-Off"><form className="time-workflow-form" onSubmit={submit}><label><span>Employee</span><select onChange={(event) => setEmployeeId(event.target.value)} required value={employeeId}><option value="">Choose employee</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label><label><span>Scheduled shift</span><select name="shiftId" required><option value="">Choose shift</option>{shifts.map((shift) => <option key={shift.shiftId} value={shift.shiftId}>{formatOperationalDateTime(shift.startsAt, { timeZone: shift.timeZone })} · {shift.location}</option>)}</select></label><div className="time-workflow-form__two"><label><span>Call-off type</span><select name="callOffType"><option value="sick">Sick</option><option value="other">Other</option></select></label><label><span>Call received</span><input defaultValue={toZonedLocalDateTimeInput(workspace.serverTimestamp)} name="callReceivedAt" required type="datetime-local" /></label></div><label><span>Reason</span><input maxLength={200} name="reason" required /></label><label><span>Notes</span><textarea maxLength={1000} name="notes" rows={3} /></label><label><span>Operational details</span><textarea maxLength={1000} name="operationalDetails" rows={3} /></label><label className="time-workflow-confirm"><input defaultChecked name="replacementNeeded" type="checkbox" /><span>Replacement coverage is needed.</span></label>{mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}<div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="danger">Record call-off</TimeButton></div></form></ModalDialog>
+  return <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow modal-dialog--call-off" description="Creates a persistent urgent alert and keeps the original scheduled shift in the audit record." onClose={onClose} title="Report Sick / Call-Off">
+    <form className="time-workflow-form" inert={mutation.isPending} onSubmit={submit}>
+      <label><span>Employee</span><select onChange={(event) => setEmployeeId(event.target.value)} required value={employeeId}><option value="">Choose employee</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
+      <label><span>Scheduled shift</span><select name="shiftId" required><option value="">Choose shift</option>{shifts.map((shift) => <option key={shift.shiftId} value={shift.shiftId}>{formatOperationalDateTime(shift.startsAt, { timeZone: shift.timeZone })} · {shift.location}</option>)}</select></label>
+      <div className="time-workflow-form__two"><label><span>Call-off type</span><select name="callOffType"><option value="sick">Sick</option><option value="other">Other</option></select></label><ZonedDateTimeField label="Call received" name="callReceivedAt" originalInstant={workspace.serverTimestamp} originalTimeZone="America/Denver" required showError={false} timeZone="America/Denver" /></div>
+      <label><span>Reason</span><input maxLength={200} name="reason" required /></label>
+      <label><span>Notes</span><textarea maxLength={1000} name="notes" rows={3} /></label>
+      <label><span>Operational details</span><textarea maxLength={1000} name="operationalDetails" rows={3} /></label>
+      <label className="time-workflow-confirm"><input defaultChecked name="replacementNeeded" type="checkbox" /><span>Replacement coverage is needed.</span></label>
+      {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+      <div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="danger">Record call-off</TimeButton></div>
+    </form>
+  </ModalDialog>
 }
 
 function CallOffMaintenanceDialog({ onClose, onSaved, report }: { onClose: () => void; onSaved: () => Promise<unknown>; report: EmployeeCallOffReport }) {

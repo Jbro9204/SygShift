@@ -1,4 +1,4 @@
-import { formatDualTime } from '../lib/time'
+import { formatDualTime, formatTimeZoneClock } from '../lib/time'
 import { continentalUsTimeZoneShortLabel } from '../lib/usTimeZones'
 
 export type ScheduleTimeZoneSource = 'site' | 'employee' | 'explicit'
@@ -10,6 +10,18 @@ export interface ScheduleWallClockRange {
 
 export interface ScheduleWallClockDateRange extends ScheduleWallClockRange {
   dateKey: string
+}
+
+export interface ScheduleRepeatedTime {
+  dateKey: string
+  endpoint: 'Start' | 'End'
+  selectedInstant: string
+  timeValue: string
+  timeZone: string
+}
+
+export interface ScheduleWallClockInspection extends ScheduleWallClockDateRange {
+  repeatedTimes: ScheduleRepeatedTime[]
 }
 
 type LocalDateTimeParts = {
@@ -92,7 +104,7 @@ export function scheduleCalendarDateInTimeZone(instant: Date | string, timeZone:
   return new Date(parts.year, parts.month - 1, parts.day, 12)
 }
 
-export function scheduleWallClockToInstant(dateKey: string, timeValue: string, timeZone: string): string {
+function scheduleWallClockCandidates(dateKey: string, timeValue: string, timeZone: string): number[] {
   const date = parseDateKey(dateKey)
   const time = parseTimeValue(timeValue)
   const desired: LocalDateTimeParts = { ...date, ...time }
@@ -124,11 +136,118 @@ export function scheduleWallClockToInstant(dateKey: string, timeValue: string, t
     throw new Error('That local time does not exist in the selected time zone because of daylight-saving time. Choose another time.')
   }
 
+  return candidates.sort((left, right) => left - right)
+}
+
+export function scheduleWallClockToInstant(dateKey: string, timeValue: string, timeZone: string): string {
   // PostgreSQL's `timestamp AT TIME ZONE` selects the standard-time (later)
   // occurrence when the wall clock repeats during the fall-back transition.
   // Choosing the latest matching instant keeps the preview and saved value
   // identical instead of allowing a silent one-hour shift at publication.
-  return new Date(Math.max(...candidates)).toISOString()
+  return new Date(Math.max(...scheduleWallClockCandidates(dateKey, timeValue, timeZone))).toISOString()
+}
+
+export function possibleScheduleWallClockInstants(dateKey: string, timeValue: string, timeZone: string): string[] {
+  return scheduleWallClockCandidates(dateKey, timeValue, timeZone).map((candidate) => new Date(candidate).toISOString())
+}
+
+export function inspectScheduleWallClockRange(
+  dateKey: string,
+  startTime: string,
+  endTime: string,
+  timeZone: string,
+): ScheduleWallClockInspection {
+  const startMinutes = Number(startTime.slice(0, 2)) * 60 + Number(startTime.slice(3, 5))
+  const endMinutes = Number(endTime.slice(0, 2)) * 60 + Number(endTime.slice(3, 5))
+  const endDateKey = dateKeyWithDayOffset(dateKey, endMinutes <= startMinutes ? 1 : 0)
+  const endpoints = [
+    { dateKey, endpoint: 'Start' as const, timeValue: startTime },
+    { dateKey: endDateKey, endpoint: 'End' as const, timeValue: endTime },
+  ].map((endpoint) => {
+    const candidates = scheduleWallClockCandidates(endpoint.dateKey, endpoint.timeValue, timeZone)
+    return { ...endpoint, candidates, selectedInstant: new Date(Math.max(...candidates)).toISOString(), timeZone }
+  })
+  const startsAt = endpoints[0].selectedInstant
+  const endsAt = endpoints[1].selectedInstant
+  if (Date.parse(endsAt) <= Date.parse(startsAt)) throw new Error('Shift end must be after shift start.')
+  return {
+    dateKey,
+    startsAt,
+    endsAt,
+    repeatedTimes: endpoints.filter((endpoint) => endpoint.candidates.length > 1).map((endpoint) => ({
+      dateKey: endpoint.dateKey,
+      endpoint: endpoint.endpoint,
+      selectedInstant: endpoint.selectedInstant,
+      timeValue: endpoint.timeValue,
+      timeZone: endpoint.timeZone,
+    })),
+  }
+}
+
+export function inspectScheduleWallClockRangesForDates(
+  dateKeys: string[],
+  startTime: string,
+  endTime: string,
+  timeZone: string,
+): ScheduleWallClockInspection[] {
+  return dateKeys.map((dateKey) => {
+    try {
+      return inspectScheduleWallClockRange(dateKey, startTime, endTime, timeZone)
+    } catch (error) {
+      const { day, month, year } = parseDateKey(dateKey)
+      const reason = error instanceof Error ? error.message : 'The shift time could not be converted.'
+      throw new Error(`${String(month).padStart(2, '0')}/${String(day).padStart(2, '0')}/${year}: ${reason}`)
+    }
+  })
+}
+
+export function scheduleRepeatedTimeConfirmationKey(ranges: ScheduleWallClockInspection[], timeZone: string): string | null {
+  return ranges.some((range) => range.repeatedTimes.length)
+    ? JSON.stringify([timeZone, ...ranges.map((range) => [range.dateKey, range.startsAt, range.endsAt])])
+    : null
+}
+
+export function requireScheduleRepeatedTimeConfirmation(
+  ranges: ScheduleWallClockInspection[],
+  timeZone: string,
+  confirmedKey: string | null,
+): void {
+  const expected = scheduleRepeatedTimeConfirmationKey(ranges, timeZone)
+  if (expected && confirmedKey !== expected) {
+    throw new Error('Confirm the second (standard-time) occurrence of the repeated hour before saving. No shift was changed.')
+  }
+}
+
+export function storedScheduleRepeatedTimeEditError(
+  stored: ScheduleWallClockRange,
+  requested: ScheduleWallClockInspection,
+  timeZone: string,
+): string | null {
+  for (const endpoint of requested.repeatedTimes) {
+    const original = endpoint.endpoint === 'Start' ? stored.startsAt : stored.endsAt
+    const parts = zonedParts(new Date(original), timeZone)
+    const originalDate = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+    const originalTime = `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`
+    if (originalDate === endpoint.dateKey && originalTime === endpoint.timeValue
+      && Date.parse(original) !== Date.parse(endpoint.selectedInstant)) {
+      return 'This saved shift uses the first occurrence of the repeated hour. This editor cannot preserve that occurrence through its time-only save contract. No change will be sent; keep this shift as recorded and contact an authorized scheduler for a reviewed correction.'
+    }
+  }
+  return null
+}
+
+export function formatScheduleInstantOffset(instant: string, timeZone: string): string {
+  const abbreviation = formatTimeZoneClock(instant, timeZone).abbreviation
+  const offset = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'longOffset' })
+    .formatToParts(new Date(instant)).find((part) => part.type === 'timeZoneName')?.value ?? 'GMT'
+  return `${abbreviation} (${offset.replace('GMT', 'UTC')})`
+}
+
+export function scheduleElapsedTimeLabel(startsAt: string, endsAt: string): string {
+  const minutes = Math.round((Date.parse(endsAt) - Date.parse(startsAt)) / 60_000)
+  const hours = Math.floor(minutes / 60)
+  const remainder = minutes % 60
+  return `${hours}h${remainder ? ` ${remainder}m` : ''} elapsed before breaks`
 }
 
 export function scheduleWallClockRangeToInstants(

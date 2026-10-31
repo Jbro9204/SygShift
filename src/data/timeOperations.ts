@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
+import { possibleScheduleWallClockInstants } from '../schedule/timeBasis'
 
 const employeeSchema = z.object({
   id: z.string().uuid(),
@@ -479,25 +480,52 @@ export async function getTimekeepingOperationsReportPage(input: {
   }, reportPageSchema)
 }
 
-export function zonedLocalDateTimeToUtc(value: string, timeZone = 'America/Denver'): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value)
+export interface ZonedLocalDateTimeOptions {
+  occurrenceInstant?: string
+  originalInstant?: string
+  originalTimeZone?: string
+}
+
+export function possibleZonedLocalDateTimeInstants(value: string, timeZone = 'America/Denver'): string[] {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/.exec(value)
   if (!match) throw new Error('Enter a complete date and time.')
-  const [, year, month, day, hour, minute] = match.map(Number)
-  const requestedUtc = Date.UTC(year, month - 1, day, hour, minute)
-  let result = requestedUtc
+  const candidates = possibleScheduleWallClockInstants(match[1], match[2], timeZone)
+  if (!candidates.length) throw new Error('That local time does not exist in the selected time zone because of daylight-saving time. Choose another time.')
+  return candidates
+}
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      day: '2-digit', hour: '2-digit', hourCycle: 'h23', minute: '2-digit', month: '2-digit', timeZone, year: 'numeric',
-    }).formatToParts(new Date(result))
-    const values = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, Number(part.value)]))
-    const representedUtc = Date.UTC(values.year, values.month - 1, values.day, values.hour, values.minute)
-    const correction = requestedUtc - representedUtc
-    if (correction === 0) return new Date(result).toISOString()
-    result += correction
+export function zonedLocalDateTimeToUtc(
+  value: string,
+  timeZone = 'America/Denver',
+  options: ZonedLocalDateTimeOptions = {},
+): string {
+  const candidates = possibleZonedLocalDateTimeInstants(value, timeZone)
+  const original = options.originalInstant
+  if (original && (options.originalTimeZone ?? timeZone) === timeZone
+    && toZonedLocalDateTimeInput(original, timeZone) === value) {
+    const originalMinute = new Date(Math.floor(Date.parse(original) / 60_000) * 60_000).toISOString()
+    if (!options.occurrenceInstant || options.occurrenceInstant === originalMinute) return original
   }
+  if (options.occurrenceInstant) {
+    if (!candidates.includes(options.occurrenceInstant)) throw new Error('The selected clock occurrence no longer matches this date, time, and time zone. Choose it again.')
+    return options.occurrenceInstant
+  }
+  if (candidates.length === 1) return candidates[0]
+  throw new Error('That local time occurs twice because of daylight-saving time. Choose the first or second occurrence.')
+}
 
-  throw new Error('That local time does not exist in the selected time zone because of daylight-saving time. Choose another time.')
+export function resolveZonedFormDateTime(
+  data: FormData,
+  name: string,
+  timeZone = 'America/Denver',
+  originalInstant?: string,
+  originalTimeZone?: string,
+): string {
+  return zonedLocalDateTimeToUtc(String(data.get(name) ?? ''), timeZone, {
+    occurrenceInstant: String(data.get(`${name}Occurrence`) ?? '') || undefined,
+    originalInstant,
+    originalTimeZone,
+  })
 }
 
 export function toZonedLocalDateTimeInput(value: Date | string, timeZone = 'America/Denver'): string {

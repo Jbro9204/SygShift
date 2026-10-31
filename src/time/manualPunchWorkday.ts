@@ -25,7 +25,7 @@ function datePart(value: string, timeZone: string): string {
 function timePart(value: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     hour: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
     minute: '2-digit',
     timeZone,
   }).formatToParts(new Date(value))

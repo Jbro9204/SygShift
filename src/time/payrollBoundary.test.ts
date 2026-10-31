@@ -4,6 +4,7 @@ import {
   elapsedMinutes,
   getPayrollBatchWeek,
   PAYROLL_BATCH_POLICY_VERSION,
+  payrollDateRangeInstants,
   reconcilePayrollMinutes,
   resolvePayrollOccurrenceAssignment,
   shiftDateKey,
@@ -178,6 +179,96 @@ describe('payroll batch week assignment', () => {
     expect(elapsedMinutes('2026-03-08T07:00:00.000Z', '2026-03-08T14:00:00.000Z')).toBe(420)
     expect(getPayrollBatchWeek('2026-03-08T07:00:00.000Z', denver).weekStartsOn).toBe('2026-03-08')
   })
+
+  it.each([
+    {
+      label: 'fall-back',
+      startsAt: '2026-11-01T00:00:00.000Z',
+      endsAt: '2026-11-01T13:00:00.000Z',
+      minutes: 780,
+      priorWeek: '2026-10-25',
+      nextWeek: '2026-11-01',
+      nextMinutes: 420,
+    },
+    {
+      label: 'spring-forward',
+      startsAt: '2026-03-08T01:00:00.000Z',
+      endsAt: '2026-03-08T12:00:00.000Z',
+      minutes: 660,
+      priorWeek: '2026-03-01',
+      nextWeek: '2026-03-08',
+      nextMinutes: 300,
+    },
+  ])('keeps Denver 6 PM to 6 AM $label elapsed time before any unpaid break', ({ startsAt, endsAt, minutes, priorWeek, nextWeek, nextMinutes }) => {
+    // The same wall-clock endpoints span thirteen hours in fall and eleven in spring.
+    // This checks elapsed time and allocation only, not a new overtime policy.
+    expect(elapsedMinutes(startsAt, endsAt)).toBe(minutes)
+    expect(allocateIntervalByPayrollWeek(startsAt, endsAt, denver)).toEqual([
+      { minutes: 360, weekStartsOn: priorWeek, weekEndsOn: shiftDateKey(priorWeek, 6) },
+      { minutes: nextMinutes, weekStartsOn: nextWeek, weekEndsOn: shiftDateKey(nextWeek, 6) },
+    ])
+  })
+
+  it('counts a break between the two Denver 1:30 AM instants as sixty elapsed minutes', () => {
+    const startsAt = '2026-11-01T04:00:00.000Z' // Saturday 10 PM MDT.
+    const breakStartsAt = '2026-11-01T07:30:00.000Z' // First 1:30 AM, MDT.
+    const breakEndsAt = '2026-11-01T08:30:00.000Z' // Second 1:30 AM, MST.
+    const endsAt = '2026-11-01T13:00:00.000Z' // Sunday 6 AM MST.
+    const paidIntervals = [
+      ...allocateIntervalByPayrollWeek(startsAt, breakStartsAt, denver),
+      ...allocateIntervalByPayrollWeek(breakEndsAt, endsAt, denver),
+    ]
+
+    expect(elapsedMinutes(startsAt, endsAt)).toBe(540)
+    expect(elapsedMinutes(breakStartsAt, breakEndsAt)).toBe(60)
+    expect(paidIntervals.reduce((total, interval) => total + interval.minutes, 0)).toBe(480)
+    expect(paidIntervals.filter((interval) => interval.weekStartsOn === '2026-10-25')
+      .reduce((total, interval) => total + interval.minutes, 0)).toBe(120)
+    expect(paidIntervals.filter((interval) => interval.weekStartsOn === '2026-11-01')
+      .reduce((total, interval) => total + interval.minutes, 0)).toBe(360)
+  })
+
+  it('distinguishes a correction to the second repeated hour without altering the original evidence', () => {
+    const original = Object.freeze({ recordedAt: '2026-11-01T07:15:00.000Z' })
+    const corrected = Object.freeze({ effectiveAt: '2026-11-01T08:15:00.000Z' })
+    const endsAt = '2026-11-01T08:45:00.000Z'
+
+    expect(elapsedMinutes(original.recordedAt, endsAt)).toBe(90)
+    expect(elapsedMinutes(corrected.effectiveAt, endsAt)).toBe(30)
+    expect(allocateIntervalByPayrollWeek(corrected.effectiveAt, endsAt, denver)).toEqual([
+      { minutes: 30, weekStartsOn: '2026-11-01', weekEndsOn: '2026-11-07' },
+    ])
+    expect(original.recordedAt).toBe('2026-11-01T07:15:00.000Z')
+  })
+
+  it.each([
+    { date: '2026-11-01', nextDate: '2026-11-02', minutes: 1_500 },
+    { date: '2026-03-08', nextDate: '2026-03-09', minutes: 1_380 },
+  ])('uses contiguous local midnight boundaries for the $date DST date range', ({ date, nextDate, minutes }) => {
+    const range = payrollDateRangeInstants(date, date, denver.timeZone)
+    const followingRange = payrollDateRangeInstants(nextDate, nextDate, denver.timeZone)
+
+    expect(elapsedMinutes(range.startsAt, range.endsAtExclusive)).toBe(minutes)
+    expect(range.endsAtExclusive).toBe(followingRange.startsAt)
+  })
+
+  it.each(['UTC', 'America/New_York', 'America/Phoenix', 'America/Los_Angeles'])(
+    'does not let the device zone %s change Denver DST payroll allocations', (deviceTimeZone) => {
+      const originalTimeZone = process.env.TZ
+      try {
+        process.env.TZ = deviceTimeZone
+        expect(allocateIntervalByPayrollWeek(
+          '2026-11-01T04:00:00.000Z', '2026-11-01T13:00:00.000Z', denver,
+        )).toEqual([
+          { minutes: 120, weekStartsOn: '2026-10-25', weekEndsOn: '2026-10-31' },
+          { minutes: 420, weekStartsOn: '2026-11-01', weekEndsOn: '2026-11-07' },
+        ])
+      } finally {
+        if (originalTimeZone === undefined) delete process.env.TZ
+        else process.env.TZ = originalTimeZone
+      }
+    },
+  )
 
   it('uses the configured payroll time zone', () => {
     const newYork = { timeZone: 'America/New_York', weekStartsOn: 0, weekStartMinutes: 0 }

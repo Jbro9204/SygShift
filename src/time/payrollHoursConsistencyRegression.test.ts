@@ -7,6 +7,7 @@ import {
   type PayrollWeekAllocation,
   type TimekeepingReviewRow,
 } from '../data/timekeeping'
+import { allocateIntervalByPayrollWeek, elapsedMinutes } from './payrollBoundary'
 
 const employeeId = '73000000-0000-4000-8000-000000000001'
 
@@ -112,9 +113,34 @@ function reviewRow(overrides: Partial<TimekeepingReviewRow>): TimekeepingReviewR
 }
 
 function exportedHours(rows: TimekeepingReviewRow[]): number {
-  const [header, ...lines] = reviewRowsToPayrollCsv(rows).split('\n')
-  const paidColumn = header.split(',').indexOf('Total Worked Hours')
-  return lines.reduce((total, line) => total + Number(line.split(',')[paidColumn]), 0)
+  // Timestamp fields contain quoted commas; splitting on commas reads gross
+  // hours instead of paid hours and can conceal a break/export discrepancy.
+  const records: string[][] = []
+  let record: string[] = []
+  let field = ''
+  let quoted = false
+  const csv = reviewRowsToPayrollCsv(rows)
+  for (let index = 0; index < csv.length; index += 1) {
+    const character = csv[index]
+    if (character === '"') {
+      if (quoted && csv[index + 1] === '"') {
+        field += '"'
+        index += 1
+      } else quoted = !quoted
+    } else if (character === ',' && !quoted) {
+      record.push(field)
+      field = ''
+    } else if (character === '\n' && !quoted) {
+      records.push([...record, field])
+      record = []
+      field = ''
+    } else if (character !== '\r' || quoted) field += character
+  }
+  records.push([...record, field])
+  const [header, ...lines] = records
+  const paidColumn = header.indexOf('Total Worked Hours')
+  expect(paidColumn).toBeGreaterThanOrEqual(0)
+  return lines.reduce((total, line) => total + Number(line[paidColumn]), 0)
 }
 
 describe('payroll-hours consistency regression', () => {
@@ -329,6 +355,85 @@ describe('payroll-hours consistency regression', () => {
       (summarizePayrollRowsByEmployee([currentSlice])[0]?.paidMinutes ?? 0)
       + (summarizePayrollRowsByEmployee([nextSlice])[0]?.paidMinutes ?? 0),
     ).toBe(operational?.paidMinutes)
+  })
+
+  it('reconciles fall-back paid intervals and a repeated-hour break across adjacent payroll ranges', () => {
+    const firstClockIn = '2026-11-01T04:00:00.000Z' // October 31, 10 PM MDT.
+    const breakStartsAt = '2026-11-01T07:30:00.000Z' // First 1:30 AM.
+    const breakEndsAt = '2026-11-01T08:30:00.000Z' // Second 1:30 AM.
+    const lastClockOut = '2026-11-01T13:00:00.000Z' // November 1, 6 AM MST.
+    const config = { timeZone: 'America/Denver', weekStartsOn: 0, weekStartMinutes: 0 }
+    const grossSlices = allocateIntervalByPayrollWeek(firstClockIn, lastClockOut, config)
+    const breakSlices = allocateIntervalByPayrollWeek(breakStartsAt, breakEndsAt, config)
+    const paidSlices = [
+      ...allocateIntervalByPayrollWeek(firstClockIn, breakStartsAt, config),
+      ...allocateIntervalByPayrollWeek(breakEndsAt, lastClockOut, config),
+    ]
+    const occurrenceKey = `shift:fall-back:employee:${employeeId}`
+    const canonicalGrossMinutes = elapsedMinutes(firstClockIn, lastClockOut)
+    const canonicalBreakMinutes = elapsedMinutes(breakStartsAt, breakEndsAt)
+    const canonicalPaidMinutes = canonicalGrossMinutes - canonicalBreakMinutes
+    const timeline: TimekeepingReviewRow['eventTimeline'] = [
+      { id: 'fall-in', kind: 'clock_in', effectiveAt: firstClockIn, recordedAt: firstClockIn, shiftId: null },
+      { id: 'fall-break-start', kind: 'break_start', effectiveAt: breakStartsAt, recordedAt: breakStartsAt, shiftId: null },
+      { id: 'fall-break-end', kind: 'break_end', effectiveAt: breakEndsAt, recordedAt: breakEndsAt, shiftId: null },
+      { id: 'fall-out', kind: 'clock_out', effectiveAt: lastClockOut, recordedAt: lastClockOut, shiftId: null },
+    ]
+    const rows = grossSlices.map((slice) => {
+      const breakMinutes = breakSlices.filter((item) => item.weekStartsOn === slice.weekStartsOn)
+        .reduce((total, item) => total + item.minutes, 0)
+      const paidMinutes = paidSlices.filter((item) => item.weekStartsOn === slice.weekStartsOn)
+        .reduce((total, item) => total + item.minutes, 0)
+      return reviewRow({
+        breakMinutes,
+        crossesPayrollBoundary: true,
+        eventCount: 4,
+        eventTimeline: timeline,
+        firstClockIn,
+        grossMinutes: slice.minutes,
+        lastClockOut,
+        occurrenceBreakMinutes: canonicalBreakMinutes,
+        occurrenceGrossMinutes: canonicalGrossMinutes,
+        occurrenceOvertimeMinutes: 0,
+        occurrencePaidMinutes: canonicalPaidMinutes,
+        occurrenceRegularCategoryMinutes: canonicalPaidMinutes,
+        occurrenceRegularMinutes: canonicalPaidMinutes,
+        occurrenceUnpaidGapMinutes: 0,
+        operationalDate: '2026-10-31',
+        paidMinutes,
+        payrollBatchWeekEndsOn: slice.weekEndsOn,
+        payrollBatchWeekStartsOn: slice.weekStartsOn,
+        payrollOccurrenceKey: occurrenceKey,
+        payrollWeekAllocations: [allocation(
+          `${occurrenceKey}|${slice.weekStartsOn}`, slice.weekStartsOn, slice.weekEndsOn, paidMinutes,
+          { breakMinutes, grossMinutes: slice.minutes },
+        )],
+        regularMinutes: paidMinutes,
+        workedSegments: [{
+          breakMinutes: canonicalBreakMinutes, endsAt: lastClockOut, paidMinutes: canonicalPaidMinutes,
+          segmentNumber: 1, startsAt: firstClockIn,
+        }],
+      })
+    })
+    const priorRange = { fromDate: '2026-10-25', throughDate: '2026-10-31' }
+    const nextRange = { fromDate: '2026-11-01', throughDate: '2026-11-07' }
+    const priorPayroll = summarizePayrollRowsByEmployee([rows[0]])[0]
+    const nextPayroll = summarizePayrollRowsByEmployee([rows[1]])[0]
+    const operational = summarizeOperationalRowsByEmployee(rows, priorRange)[0]
+
+    expect(operational).toMatchObject({
+      grossMinutes: 540, breakMinutes: 60, paidMinutes: 480, workedShiftCount: 1,
+    })
+    expect(priorPayroll?.paidMinutes).toBe(120)
+    expect(nextPayroll?.paidMinutes).toBe(360)
+    expect((priorPayroll?.paidMinutes ?? 0) + (nextPayroll?.paidMinutes ?? 0)).toBe(480)
+    expect(exportedHours([rows[0]])).toBe(2)
+    expect(exportedHours([rows[1]])).toBe(6)
+    expect(exportedHours(rows)).toBe(8)
+    expect(summarizeOperationalRowsByEmployee(rows, nextRange)).toEqual([])
+    expect(new Set(rows.flatMap((row) => (row.payrollWeekAllocations ?? []).map((slice) => slice.allocationKey))).size)
+      .toBe(2)
+    expect(rows[0].eventTimeline).toEqual(timeline)
   })
 
   it('keeps an incomplete punch pair visible as an exception without inventing worked minutes', () => {

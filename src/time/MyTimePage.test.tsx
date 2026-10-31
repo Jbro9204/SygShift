@@ -65,6 +65,25 @@ vi.mock('../data/timekeeping', async (original) => ({ ...await original<typeof i
 vi.mock('../data/timeOperations', async (original) => ({ ...await original<typeof import('../data/timeOperations')>(), getMissingTimeRequestWorkspace: async () => ({ requests: [], posts: [] }) }))
 
 describe('My Time pay-period history', () => {
+  it.each(['2026-11-01T05:30:47.123Z', '2026-11-01T06:30:47.123Z'])('preserves the exact original repeated-hour punch %s when only the correction reason changes', async (originalInstant) => {
+    HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) { this.open = true })
+    HTMLDialogElement.prototype.close = vi.fn(function close(this: HTMLDialogElement) { this.open = false })
+    mocks.dashboardOperationalDate = '2026-11-01'
+    mocks.employeeTimeZone = 'America/New_York'
+    mocks.payrollFromDate = '2026-10-25'
+    mocks.payrollThroughDate = '2026-11-07'
+    mocks.serverTimestamp = '2026-11-01T12:00:00.000Z'
+    mocks.recentEvents = [{ effectiveAt: originalInstant, recordedAt: originalInstant, id: '30000000-0000-4000-8000-000000000003', kind: 'clock_in', shiftId: null, source: 'web', voided: false, workType: 'post' }]
+    mocks.review.mockResolvedValue({ fromDate: mocks.payrollFromDate, throughDate: mocks.payrollThroughDate, pendingCorrections: [], rows: [], serverTimestamp: mocks.serverTimestamp })
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><MyTimePage /></MemoryRouter></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Request correction' }))
+    const dialog = screen.getByRole('dialog', { name: 'Request a time-card correction' })
+    expect(within(dialog).getByLabelText('Correct time / Eastern Time')).toHaveValue('01:30')
+    fireEvent.change(within(dialog).getByLabelText(/Explain the request/), { target: { value: 'Keep this exact documented punch instant.' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send correction request' }))
+    await waitFor(() => expect(mocks.requestCorrection).toHaveBeenCalledWith(expect.objectContaining({ replacementTime: originalInstant, voided: false })))
+  })
+
   beforeEach(() => {
     mocks.dashboardOperationalDate = '2026-09-06'
     mocks.employeeTimeZone = 'America/Denver'
