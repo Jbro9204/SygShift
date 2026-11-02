@@ -6,6 +6,7 @@ import { clearSharedIdentityServerSession, getSharedIdentitySessionScope } from 
 import { clearPushSession } from './pushNotifications'
 import { cancelLoginSound } from '../lib/notificationSounds'
 import { clearViewDateSelections } from '../lib/sessionViewDateSelection'
+import { clearIdentityVerificationSession } from '../lib/identityVerificationCoordinator'
 
 export const AUTH_EMAIL_DOMAIN = 'accounts.sygshift.invalid'
 export const USERNAME_PATTERN = /^[a-z][a-z0-9]{1,62}$/
@@ -175,6 +176,7 @@ export async function verifyPasswordRecoveryToken(tokenHash: string): Promise<vo
 }
 
 export async function signOut(): Promise<void> {
+  clearIdentityVerificationSession()
   cancelLoginSound()
   await clearPushSession()
   const sharedIdentitySession = getSharedIdentitySessionScope() !== null

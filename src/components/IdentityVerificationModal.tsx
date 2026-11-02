@@ -3,16 +3,18 @@ import { KeyRound, LoaderCircle, ShieldCheck, Usb } from 'lucide-react'
 import { createMfaChallenge, listMfaFactors, verifyMfaChallenge, type MfaFactorSummary } from '../data/mfa'
 import { authenticateWithSecurityKey, getSecurityKeyDirectory, type SecurityKeySummary } from '../data/securityKeys'
 import { ModalDialog } from './ModalDialog'
+import { identityVerificationActorIsCurrent, type IdentityVerificationActor } from '../lib/identityVerificationCoordinator'
 
 type VerificationMethod = 'authenticator' | 'security_key'
 
 interface IdentityVerificationModalProps {
+  actor?: IdentityVerificationActor
   context?: 'general' | 'hr' | 'licensing'
   onCancel: () => void
   onVerified: (method: VerificationMethod) => Promise<void> | void
 }
 
-export function IdentityVerificationModal({ context = 'general', onCancel, onVerified }: IdentityVerificationModalProps) {
+export function IdentityVerificationModal({ actor, context = 'general', onCancel, onVerified }: IdentityVerificationModalProps) {
   const [factors, setFactors] = useState<MfaFactorSummary[]>([])
   const [securityKeys, setSecurityKeys] = useState<SecurityKeySummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,6 +53,7 @@ export function IdentityVerificationModal({ context = 'general', onCancel, onVer
   }, [])
 
   async function complete(method: VerificationMethod) {
+    if (actor && !await identityVerificationActorIsCurrent(actor)) return
     await onVerified(method)
   }
 
@@ -58,7 +61,8 @@ export function IdentityVerificationModal({ context = 'general', onCancel, onVer
     setBusyMethod('security_key')
     setErrorMessage(null)
     try {
-      await authenticateWithSecurityKey()
+      if (actor) await authenticateWithSecurityKey(actor)
+      else await authenticateWithSecurityKey()
       await complete('security_key')
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'The security key could not be verified.')
@@ -74,8 +78,11 @@ export function IdentityVerificationModal({ context = 'general', onCancel, onVer
     setBusyMethod('authenticator')
     setErrorMessage(null)
     try {
-      const challengeId = await createMfaChallenge(verifiedAuthenticator.id, 'totp')
-      await verifyMfaChallenge(verifiedAuthenticator.id, challengeId, code, 'totp')
+      const challengeId = actor
+        ? await createMfaChallenge(verifiedAuthenticator.id, 'totp', actor)
+        : await createMfaChallenge(verifiedAuthenticator.id, 'totp')
+      if (actor) await verifyMfaChallenge(verifiedAuthenticator.id, challengeId, code, 'totp', actor)
+      else await verifyMfaChallenge(verifiedAuthenticator.id, challengeId, code, 'totp')
       await complete('authenticator')
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'The authenticator code could not be verified.')

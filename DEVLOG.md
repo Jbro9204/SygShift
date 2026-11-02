@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 11/02/2026 - Identity Verification Lifetime and Authority Errors
+
+- Bound shared verification checkpoints and retries to the originating client, authenticated user/provider session, page, access generation and request ID. Sign-out/account/navigation changes cancel stale prompts; same-session refreshes and genuine protected-action MFA remain supported.
+- Separated two actual Worker permission denials from MFA-required responses without changing authorization or assurance requirements. Preserved ambiguous legacy SQL verification behavior and existing enrollment/security-key management.
+- Added coordinator, rendered Host, late verification-method, Shell lifecycle and isolated desktop/mobile browser regressions. No styling, employee account, MFA enrollment, operational record or database migration is changed.
+- Reviewed the already released newer Sygilant factual-report migration and added a separate 442-entry ownership baseline after proving all prior ledger/source fingerprints unchanged. Existing historical exceptions and the old baseline remain intact.
+- Exact release evidence and remaining signed-in confirmation limitations are tracked with `docs/changelogs/CHANGELOG_2026-11-02_IDENTITY_VERIFICATION_LIFETIME_REPAIR.md` and the operator closeout. Do not infer production deployment from this source-candidate entry.
+
 ## 10/31/2026 - Time-Correction Effective-Permission Repair
 
 - Repaired the newer correction RPC's obsolete primary-role gate, restoring reviewed effective time-management/manual-edit capabilities while retaining mandatory MFA and direct-deny semantics.

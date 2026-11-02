@@ -31,7 +31,9 @@ describe('unified HR MFA release guard', () => {
 
   it('coordinates prompts between tabs without persisting an MFA grant in localStorage', () => {
     const coordinator = read('src/lib/identityVerificationCoordinator.ts')
-    expect(coordinator).toContain("const verificationLockName = 'sygshift:identity-verification:v1'")
+    expect(coordinator).toContain("const verificationPrefix = 'sygshift:identity-verification:v2'")
+    expect(coordinator).toContain('`${verificationPrefix}:${actor.scope}`')
+    expect(coordinator).toContain('isVerificationResolution(event.data, actor.scope)')
     expect(coordinator).toContain('BroadcastChannel')
     expect(coordinator).toContain("code === 'recent_hr_mfa_required'")
     expect(coordinator).not.toContain('localStorage')

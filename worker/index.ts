@@ -1239,7 +1239,7 @@ async function requireAdminMfa(
       ? 'new_user_invites_permission_required'
       : requiredPermission === 'admin.users.password_reset'
         ? 'password_reset_permission_required'
-        : 'admin_mfa_required'
+        : 'admin_users_permission_required'
     throw new Response(JSON.stringify({ error }), {
       headers: { 'content-type': 'application/json; charset=utf-8' },
       status: 403,
@@ -8792,7 +8792,7 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
   }
 
   if (!operator.context.permissions?.some((permission) => permission === 'notifications.manage' || permission === 'announcements.send')) {
-    return errorJson('operations_mfa_required', requestId, 403)
+    return errorJson('notifications_permission_required', requestId, 403)
   }
 
   await requireMaintenanceWriteAccess(

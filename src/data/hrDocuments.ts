@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import {
+  captureIdentityVerificationActor,
   fetchWithIdentityVerification,
+  identityVerificationActorIsCurrent,
   isIdentityVerificationRequiredCode,
   requestIdentityVerification,
 } from '../lib/identityVerificationCoordinator'
@@ -225,6 +227,7 @@ export async function uploadHrDocument(
   input: HrDocumentUploadInput,
   onProgress: (percent: number) => void,
 ): Promise<z.infer<typeof uploadResultSchema>> {
+  const actor = await captureIdentityVerificationActor()
   async function attemptUpload(): Promise<z.infer<typeof uploadResultSchema>> {
     const mimeType = hrDocumentMimeType(input.file)
     const headers = await documentApiHeaders(mimeType)
@@ -278,7 +281,9 @@ export async function uploadHrDocument(
     return await attemptUpload()
   } catch (error) {
     if (!(error instanceof ProtectedApiError) || !isIdentityVerificationRequiredCode(error.code)) throw error
-    await requestIdentityVerification('hr')
+    if (!await identityVerificationActorIsCurrent(actor)) throw error
+    await requestIdentityVerification('hr', actor)
+    if (!await identityVerificationActorIsCurrent(actor)) throw error
     return attemptUpload()
   }
 }

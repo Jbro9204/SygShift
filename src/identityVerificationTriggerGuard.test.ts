@@ -28,7 +28,10 @@ describe('system-wide protected identity verification trigger', () => {
     ]
     clients.forEach((path) => expect(read(path), path).toContain('documentApiRequest'))
     expect(read('src/data/hrDocuments.ts')).toContain('fetchWithIdentityVerification')
-    expect(read('src/data/hrDocuments.ts')).toContain("requestIdentityVerification('hr')")
+    const documents = read('src/data/hrDocuments.ts')
+    expect(documents).toContain('const actor = await captureIdentityVerificationActor()')
+    expect(documents).toContain("requestIdentityVerification('hr', actor)")
+    expect(documents).toContain('identityVerificationActorIsCurrent(actor)')
   })
 
   it('covers protected administration, notification processing, and attendance reporting', () => {

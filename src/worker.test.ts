@@ -1167,9 +1167,43 @@ describe('Cloudflare Worker boundary', () => {
     const payload = await response.json() as { error: string }
 
     expect(response.status).toBe(403)
-    expect(payload.error).toBe('admin_mfa_required')
+    expect(payload.error).toBe('admin_users_permission_required')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     vi.unstubAllGlobals()
+  })
+
+  it.each([
+    { hasMfa: true, permissions: ['schedule.self.view'], expectedError: 'admin_users_permission_required' },
+    { hasMfa: false, permissions: ['admin.users.manage'], expectedError: 'admin_mfa_required' },
+  ])('keeps administrative authority denial separate from MFA: $hasMfa', async ({ hasMfa, permissions, expectedError }) => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({
+      ...activeEmergencySessionContext,
+      employee_id: '10000000-0000-4000-8000-000000000001',
+      username: 'guard',
+      display_name: 'Guard User',
+      role: 'guard',
+      has_mfa: hasMfa,
+      permissions,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      const response = await worker.fetch(
+        new Request('https://app.sygshift.example/api/v1/admin/users/10000000-0000-4000-8000-000000000010/mfa-reset', {
+          body: '{}',
+          headers: { authorization: 'Bearer guard-token' },
+          method: 'POST',
+        }),
+        environment(new Response('asset'), configuredEnvironment),
+      )
+      const payload = await response.json() as { error: string }
+
+      expect(response.status).toBe(403)
+      expect(payload.error).toBe(expectedError)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('resets employee MFA factors and records the audited reset after authorization', async () => {
@@ -1262,6 +1296,45 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.status).toBe(401)
     expect(payload.error).toBe('auth_required')
     expect(payload.requestId).toBe(response.headers.get('x-request-id'))
+  })
+
+  it.each([
+    { hasMfa: true, permissions: ['schedule.self.view'], expectedError: 'notifications_permission_required' },
+    { hasMfa: false, permissions: ['notifications.manage'], expectedError: 'operations_mfa_required' },
+  ])('keeps notification authority denial separate from MFA: $hasMfa', async ({ hasMfa, permissions, expectedError }) => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({
+      ...activeEmergencySessionContext,
+      employee_id: '10000000-0000-4000-8000-000000000001',
+      username: 'guard',
+      display_name: 'Guard User',
+      role: 'guard',
+      has_mfa: hasMfa,
+      permissions,
+    }))
+    const emailSend = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      const response = await worker.fetch(
+        new Request('https://app.sygshift.example/api/v1/admin/notifications/process', {
+          headers: { authorization: 'Bearer guard-token' },
+          method: 'POST',
+        }),
+        environment(new Response('asset'), {
+          ...configuredEnvironment,
+          EMAIL: { send: emailSend },
+          SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+        }),
+      )
+      const payload = await response.json() as { error: string }
+
+      expect(response.status).toBe(403)
+      expect(payload.error).toBe(expectedError)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(emailSend).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('does not claim notification work until email sending is configured', async () => {

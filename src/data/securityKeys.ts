@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 import { setSecurityKeySession } from '../lib/securityKeySession'
 import { getSupabaseClient } from '../lib/supabase'
+import { identityVerificationActorIsCurrent, identityVerificationActorIsCurrentNow, type IdentityVerificationActor } from '../lib/identityVerificationCoordinator'
 
 export const securityKeySchema = z.object({
   id: z.string().uuid(),
@@ -51,8 +52,14 @@ const renameResultSchema = z.object({
 export type SecurityKeySummary = z.infer<typeof securityKeySchema>
 export type SecurityKeyDirectory = z.infer<typeof keyListSchema>
 
-async function securityKeyHeaders(): Promise<Headers> {
-  const { data, error } = await getSupabaseClient().auth.getSession()
+async function assertActor(actor?: IdentityVerificationActor): Promise<void> {
+  if (actor && !await identityVerificationActorIsCurrent(actor)) throw new Error('The signed-in session changed. Retry from the current page.')
+}
+
+async function securityKeyHeaders(actor?: IdentityVerificationActor): Promise<Headers> {
+  await assertActor(actor)
+  const { data, error } = await (actor?.client ?? getSupabaseClient()).auth.getSession()
+  await assertActor(actor)
   if (error || !data.session?.access_token) {
     throw new Error('Your secure session has expired. Sign in again.')
   }
@@ -76,8 +83,12 @@ async function parseResponse<T>(response: Response, schema: z.ZodType<T>): Promi
   return schema.parse(payload)
 }
 
-async function request<T>(path: string, init: RequestInit, schema: z.ZodType<T>): Promise<T> {
-  return parseResponse(await fetch(path, { ...init, headers: await securityKeyHeaders() }), schema)
+async function request<T>(path: string, init: RequestInit, schema: z.ZodType<T>, actor?: IdentityVerificationActor): Promise<T> {
+  const headers = await securityKeyHeaders(actor)
+  await assertActor(actor)
+  const result = await parseResponse(await fetch(path, { ...init, headers }), schema)
+  await assertActor(actor)
+  return result
 }
 
 export function isSecurityKeySupported(): boolean {
@@ -116,7 +127,8 @@ export async function registerSecurityKey(label: string): Promise<SecurityKeySum
   return result.key
 }
 
-export async function authenticateWithSecurityKey(): Promise<void> {
+export async function authenticateWithSecurityKey(actor?: IdentityVerificationActor): Promise<void> {
+  await assertActor(actor)
   if (!isSecurityKeySupported()) {
     throw new Error('This browser or connection cannot use security keys.')
   }
@@ -125,13 +137,17 @@ export async function authenticateWithSecurityKey(): Promise<void> {
     '/api/v1/account/security-keys/authentication/options',
     { body: '{}', method: 'POST' },
     optionsSchema,
+    actor,
   )
   const response = await startAuthentication({ optionsJSON: setup.options as never })
+  await assertActor(actor)
   const result = await request(
     '/api/v1/account/security-keys/authentication/verify',
     { body: JSON.stringify({ challengeId: setup.challengeId, response }), method: 'POST' },
     authenticationResultSchema,
+    actor,
   )
+  if (actor && !identityVerificationActorIsCurrentNow(actor)) throw new Error('The signed-in session changed. Retry from the current page.')
   setSecurityKeySession(result.securityKeyToken, result.expiresAt)
 }
 

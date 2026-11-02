@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../lib/supabase'
+import { identityVerificationActorIsCurrent, type IdentityVerificationActor } from '../lib/identityVerificationCoordinator'
 
 const TOTP_ISSUER_NAME = 'SygShift'
 const TOTP_FRIENDLY_NAME = 'SygShift'
@@ -261,10 +262,13 @@ export async function verifyTotpEnrollment(factorId: string, code: string): Prom
   await verifyMfaChallenge(factorId, challengeId, code, 'totp')
 }
 
-export async function createMfaChallenge(factorId: string, factorType: MfaFactorType = 'totp'): Promise<string> {
+export async function createMfaChallenge(factorId: string, factorType: MfaFactorType = 'totp', actor?: IdentityVerificationActor): Promise<string> {
+  if (actor && !await identityVerificationActorIsCurrent(actor)) throw new Error('The signed-in session changed. Retry from the current page.')
+  const client = actor?.client ?? getSupabaseClient()
   const { data, error } = factorType === 'phone'
-    ? await getSupabaseClient().auth.mfa.challenge({ factorId, channel: 'sms' })
-    : await getSupabaseClient().auth.mfa.challenge({ factorId })
+    ? await client.auth.mfa.challenge({ factorId, channel: 'sms' })
+    : await client.auth.mfa.challenge({ factorId })
+  if (actor && !await identityVerificationActorIsCurrent(actor)) throw new Error('The signed-in session changed. Retry from the current page.')
   if (error) {
     if (factorType === 'phone' && isPhoneMfaDisabledError(error)) throw new Error(phoneMfaNotReadyMessage())
     throw new Error(factorType === 'phone' ? 'SMS verification code could not be sent.' : 'Authenticator verification could not be started.')
@@ -277,14 +281,19 @@ export async function verifyMfaChallenge(
   challengeId: string,
   code: string,
   factorType: MfaFactorType = 'totp',
+  actor?: IdentityVerificationActor,
 ): Promise<void> {
-  const { error } = await getSupabaseClient().auth.mfa.verify({
+  if (actor && !await identityVerificationActorIsCurrent(actor)) throw new Error('The signed-in session changed. Retry from the current page.')
+  const client = actor?.client ?? getSupabaseClient()
+  const { error } = await client.auth.mfa.verify({
     factorId,
     challengeId,
     code: code.trim(),
   })
+  if (actor && !await identityVerificationActorIsCurrent(actor)) throw new Error('The signed-in session changed. Retry from the current page.')
   if (error) throw new Error(factorType === 'phone' ? 'The text message code was not accepted.' : 'The authenticator code was not accepted.')
 
-  const refresh = await getSupabaseClient().auth.refreshSession()
+  const refresh = await client.auth.refreshSession()
+  if (actor && !await identityVerificationActorIsCurrent(actor)) throw new Error('The signed-in session changed. Retry from the current page.')
   if (refresh.error) throw new Error('Your secure session could not be refreshed.')
 }

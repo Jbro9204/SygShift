@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { type QueryClient, useIsMutating, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, BellRing, ChevronDown, ChevronsLeft, ChevronsRight, FileClock, Home, LogOut, Megaphone, Menu, Moon, ShieldAlert, ShieldCheck, Sun, X } from 'lucide-react'
@@ -76,6 +76,7 @@ import {
   shouldPreserveSharedIdentitySessionOnRestoreError,
 } from '../lib/sharedIdentitySession'
 import { workforceRoleLabel } from '../lib/workforceRoleAssignment'
+import { captureIdentityVerificationActor, setIdentityVerificationAccessGeneration, setIdentityVerificationSurface } from '../lib/identityVerificationCoordinator'
 
 const INACTIVITY_WARNING_MS = 55 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 60 * 60 * 1000
@@ -262,6 +263,15 @@ export function AppShell() {
   const [theme, setTheme] = useState<SygShiftTheme>(getCurrentTheme)
   const activeMutationCount = useIsMutating()
   const location = useLocation()
+  const verificationEmployeeId = sessionContext?.employeeId
+  const verificationAccessGeneration = sessionContext?.accessGeneration
+  useLayoutEffect(() => {
+    setIdentityVerificationSurface(location.pathname, location.search)
+  }, [location.pathname, location.search])
+  useLayoutEffect(() => {
+    if (verificationEmployeeId && verificationAccessGeneration !== undefined) setIdentityVerificationAccessGeneration(verificationEmployeeId, verificationAccessGeneration)
+    void captureIdentityVerificationActor().catch(() => undefined)
+  }, [authSessionId, verificationEmployeeId, verificationAccessGeneration])
   const internalHistoryRef = useRef<InternalNavigationEntry[]>(parseInternalHistory(window.sessionStorage.getItem(INTERNAL_NAVIGATION_STORAGE_KEY)))
   const authRecoveryRetryRef = useRef<(() => Promise<void>) | null>(null)
   const authSessionInvalidationRef = useRef<(() => void) | null>(null)

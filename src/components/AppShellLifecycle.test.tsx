@@ -39,7 +39,9 @@ const shared = vi.hoisted(() => ({
     error?: Error | null
   }> | null,
   authSourceActive: true,
+  authClientGeneration: 0,
   authListener: null as null | ((event: string, session: { access_token: string } | null) => void),
+  authListeners: new Set<(event: string, session: { access_token: string } | null) => void>(),
   announcementBannerError: null as Error | null,
   announcementBanners: [] as AnnouncementBanner[],
   browserListener: null as ((action: 'cleared' | 'updated') => void) | null,
@@ -86,7 +88,23 @@ vi.mock('../lib/sharedIdentityBrowserSync', () => ({
   }),
 }))
 
-vi.mock('../lib/supabase', () => ({
+vi.mock('../lib/supabase', () => {
+  const createClient = () => ({
+    auth: {
+      getSession: vi.fn(async () => shared.authGetSessionPromise ?? {
+        data: { session: shared.activeAccessToken ? { access_token: shared.activeAccessToken } : null },
+        error: null,
+      }),
+      onAuthStateChange: vi.fn((listener: (event: string, session: { access_token: string } | null) => void) => {
+        shared.authListeners.add(listener)
+        shared.authListener = (event, session) => [...shared.authListeners].forEach((subscriber) => subscriber(event, session))
+        return { data: { subscription: { unsubscribe: vi.fn(() => shared.authListeners.delete(listener)) } } }
+      }),
+    },
+  })
+  let generation = -1
+  let client: ReturnType<typeof createClient>
+  return {
   activateSharedIdentitySupabaseSession: vi.fn(async (token: string) => {
     if (shared.activationError) throw shared.activationError
     shared.activeAccessToken = token
@@ -94,20 +112,13 @@ vi.mock('../lib/supabase', () => ({
   deactivateSharedIdentitySupabaseSession: vi.fn(() => {
     shared.activeAccessToken = null
   }),
-  getSupabaseClient: vi.fn(() => ({
-    auth: {
-      getSession: vi.fn(async () => shared.authGetSessionPromise ?? {
-        data: {
-          session: shared.activeAccessToken ? { access_token: shared.activeAccessToken } : null,
-        },
-        error: null,
-      }),
-      onAuthStateChange: vi.fn((listener: (event: string, session: { access_token: string } | null) => void) => {
-        shared.authListener = listener
-        return { data: { subscription: { unsubscribe: vi.fn() } } }
-      }),
-    },
-  })),
+  getSupabaseClient: vi.fn(() => {
+    if (generation !== shared.authClientGeneration) {
+      generation = shared.authClientGeneration
+      client = createClient()
+    }
+    return client
+  }),
   isConfirmedInvalidSharedIdentitySupabaseSessionError: vi.fn((error: unknown) => (
     error === shared.activationError && shared.activationFailureKind === 'invalid'
   )),
@@ -116,7 +127,8 @@ vi.mock('../lib/supabase', () => ({
   isTransientSharedIdentitySupabaseSessionError: vi.fn((error: unknown) => (
     error === shared.activationError && shared.activationFailureKind === 'transient'
   )),
-}))
+  }
+})
 
 vi.mock('../data/auth', () => ({
   SESSION_CONTEXT_REFRESH_EVENT: 'sygshift:session-context-refresh',
@@ -249,6 +261,8 @@ beforeEach(() => {
   shared.activationFailureKind = 'transient'
   shared.authGetSessionPromise = null
   shared.authListener = null
+  shared.authListeners.clear()
+  shared.authClientGeneration += 1
   shared.authSourceActive = true
   shared.announcementBannerError = null
   shared.announcementBanners = []
@@ -1169,7 +1183,7 @@ describe('AppShell shared-session lifecycle', () => {
   it('purges Client Communications and session context caches when the authenticated session ends', async () => {
     shared.activeAccessToken = accessToken
     const { queryClient } = renderShell('/')
-    await waitFor(() => expect(shared.authListener).not.toBeNull())
+    await waitFor(() => expect(shared.authListeners.size).toBe(2))
 
     const communicationsKey = ['client-communications', employeeId, 'workspace', 'all', '', 1, 20]
     const requiredActionKey = ['required-action-checkpoint', employeeId]

@@ -7,9 +7,15 @@ import { IdentityVerificationHost } from './IdentityVerificationHost'
 import { cancelIdentityVerification } from '../lib/identityVerificationCoordinator'
 
 const verification = vi.hoisted(() => ({ fresh: false }))
-vi.mock('../lib/supabase', () => ({ getSupabaseClient: () => ({ auth: {
-  getSession: async () => ({ data: { session: { access_token: 'test-session' } }, error: null }),
-} }) }))
+vi.mock('../lib/supabase', () => {
+  const client = { auth: {
+  getSession: async () => ({ data: { session: {
+    access_token: `header.${btoa(JSON.stringify({ sub: '10000000-0000-4000-8000-000000000021', session_id: '10000000-0000-4000-8000-000000000022' }))}.signature`,
+    user: { id: '10000000-0000-4000-8000-000000000021' },
+  } }, error: null }),
+  } }
+  return { getSupabaseClient: () => client }
+})
 vi.mock('../data/mfa', () => ({ listMfaFactors: async () => [], createMfaChallenge: vi.fn(), verifyMfaChallenge: vi.fn() }))
 vi.mock('../data/securityKeys', () => ({
   getSecurityKeyDirectory: async () => ({ featureEnabled: true, pilotEligible: true, keys: [{ id: 'test-key', label: 'Test security key' }] }),
