@@ -523,6 +523,42 @@ class SupabaseRequestError extends Error {
   }
 }
 
+type LoginInstructionsStage = 'target_lookup' | 'auth_lookup' | 'auth_create' | 'auth_update' | 'account_link' | 'email'
+
+const loginInstructionsStageDetails: Record<LoginInstructionsStage, string> = {
+  target_lookup: 'The employee login details could not be verified. Refresh the account before trying again.',
+  auth_lookup: 'The account service could not be checked. No login instructions were sent. Check account status before trying again.',
+  auth_create: 'The account-creation step could not be confirmed. Check account status before trying again.',
+  auth_update: 'The account-update step could not be confirmed. Check account status before trying again.',
+  account_link: 'The login-account link could not be confirmed. Check account status before trying again.',
+  email: 'The login-instructions email step could not be confirmed. Check account and delivery history before trying again.',
+}
+
+class LoginInstructionsError extends ApiError {
+  readonly stage: LoginInstructionsStage
+
+  constructor(stage: LoginInstructionsStage, status = 502) {
+    super(`login_instructions_${stage}_failed`, status, loginInstructionsStageDetails[stage])
+    this.stage = stage
+  }
+}
+
+function safeProviderErrorCode(value: unknown): string | null {
+  return typeof value === 'string' && /^[A-Za-z0-9_]{1,80}$/.test(value) ? value : null
+}
+
+function loginInstructionsFailure(stage: LoginInstructionsStage, requestId: string, error: unknown): LoginInstructionsError {
+  if (error instanceof LoginInstructionsError) return error
+  console.warn(JSON.stringify({
+    event: 'login_instructions_failed',
+    requestId,
+    stage,
+    upstreamCode: error instanceof SupabaseRequestError || error instanceof ApiError ? safeProviderErrorCode(error.code) : null,
+    upstreamStatus: error instanceof SupabaseRequestError || error instanceof ApiError ? error.status : null,
+  }))
+  return new LoginInstructionsError(stage, error instanceof ApiError ? error.status : 502)
+}
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -716,13 +752,13 @@ async function supabaseJson<T>(url: string, init: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    const data = payload as { code?: string; error?: string; error_description?: string; message?: string; msg?: string } | null
+    const data = payload as { code?: unknown; error_code?: unknown; error?: string; error_description?: string; message?: string; msg?: string } | null
     const pathname = new URL(url).pathname
     const operation = pathname.startsWith('/rest/v1/rpc/') ? pathname.slice('/rest/v1/rpc/'.length) : 'supabase_request'
     throw new SupabaseRequestError(
       data?.message || data?.msg || data?.error_description || data?.error || `Supabase request failed with ${response.status}.`,
       response.status,
-      typeof data?.code === 'string' ? data.code : null,
+      safeProviderErrorCode(data?.error_code) ?? safeProviderErrorCode(data?.code),
       operation,
     )
   }
@@ -6888,7 +6924,7 @@ async function handleHrDocumentsApi(
   return errorJson('not_found', requestId, 404)
 }
 
-async function listAuthUsers(config: NonNullable<ReturnType<typeof configuredSupabase>>): Promise<AuthUser[]> {
+async function listAuthUsers(config: NonNullable<ReturnType<typeof configuredSupabase>>, validateResponse = false): Promise<AuthUser[]> {
   const users: AuthUser[] = []
   for (let page = 1; page <= 20; page += 1) {
     const payload = await supabaseJson<{ users?: AuthUser[] }>(`${config.url}/auth/v1/admin/users?page=${page}&per_page=1000`, {
@@ -6898,9 +6934,14 @@ async function listAuthUsers(config: NonNullable<ReturnType<typeof configuredSup
       },
       method: 'GET',
     })
+    if (validateResponse && (!payload || !Array.isArray(payload.users) || payload.users.some((user) => (
+      !user || typeof user.id !== 'string' || !validUuid(user.id)
+      || (user.email !== undefined && user.email !== null && typeof user.email !== 'string')
+    )))) throw new Error('The account directory returned an invalid response.')
     const pageUsers = Array.isArray(payload.users) ? payload.users : []
     users.push(...pageUsers)
     if (pageUsers.length < 1000) break
+    if (validateResponse && page === 20) throw new Error('The account directory exceeded its verified lookup bound.')
   }
   return users
 }
@@ -7003,15 +7044,26 @@ async function provisionOne(
   target: AuthTarget,
   password: string,
   usersByEmail: Map<string, AuthUser>,
+  options: {
+    onStage?: (stage: 'auth_create' | 'auth_update' | 'account_link') => void
+    validateAuthResponse?: boolean
+  } = {},
 ) {
   const existing = target.existingAuthUserId
     ? { id: target.existingAuthUserId }
     : usersByEmail.get(target.authEmail.toLowerCase())
+  options.onStage?.(existing ? 'auth_update' : 'auth_create')
   const user = existing
     ? await updateAuthUser(config, target, existing.id, password)
     : await createAuthUser(config, target, password)
 
+  if (options.validateAuthResponse && (
+    !user || typeof user.id !== 'string' || !validUuid(user.id)
+    || (existing ? user.id !== existing.id : typeof user.email !== 'string' || user.email.toLowerCase() !== target.authEmail.toLowerCase())
+  )) throw new Error('The account service returned an invalid identity confirmation.')
+
   usersByEmail.set(target.authEmail.toLowerCase(), user)
+  options.onStage?.('account_link')
   const linked = await callRpc<unknown>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_link_employee_auth_account',
@@ -7028,6 +7080,45 @@ async function provisionOne(
     linked,
     password,
     target,
+  }
+}
+
+function isLoginInstructionsTarget(value: unknown): value is LoginEmailTarget {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const target = value as Partial<LoginEmailTarget>
+  return typeof target.employeeId === 'string' && validUuid(target.employeeId)
+    && typeof target.username === 'string' && target.username.trim().length > 0 && target.username.length <= 64
+    && typeof target.authEmail === 'string' && target.authEmail.length <= 255
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target.authEmail)
+    && typeof target.displayName === 'string' && target.displayName.trim().length > 0
+    && typeof target.requiresMfa === 'boolean'
+    && ['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'].includes(target.role ?? '')
+    && target.status === 'active'
+    && (target.existingAuthUserId === null || typeof target.existingAuthUserId === 'string' && validUuid(target.existingAuthUserId))
+}
+
+async function prepareAndSendLoginInstructions(
+  environment: Environment,
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  target: LoginEmailTarget,
+  password: string,
+  getUsersByEmail: (validateResponse?: boolean) => Promise<Map<string, AuthUser>>,
+  requestId: string,
+) {
+  let stage: LoginInstructionsStage = 'target_lookup'
+  try {
+    if (!isLoginInstructionsTarget(target)) throw new Error('The employee login target is invalid.')
+    stage = 'auth_lookup'
+    const usersByEmail = await getUsersByEmail(true)
+    const result = await provisionOne(config, target, password, usersByEmail, {
+      onStage: (next) => { stage = next },
+      validateAuthResponse: true,
+    })
+    stage = 'email'
+    await sendLoginInstructions(environment, target, result.password)
+    return result
+  } catch (error) {
+    throw loginInstructionsFailure(stage, requestId, error)
   }
 }
 
@@ -8183,12 +8274,12 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
   }
 
   const body = request.method === 'GET' ? {} : await readJsonBody(request)
-  let usersByEmail: Map<string, AuthUser> | null = null
-  const getUsersByEmail = async () => {
+  let usersByEmail: Promise<Map<string, AuthUser>> | null = null
+  const getUsersByEmail = (validateResponse = false) => {
     if (!usersByEmail) {
-      usersByEmail = new Map(
-        (await listAuthUsers(admin.config)).map((user) => [String(user.email).toLowerCase(), user]),
-      )
+      usersByEmail = listAuthUsers(admin.config, validateResponse).then((users) => new Map(
+        users.map((user) => [String(user.email).toLowerCase(), user]),
+      ))
     }
     return usersByEmail
   }
@@ -8275,20 +8366,25 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
   if (url.pathname === '/api/v1/admin/users/login-emails') {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
 
-    const targets = await callRpc<LoginEmailTarget[]>(
-      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
-      'service_get_employee_login_email_targets',
-      { target_include_existing: false },
-      admin.config.serviceRoleKey,
-    )
+    let targets: LoginEmailTarget[]
+    try {
+      targets = await callRpc<LoginEmailTarget[]>(
+        { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+        'service_get_employee_login_email_targets',
+        { target_include_existing: false },
+        admin.config.serviceRoleKey,
+      )
+      if (!Array.isArray(targets) || !targets.every(isLoginInstructionsTarget)) throw new Error('The employee login targets are invalid.')
+    } catch (error) {
+      throw loginInstructionsFailure('target_lookup', requestId, error)
+    }
     const sent = []
     const failures = []
 
     for (const target of targets) {
       try {
         requireApprovedEmployeeEmail(environment, target)
-        const result = await provisionOne(admin.config, target, generateTemporaryPassword(), await getUsersByEmail())
-        await sendLoginInstructions(environment, target, result.password)
+        await prepareAndSendLoginInstructions(environment, admin.config, target, generateTemporaryPassword(), getUsersByEmail, requestId)
         sent.push({
           displayName: target.displayName,
           email: target.contactEmail,
@@ -8296,9 +8392,10 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
         })
       } catch (error) {
         failures.push({
-          displayName: target.displayName,
+          displayName: target?.displayName,
           error: error instanceof Error ? error.message : 'Login email failed.',
-          username: target.username,
+          username: target?.username,
+          ...(error instanceof LoginInstructionsError ? { code: error.code, requestId, stage: error.stage } : {}),
         })
       }
     }
@@ -8315,12 +8412,18 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
   if (emailMatch) {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
 
-    const target = await callRpc<LoginEmailTarget>(
-      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
-      'service_get_employee_login_email_target',
-      { target_employee_id: emailMatch[1] },
-      admin.config.serviceRoleKey,
-    )
+    let target: LoginEmailTarget
+    try {
+      target = await callRpc<LoginEmailTarget>(
+        { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+        'service_get_employee_login_email_target',
+        { target_employee_id: emailMatch[1] },
+        admin.config.serviceRoleKey,
+      )
+      if (target && (!isLoginInstructionsTarget(target) || target.employeeId !== emailMatch[1])) throw new Error('The employee login target is invalid.')
+    } catch (error) {
+      throw loginInstructionsFailure('target_lookup', requestId, error)
+    }
     if (!target) throw new ApiError('employee_not_found', 404, 'The employee record was not found.')
     requireApprovedEmployeeEmail(environment, target)
 
@@ -8336,8 +8439,7 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       }
     }
 
-    const result = await provisionOne(admin.config, target, suppliedPassword || generateTemporaryPassword(), await getUsersByEmail())
-    await sendLoginInstructions(environment, target, result.password)
+    const result = await prepareAndSendLoginInstructions(environment, admin.config, target, suppliedPassword || generateTemporaryPassword(), getUsersByEmail, requestId)
 
     return json({
       action: result.action,
@@ -10200,7 +10302,9 @@ export default {
       try {
         response = await handleAdminUsersApi(request, environment, requestId)
       } catch (error) {
-        response = error instanceof ApiError
+        response = error instanceof LoginInstructionsError
+          ? json({ error: error.code, detail: error.message, requestId, stage: error.stage }, error.status)
+          : error instanceof ApiError
           ? errorJson(error.code, requestId, error.status, error.message)
           : errorJson('admin_user_request_failed', requestId, 500, 'The admin user request failed.')
       }

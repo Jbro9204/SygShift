@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BadgeCheck,
@@ -18,6 +18,8 @@ import {
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import {
+  AdminEmailRequestError,
+  adminEmailRequestReference,
   createEmployee,
   credentialsToCsv,
   getEmployeeRemovalPreview,
@@ -476,6 +478,9 @@ export function ManageUserModal({
   const [loginEmailMessage, setLoginEmailMessage] = useState<string | null>(null)
   const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null)
   const [welcomeEmailMessage, setWelcomeEmailMessage] = useState<string | null>(null)
+  const emailActionRef = useRef(false)
+  const [emailReadbackPending, setEmailReadbackPending] = useState(false)
+  const [emailReadbackError, setEmailReadbackError] = useState<string | null>(null)
   const [trustedDeviceMessage, setTrustedDeviceMessage] = useState<string | null>(null)
   const [mfaResetMessage, setMfaResetMessage] = useState<string | null>(null)
   const [securityKeyMessage, setSecurityKeyMessage] = useState<string | null>(null)
@@ -560,10 +565,12 @@ export function ManageUserModal({
   })
   const loginEmailMutation = useMutation({
     mutationFn: () => sendEmployeeLoginEmail(employee.id),
-    onSuccess: async (result) => {
-      setLoginEmailMessage(`Login instructions sent to ${result.email ?? deliveryEmail ?? 'the approved email address'}.`)
-      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
+    retry: false,
+    onSuccess: (result) => {
+      const reference = adminEmailRequestReference(result.requestId)
+      setLoginEmailMessage(`Login instructions accepted for delivery to ${result.email ?? deliveryEmail ?? 'the approved email address'}.${reference ? ` Request ${reference}.` : ''}`)
     },
+    onSettled: settleEmailAction,
   })
   const passwordResetMutation = useMutation({
     mutationFn: () => sendEmployeePasswordReset(employee.id),
@@ -574,12 +581,14 @@ export function ManageUserModal({
   })
   const welcomeEmailMutation = useMutation({
     mutationFn: () => sendEmployeeWelcomeEmail(employee.id),
-    onSuccess: async (result) => {
+    retry: false,
+    onSuccess: (result) => {
+      const reference = adminEmailRequestReference(result.requestId)
       setWelcomeEmailMessage(
-        `Welcome email accepted for ${result.email ?? deliveryEmail ?? 'the approved email address'}. Request ${result.requestId}.`,
+        `Welcome email accepted for delivery to ${result.email ?? deliveryEmail ?? 'the approved email address'}.${reference ? ` Request ${reference}.` : ''}`,
       )
-      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
+    onSettled: settleEmailAction,
   })
   const modalBusy = updateMutation.isPending
     || securityCenterMutation.isPending
@@ -589,6 +598,7 @@ export function ManageUserModal({
     || passwordResetMutation.isPending
     || loginEmailMutation.isPending
     || welcomeEmailMutation.isPending
+    || emailReadbackPending
   const employeeFormKey = [
     profileFormVersion,
     employee.id,
@@ -616,11 +626,13 @@ export function ManageUserModal({
     && (actorIsPrimaryAdmin || employee.role !== 'admin')
   const canSaveEmployeeForm = canEditProfileFields || canManageEmployeeRoles
   function closeWorkspace() {
+    if (modalBusy || emailActionRef.current) return
     if (profileDirty && !window.confirm('Discard the unsaved employee profile changes?')) return
     onClose()
   }
 
   function chooseTab(tab: typeof activeTab) {
+    if (modalBusy || emailActionRef.current) return
     if (tab === activeTab) return
     if (profileDirty && !window.confirm('Discard the unsaved employee profile changes before changing sections?')) return
     if (profileDirty) {
@@ -628,6 +640,47 @@ export function ManageUserModal({
       setProfileFormVersion((version) => version + 1)
     }
     setActiveTab(tab)
+  }
+
+  async function refreshEmailAccountState(): Promise<void> {
+    setEmailReadbackPending(true)
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' }, { throwOnError: true })
+      setEmailReadbackError(null)
+    } catch {
+      setEmailReadbackError('Current account status could not be refreshed. Refresh the account status before sending again. No email will be resent by refreshing.')
+    } finally { setEmailReadbackPending(false) }
+  }
+
+  async function settleEmailAction(): Promise<void> {
+    try { await refreshEmailAccountState() }
+    finally { emailActionRef.current = false }
+  }
+
+  function beginEmailAction(action: 'login' | 'welcome'): void {
+    if (emailActionRef.current || modalBusy || emailReadbackError) return
+    emailActionRef.current = true
+    if (action === 'login') {
+      setLoginEmailMessage(null)
+      loginEmailMutation.reset()
+      loginEmailMutation.mutate()
+    } else {
+      setWelcomeEmailMessage(null)
+      welcomeEmailMutation.reset()
+      welcomeEmailMutation.mutate()
+    }
+  }
+
+  async function retryEmailAccountReadback(): Promise<void> {
+    if (emailActionRef.current || modalBusy) return
+    emailActionRef.current = true
+    try { await refreshEmailAccountState() }
+    finally { emailActionRef.current = false }
+  }
+
+  function emailFailureMessage(error: Error): string {
+    return error instanceof AdminEmailRequestError ? error.message
+      : 'The email request outcome could not be confirmed. Review the refreshed account status before retrying.'
   }
 
   function discardProfileChanges() {
@@ -639,7 +692,7 @@ export function ManageUserModal({
   return (
     <ModalDialog
       busy={modalBusy}
-      busyLabel="Updating employee record..."
+      busyLabel={loginEmailMutation.isPending ? 'Preparing access and sending login instructions...' : welcomeEmailMutation.isPending ? 'Sending welcome email...' : emailReadbackPending ? 'Refreshing account status...' : 'Updating employee record...'}
       className="modal-dialog--user-account"
       description={`${employee.employeeNumber ?? 'Employee ID pending'} · Permanent username: @${employee.username}${employee.jobTitle ? ` · ${employee.jobTitle}` : ''}`}
       onClose={closeWorkspace}
@@ -670,9 +723,9 @@ export function ManageUserModal({
         </section>
 
         <nav className="user-account-tabs" aria-label="Employee account sections">
-          <button aria-current={activeTab === 'profile' ? 'page' : undefined} className={activeTab === 'profile' ? 'is-active' : ''} onClick={() => chooseTab('profile')} type="button">Profile</button>
-          <button aria-current={activeTab === 'security' ? 'page' : undefined} className={activeTab === 'security' ? 'is-active' : ''} onClick={() => chooseTab('security')} type="button">Login &amp; Security</button>
-          <button aria-current={activeTab === 'onboarding' ? 'page' : undefined} className={activeTab === 'onboarding' ? 'is-active' : ''} onClick={() => chooseTab('onboarding')} type="button">Onboarding</button>
+          <button aria-current={activeTab === 'profile' ? 'page' : undefined} className={activeTab === 'profile' ? 'is-active' : ''} disabled={modalBusy} onClick={() => chooseTab('profile')} type="button">Profile</button>
+          <button aria-current={activeTab === 'security' ? 'page' : undefined} className={activeTab === 'security' ? 'is-active' : ''} disabled={modalBusy} onClick={() => chooseTab('security')} type="button">Login &amp; Security</button>
+          <button aria-current={activeTab === 'onboarding' ? 'page' : undefined} className={activeTab === 'onboarding' ? 'is-active' : ''} disabled={modalBusy} onClick={() => chooseTab('onboarding')} type="button">Onboarding</button>
         </nav>
 
         {activeTab === 'profile' ? (
@@ -703,7 +756,7 @@ export function ManageUserModal({
                 setProfileSaveMessage(null)
               }}
               onSubmit={(payload, roleChangeReason) => updateMutation.mutate({ payload, roleChangeReason })}
-              pending={updateMutation.isPending}
+              pending={modalBusy}
               showActions={false}
             />
             {profileSaveMessage ? <div className="form-feedback form-feedback--success" role="status">{profileSaveMessage}</div> : null}
@@ -896,12 +949,12 @@ export function ManageUserModal({
               <article>
                 <Mail aria-hidden="true" size={22} />
                 <div><h4>Welcome email</h4><p>Introduces SygShift and the employee experience without including login credentials.</p></div>
-                <button className="secondary-button" disabled={!canSendNewUserInvites || welcomeEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => welcomeEmailMutation.mutate()} type="button">{welcomeEmailMutation.isPending ? 'Sending welcome…' : 'Send welcome email'}</button>
+                <button className="secondary-button" disabled={!canSendNewUserInvites || modalBusy || Boolean(emailReadbackError) || employee.status !== 'active' || !deliveryEmail} onClick={() => beginEmailAction('welcome')} type="button">{welcomeEmailMutation.isPending ? 'Sending welcome…' : 'Send welcome email'}</button>
               </article>
               <article>
                 <KeyRound aria-hidden="true" size={22} />
                 <div><h4>Login instructions</h4><p>Prepares access, delivers a one-time temporary password, and explains authenticator setup only when MFA is required.</p></div>
-                <button className="secondary-button" disabled={!canSendNewUserInvites || loginEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => loginEmailMutation.mutate()} type="button">{loginEmailMutation.isPending ? 'Sending instructions…' : 'Email login instructions'}</button>
+                <button className="secondary-button" disabled={!canSendNewUserInvites || modalBusy || Boolean(emailReadbackError) || employee.status !== 'active' || !deliveryEmail} onClick={() => beginEmailAction('login')} type="button">{loginEmailMutation.isPending ? 'Sending instructions…' : 'Email login instructions'}</button>
               </article>
             </div>
             {!canSendNewUserInvites ? <p className="form-note">New User Invites permission is required to send onboarding emails.</p> : null}
@@ -909,8 +962,9 @@ export function ManageUserModal({
             {!deliveryEmail ? <p className="form-note">Add a personal email before sending. SygShift is not sending to @guardianshipsecurity.net while company delivery is blocked.</p> : null}
             {loginEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{loginEmailMessage}</div> : null}
             {welcomeEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{welcomeEmailMessage}</div> : null}
-            {loginEmailMutation.isError ? <div className="inline-alert" role="alert">{loginEmailMutation.error.message}</div> : null}
-            {welcomeEmailMutation.isError ? <div className="inline-alert" role="alert">{welcomeEmailMutation.error.message}</div> : null}
+            {loginEmailMutation.isError ? <div className="inline-alert" role="alert">{emailFailureMessage(loginEmailMutation.error)}</div> : null}
+            {welcomeEmailMutation.isError ? <div className="inline-alert" role="alert">{emailFailureMessage(welcomeEmailMutation.error)}</div> : null}
+            {emailReadbackError ? <div className="inline-alert" role="alert"><p>{emailReadbackError}</p><button className="secondary-button" disabled={modalBusy} onClick={() => void retryEmailAccountReadback()} type="button">Refresh account status</button></div> : null}
           </section>
         ) : null}
 

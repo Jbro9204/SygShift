@@ -193,6 +193,61 @@ export type ProvisioningCredential = z.infer<typeof provisioningCredentialSchema
 export type LoginEmailResult = z.infer<typeof loginEmailResponseSchema>
 export type EmployeePasswordResetResult = z.infer<typeof passwordResetResponseSchema>
 export type WelcomeEmailResult = z.infer<typeof welcomeEmailResponseSchema>
+
+export function adminEmailRequestReference(value: unknown): string | null {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null
+}
+
+export class AdminEmailRequestError extends Error {
+  readonly requestId: string | null
+  readonly code: string | null
+  readonly status: number
+
+  constructor(message: string, status: number, code: string | null, requestId: string | null) {
+    const reference = adminEmailRequestReference(requestId)
+    super(`${message}${reference ? ` Request ${reference}.` : ''}`)
+    this.name = 'AdminEmailRequestError'
+    this.status = status
+    this.code = code
+    this.requestId = reference
+  }
+}
+
+const accountEmailErrorMessages: Record<string, string> = {
+  auth_required: 'Sign in again before sending employee email.',
+  access_revoked: 'This signed-in session no longer has access.',
+  admin_mfa_required: 'Verify MFA before sending employee email.',
+  operations_mfa_required: 'Verify MFA before sending employee email.',
+  new_user_invites_permission_required: 'New User Invites permission is required to send onboarding email.',
+  admin_users_permission_required: 'User account management permission is required.',
+  employee_not_found: 'The active employee record could not be found. Refresh User Accounts before retrying.',
+  employee_personal_email_required: 'Add an approved personal email before sending employee email.',
+  email_recipient_suppressed: 'The recipient is blocked by the current delivery safeguards. Review the approved personal email before retrying.',
+  invalid_temporary_password: 'Temporary password must be text.',
+  temporary_password_rejected: 'The temporary password does not meet the account security requirements.',
+  email_not_configured: 'Employee email is temporarily unavailable. Contact the administrator.',
+  email_delivery_failed: 'Email delivery could not be confirmed. Review the refreshed account status before retrying.',
+  admin_user_request_failed: 'The employee email request could not be completed. Review the refreshed account status before retrying.',
+  login_instructions_target_lookup_failed: 'The employee account target could not be verified. Review the refreshed account status before retrying.',
+  login_instructions_auth_lookup_failed: 'Account lookup could not be completed. Review the refreshed account status before retrying.',
+  login_instructions_auth_create_failed: 'Account creation could not be confirmed. Review the refreshed account status before retrying.',
+  login_instructions_auth_update_failed: 'Account preparation could not be confirmed. Review the refreshed account status before retrying.',
+  login_instructions_account_link_failed: 'The employee account link could not be confirmed. Review the refreshed account status before retrying.',
+  login_instructions_email_failed: 'Login-instructions delivery could not be confirmed. Review account status and delivery history before retrying.',
+}
+
+function accountEmailFailure(response: Response, payload: unknown): AdminEmailRequestError {
+  const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : null
+  const code = typeof record?.error === 'string' && Object.hasOwn(accountEmailErrorMessages, record.error) ? record.error : null
+  const requestId = adminEmailRequestReference(record?.requestId) ?? adminEmailRequestReference(response.headers.get('x-request-id'))
+  let message = code ? accountEmailErrorMessages[code] : 'The employee email request could not be completed. Review the refreshed account status before retrying.'
+  if (code === 'temporary_password_rejected' && typeof record?.detail === 'string') {
+    const allowed = new Set(['Use at least 12 characters.', 'Add a lowercase letter.', 'Add an uppercase letter.', 'Add a number.', 'Add a symbol.', 'Do not include the username.', 'Avoid common or company-related words.'])
+    const parts = record.detail.split(/(?<=\.)\s+/)
+    if (parts.length > 0 && parts.length <= allowed.size && parts.every((part) => allowed.has(part))) message = parts.join(' ')
+  }
+  return new AdminEmailRequestError(message, response.status, code, requestId)
+}
 export type RecentlyDeletedRecord = z.infer<typeof recentlyDeletedRecordSchema>
 export type DeleteEmployeeResult = z.infer<typeof deleteEmployeeResponseSchema>
 export type EmployeeRemovalPreview = z.infer<typeof employeeRemovalPreviewSchema>
@@ -462,15 +517,11 @@ export async function sendEmployeeLoginEmail(employeeId: string, temporaryPasswo
     method: 'POST',
   })
   const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const message = typeof payload?.detail === 'string'
-      ? payload.detail
-      : typeof payload?.error === 'string'
-        ? payload.error.replaceAll('_', ' ')
-        : 'The login email could not be sent.'
-    throw new Error(message)
-  }
-  return loginEmailResponseSchema.parse(payload)
+  if (!response.ok) throw accountEmailFailure(response, payload)
+  const result = loginEmailResponseSchema.required({ displayName: true, email: true, username: true, action: true }).safeParse(payload)
+  if (!result.success) throw new AdminEmailRequestError('Email acceptance could not be verified. Review the refreshed account status before retrying.', response.status, null,
+    adminEmailRequestReference(payload?.requestId) ?? adminEmailRequestReference(response.headers.get('x-request-id')))
+  return result.data
 }
 
 export async function sendEmployeeWelcomeEmail(employeeId: string): Promise<WelcomeEmailResult> {
@@ -479,15 +530,11 @@ export async function sendEmployeeWelcomeEmail(employeeId: string): Promise<Welc
     method: 'POST',
   })
   const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const message = typeof payload?.detail === 'string'
-      ? payload.detail
-      : typeof payload?.error === 'string'
-        ? payload.error.replaceAll('_', ' ')
-        : 'The welcome email could not be sent.'
-    throw new Error(message)
-  }
-  return welcomeEmailResponseSchema.parse(payload)
+  if (!response.ok) throw accountEmailFailure(response, payload)
+  const result = welcomeEmailResponseSchema.safeParse(payload)
+  if (!result.success) throw new AdminEmailRequestError('Email acceptance could not be verified. Review the refreshed account status before retrying.', response.status, null,
+    adminEmailRequestReference(payload?.requestId) ?? adminEmailRequestReference(response.headers.get('x-request-id')))
+  return result.data
 }
 
 export async function sendAllEmployeeLoginEmails(): Promise<LoginEmailResult> {

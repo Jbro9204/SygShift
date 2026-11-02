@@ -8,6 +8,7 @@ import { assertReviewedFunctionFingerprints, assertRuntimeRetrySafety, checkMigr
 
 const productionProject = 'eqkdfrbwtioiqtjsyglg'
 const ledgerQuery = 'select version,name,statements from supabase_migrations.schema_migrations order by version'
+export const authBanCompatibilitySql = 'select pg_catalog.count(*)::text as non_finite_ban_count from auth.users where banned_until is not null and not pg_catalog.isfinite(banned_until)'
 const digest = (value) => createHash('sha256').update(value).digest('hex')
 
 // Mandatory normal-release preflight. The official CLI result stays in memory;
@@ -93,12 +94,32 @@ export async function requireDatabaseReleaseBaseline(options, injected = {}) {
   } catch {
     throw new Error('The mandatory PostgreSQL retry-safety gate refused the release. Check immutable migration sources and live effective function definitions. No release command ran; catalog bodies were withheld.')
   }
+  let nonFiniteBanCount
+  try {
+    const result = await run([
+      'dlx', 'supabase@2.121.0', 'db', 'query', '--linked', '--project-ref', productionProject,
+      authBanCompatibilitySql, '-o', 'json',
+    ], { ...commandOptions, timeoutMs: 10_000 })
+    const payload = JSON.parse(result.stdout)
+    const row = Array.isArray(payload?.rows) && payload.rows.length === 1 ? payload.rows[0] : null
+    if (!row || typeof row !== 'object' || Array.isArray(row) || Object.keys(row).length !== 1
+      || typeof row.non_finite_ban_count !== 'string' || !/^(?:0|[1-9][0-9]{0,18})$/u.test(row.non_finite_ban_count)) {
+      throw new Error('Invalid compatibility count')
+    }
+    nonFiniteBanCount = row.non_finite_ban_count
+  } catch {
+    throw new Error('The Supabase Auth compatibility gate could not verify account ban timestamps. No release command ran; CLI output was withheld.')
+  }
+  if (nonFiniteBanCount !== '0') {
+    throw new Error('The Supabase Auth compatibility gate refused the release: non-finite account ban timestamps require an audited repair. No release command ran.')
+  }
   return {
     accepted: true, appliedMigrations: current.entries.length,
     freshProductionLedger: true, reviewedBaselineCompared: true,
     claimsHistoryEquivalence: false, bulkMigrationPushAuthorized: false,
     requireReconciled: verification.requireReconciled,
     retrySafetyVerified: true, retrySafetyCheckedFunctions: retrySafety.checkedFunctions,
+    authBanTimestampsVerified: true,
   }
 }
 

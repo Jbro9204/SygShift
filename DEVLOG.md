@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 11/02/2026 - Login Instructions and Auth Directory Compatibility
+
+- Verified that one provider-incompatible infinite Auth ban caused the shared Admin user lookup to fail before new login creation. Welcome delivery, the target record, and password policy were not the cause.
+- Applied one audited, fingerprint-gated finite-ban compatibility repair while preserving the account's independent disabled state and every other protected Auth/access field. The real directory request now returns 200 instead of 500; migration history remains at 442 entries.
+- Added safe stage/request references, request-local Auth lookup failure memoization, batch/response validation, duplicate-send prevention, truthful acceptance copy, and account readback after both outcomes. No real invite or password reset was used for testing.
+- Added a release-only finite-ban check and documented the managed Auth timestamp invariant. The operational renderer defaults to rollback and uses exact transaction-local write checks, not expensive history scans or global employee-activity comparisons.
+- Full application checks, focused invite tests, desktop/phone browser checks, nine renderer unit checks and sixteen isolated PostgreSQL scenarios pass. Application promotion remains separately gated and is not inferred from the applied data repair.
+- Details, privacy boundaries and remaining human-send/release confirmation: `docs/changelogs/CHANGELOG_2026-11-02_LOGIN_INSTRUCTIONS_AUTH_COMPATIBILITY.md`.
+
 ## 11/02/2026 - Identity Verification Lifetime and Authority Errors
 
 - Bound shared verification checkpoints and retries to the originating client, authenticated user/provider session, page, access generation and request ID. Sign-out/account/navigation changes cancel stale prompts; same-session refreshes and genuine protected-action MFA remain supported.

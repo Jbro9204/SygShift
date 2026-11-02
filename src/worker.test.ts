@@ -770,6 +770,7 @@ describe('Cloudflare Worker boundary', () => {
         authEmail: 'employee@accounts.sygshift.invalid',
         contactEmail: 'employee@guardianshipsecurity.net',
         displayName: 'Example Employee',
+        requiresMfa: false,
         role: 'guard',
         employmentType: 'hourly',
         status: 'active',

@@ -22,6 +22,8 @@
 - Restoration is initiated only in Sygilant Security Center and creates new sessions after password recovery and MFA verification. Old passwords, sessions, remembered devices, and shared sessions never return.
 - Every phase has a durable central receipt and append-only evidence. A partial operation remains blocked and retryable; SygShift never reports central completion from a local-only cleanup.
 - The already-applied October 29 SygShift emergency database artifacts are retained as immutable historical evidence and compatibility state. Their legacy mutation entry points are retired during central-control-plane convergence; they are not a second supported authority.
+- Supabase Auth timestamps must remain provider-readable. Never write PostgreSQL `infinity` or `-infinity` into `auth.users.banned_until`: the Auth user-directory decoder cannot read those values. Normal blocking uses the canonical Security Center's finite Auth ban duration and independent account/access denial; it never requires a non-finite timestamp.
+- Repairing an existing non-finite ban is a separately reviewed operational compatibility repair, not an unblock. Require an exact affected-row fingerprint, an independently disabled account, a supported future ban, preservation of credentials and all other account fields, and append-only before/after evidence. Rehearse with a complete rollback first. Do not weaken the disabled state, clear the ban, or add permanent triggers/constraints to Supabase-managed Auth tables as an improvised workaround.
 
 ## Data handling
 

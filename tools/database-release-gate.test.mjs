@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { buildOwnershipManifest, readSourceTree } from './database-migration-ownership.mjs'
-import { requireDatabaseReleaseBaseline } from './database-release-gate.mjs'
+import { authBanCompatibilitySql, requireDatabaseReleaseBaseline } from './database-release-gate.mjs'
 import { executeProductionRelease, parseProductionReleaseArguments } from './release-production.mjs'
 import { retrySafetyCatalogSql } from './postgres-retry-safety.mjs'
 
@@ -33,7 +33,7 @@ function fixture(t, ledger = [{ version: '11', name: 'one', statements: ["select
   }
   const run = async (args, runOptions) => {
     calls.push({ args, runOptions })
-    return { stdout: args[0] === 'dlx' ? JSON.stringify({ rows: args.includes(retrySafetyCatalogSql) ? [] : ledger }) : 'docs/reviewed-v2.json\n', stderr: '' }
+    return { stdout: args[0] === 'dlx' ? JSON.stringify({ rows: args.includes(retrySafetyCatalogSql) ? [] : args.includes(authBanCompatibilitySql) ? [{ non_finite_ban_count: '0' }] : ledger }) : 'docs/reviewed-v2.json\n', stderr: '' }
   }
   return { options, calls, run, ledger, sourceFile, baselinePath }
 }
@@ -45,14 +45,83 @@ test('gate captures the fresh explicit production ledger and exposes only nonsec
   assert.equal(result.freshProductionLedger, true)
   assert.equal(result.claimsHistoryEquivalence, false)
   assert.equal(result.bulkMigrationPushAuthorized, false)
-  assert.equal(f.calls.length, 4)
+  assert.equal(f.calls.length, 5)
   assert.deepEqual(f.calls[0].args.slice(0, 4), ['exec', 'git', 'ls-files', '--error-unmatch'])
   assert.deepEqual(f.calls[1].args.slice(0, 6), ['exec', 'git', 'diff', '--quiet', 'HEAD', '--'])
   assert.deepEqual(f.calls[2].args, ['dlx', 'supabase@2.121.0', 'db', 'query', '--linked', '--project-ref', 'eqkdfrbwtioiqtjsyglg', 'select version,name,statements from supabase_migrations.schema_migrations order by version', '-o', 'json'])
   assert.equal(f.calls[2].runOptions.timeoutMs, 45_000)
   assert.equal(f.calls[2].runOptions.env.SYGSHIFT_RELEASE_CANARY_PASSWORD, undefined)
   assert.equal(result.retrySafetyVerified, true)
+  assert.equal(result.authBanTimestampsVerified, true)
+  assert.deepEqual(f.calls[4].args, ['dlx', 'supabase@2.121.0', 'db', 'query', '--linked', '--project-ref', 'eqkdfrbwtioiqtjsyglg', authBanCompatibilitySql, '-o', 'json'])
+  assert.equal(f.calls[4].runOptions.timeoutMs, 10_000)
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE_LEDGER_BODY|CANARY_SECRET/u)
+})
+
+test('Auth compatibility query is a count-only read that accepts finite and NULL ban states', async (t) => {
+  const f = fixture(t)
+  assert.equal(authBanCompatibilitySql, 'select pg_catalog.count(*)::text as non_finite_ban_count from auth.users where banned_until is not null and not pg_catalog.isfinite(banned_until)')
+  assert.doesNotMatch(authBanCompatibilitySql, /\b(?:insert|update|delete|alter|create|set|email|encrypted_password|raw_user_meta_data)\b/iu)
+  for (const banState of ['2126-11-02T12:00:00.000Z', '2026-01-01T12:00:00.000Z', null]) {
+    const run = (args, options) => args.includes(authBanCompatibilitySql)
+      ? Promise.resolve({ stdout: JSON.stringify({ rows: [{ non_finite_ban_count: banState === null || Number.isFinite(Date.parse(banState)) ? '0' : '1' }] }) })
+      : f.run(args, options)
+    const result = await requireDatabaseReleaseBaseline(f.options, { run })
+    assert.equal(result.authBanTimestampsVerified, true)
+  }
+})
+
+test('positive and negative infinite ban timestamps both refuse release without identity output', async (t) => {
+  const f = fixture(t)
+  for (const incompatibleState of ['infinity', '-infinity']) {
+    const run = (args, options) => args.includes(authBanCompatibilitySql)
+      ? Promise.resolve({ stdout: JSON.stringify({ rows: [{ non_finite_ban_count: incompatibleState.endsWith('infinity') ? '1' : '0' }] }) })
+      : f.run(args, options)
+    await assert.rejects(requireDatabaseReleaseBaseline(f.options, { run }), (error) => {
+      assert.match(error.message, /Auth compatibility gate refused.*non-finite account ban timestamps/u)
+      assert.doesNotMatch(error.message, /PRIVATE_LEDGER_BODY|CANARY_SECRET/u)
+      return true
+    })
+  }
+})
+
+test('Auth compatibility lookup failure and timeout fail closed without exposing CLI output', async (t) => {
+  const f = fixture(t)
+  for (const failure of ['query failure', 'timeout']) {
+    const run = async (args, options) => {
+      if (!args.includes(authBanCompatibilitySql)) return f.run(args, options)
+      assert.equal(options.timeoutMs, 10_000)
+      throw new Error(`${failure}: PRIVATE_LEDGER_BODY CANARY_SECRET`)
+    }
+    await assert.rejects(requireDatabaseReleaseBaseline(f.options, { run }), (error) => {
+      assert.match(error.message, /Auth compatibility gate could not verify/u)
+      assert.doesNotMatch(error.message, /PRIVATE_LEDGER_BODY|CANARY_SECRET/u)
+      return true
+    })
+  }
+})
+
+test('Auth compatibility lookup rejects malformed, missing, or untrusted count responses', async (t) => {
+  const f = fixture(t)
+  const invalidResults = [
+    'PRIVATE_LEDGER_BODY CANARY_SECRET',
+    '{}',
+    JSON.stringify({ rows: [] }),
+    JSON.stringify({ rows: [null] }),
+    JSON.stringify({ rows: [{ non_finite_ban_count: '0' }, { non_finite_ban_count: '0' }] }),
+    JSON.stringify({ rows: [{ non_finite_ban_count: 0 }] }),
+    JSON.stringify({ rows: [{ non_finite_ban_count: '-1' }] }),
+    JSON.stringify({ rows: [{ non_finite_ban_count: 'NaN' }] }),
+    JSON.stringify({ rows: [{ non_finite_ban_count: '0', identity: 'PRIVATE_LEDGER_BODY' }] }),
+  ]
+  for (const stdout of invalidResults) {
+    const run = (args, options) => args.includes(authBanCompatibilitySql) ? Promise.resolve({ stdout }) : f.run(args, options)
+    await assert.rejects(requireDatabaseReleaseBaseline(f.options, { run }), (error) => {
+      assert.match(error.message, /Auth compatibility gate could not verify/u)
+      assert.doesNotMatch(error.message, /PRIVATE_LEDGER_BODY|CANARY_SECRET/u)
+      return true
+    })
+  }
 })
 
 test('unsafe effective runtime definitions block release even with an unchanged migration ledger', async (t) => {

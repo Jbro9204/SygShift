@@ -24,7 +24,13 @@ describe('MFA-aware onboarding email guardrails', () => {
     expect(worker).toContain("subject: 'Your SygShift Login Is Ready'")
     expect(worker).toContain("subject: 'Your SygShift Login Is Ready — Authenticator Setup Required'")
     expect(worker).toContain('if (target.requiresMfa)')
-    expect(worker.match(/sendLoginInstructions\(environment, target, result\.password\)/g)?.length).toBe(3)
+    // Individual and bulk User Accounts paths now share one checked preparation
+    // helper; the separate HR onboarding path retains its own single send.
+    expect(worker.match(/sendLoginInstructions\(environment, target, result\.password\)/g)?.length).toBe(2)
+    expect(worker.match(/await prepareAndSendLoginInstructions\(environment, admin\.config, target,/g)?.length).toBe(2)
+    const helper = worker.slice(worker.indexOf('async function prepareAndSendLoginInstructions('), worker.indexOf('export function buildLoginInstructionsEmail('))
+    expect(helper.match(/await sendLoginInstructions\(/g)?.length).toBe(1)
+    expect(helper).toContain('validateAuthResponse: true')
   })
 
   it('explains authenticator setup without implying that codes arrive by email or SMS', () => {
