@@ -1413,6 +1413,10 @@ export async function getTimekeepingReview(input: {
       { code: error.code },
     )
   }
+  return normalizeTimekeepingReview(data)
+}
+
+function normalizeTimekeepingReview(data: unknown): TimekeepingReview {
   const review = parseTimekeepingReview(data)
 
   return {
@@ -1556,10 +1560,17 @@ export async function getOwnTimekeepingReview(input: {
   fromDate: string
   throughDate: string
 }): Promise<TimekeepingReview> {
-  const review = await getTimekeepingReview({
-    fromDate: input.fromDate,
-    throughDate: input.throughDate,
+  const { data, error } = await getSupabaseClient().rpc('get_timekeeping_review', {
+    target_from_date: input.fromDate,
+    target_through_date: input.throughDate,
   })
+  if (error) {
+    throw Object.assign(
+      new Error(error.message || 'Your time review could not be loaded.'),
+      { code: error.code },
+    )
+  }
+  const review = normalizeTimekeepingReview(data)
   const rows = review.rows.filter((row) => row.employeeId === input.employeeId)
   const pendingCorrections = review.pendingCorrections.filter((correction) => correction.employeeId === input.employeeId)
 

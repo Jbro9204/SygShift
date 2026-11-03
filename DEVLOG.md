@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 11/02/2026 - Employee Own-Time MFA Routing Repair
+
+- Traced the widespread Time & Attendance checkpoint to the employee-own-time accessor calling the MFA-only team/payroll v2 endpoint. Production direct-RPC failures and a read-only AAL1 guard probe reproduce the exact rejection; general health/readiness remain healthy.
+- Routed own-time reads to the existing authoritative self-authorized calculator, retaining the shared parser, payroll category normalization, employee filtering and summaries. Protected team/payroll v2 and its MFA requirement are unchanged; no server permission or assurance policy is weakened.
+- Added real data-accessor and actual Command Center/My Time/Identity Host regressions for factorless employees, historical dates/background refresh, own-row isolation, failure handling and unchanged protected team denial.
+- Preserved dates, effective punch calculations, DST/overnight instants, breaks, categories and weekly allocations. No database, account, identity, factor, role, permission, schedule, punch, payroll or report record is changed. Optional review-row training/classification annotations may be absent when the existing own-time payload omits v2-only enrichment; underlying hours/status and recent-punch training labels remain authoritative.
+- Release evidence, the existing release fallback, remaining human confirmation and this presentation limitation are tracked in `docs/changelogs/CHANGELOG_2026-11-02_TIME_SELF_SERVICE_MFA_REPAIR.md` and the operator closeout. Do not infer production deployment from this candidate entry.
+
 ## 11/02/2026 - Login Instructions and Auth Directory Compatibility
 
 - Verified that one provider-incompatible infinite Auth ban caused the shared Admin user lookup to fail before new login creation. Welcome delivery, the target record, and password policy were not the cause.
