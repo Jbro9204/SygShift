@@ -1,5 +1,11 @@
 # SygShift Development Log
 
+## 11/05/2026 - Shared Admin Preview Database Ownership Baseline
+
+- Added a separate 449-entry ownership manifest for the two approved Sygilant Admin-preview migrations, verified from the exact committed owning source and read-only production ledger after activation.
+- Preserved the previous 447-entry manifest, all prior ledger/source fingerprints, and historical reconciliation debt. No bulk replay, changed gate rule or new exception is authorized.
+- This is metadata only: no SygShift application, login, schedule, clock, payroll or Worker change. The governed source/clock/build/CI checks remain required; see `docs/changelogs/CHANGELOG_2026-11-05_ADMIN_PREVIEW_DATABASE_OWNERSHIP.md` and the final operator receipt.
+
 ## 11/05/2026 - Approved Time Off Cancellation Candidate
 
 - Added independent MFA-reviewed cancellation of future unused hourly/flex approved leave, with a separate append-only receipt and original approval/submission retained. Salary, used leave, HR-linked cases and locked payroll require explicit reconciliation rather than automatic changes.
