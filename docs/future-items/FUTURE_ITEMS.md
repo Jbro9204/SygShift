@@ -147,6 +147,14 @@ Completion criteria:
 
 ### Time-Off Payroll Policy and Approved-Request Changes
 
+11/05/2026 narrow authorization: an independent reviewer with `requests.manage`
+and MFA may cancel future unused hourly/flex approved leave when there is no HR
+case or locked-payroll overlap. The local candidate preserves original approval
+and append-only cancellation evidence. Salary cancellation, used leave, balance
+reversals, employee self-cancellation of approved leave and broader payroll
+policy remain held for explicit HR/Finance reconciliation. Production release
+status is tracked in `CHANGELOG_2026-11-05_APPROVED_TIME_OFF_CANCELLATION.md`.
+
 - Priority: **High**
 - Target window: Management-policy decision before changing payroll treatment or enabling approved-request cancellation
 - Status: Operational request/review/tracking workspace released 09/28/2026; policy-dependent payroll and post-approval change rules remain unapproved

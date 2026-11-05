@@ -65,6 +65,7 @@ function timeOffRequest(overrides: Record<string, unknown> = {}) {
 }
 
 let requestCenterAttempts = 0
+let approvedCancellation: { canceledAt: string; canceledByName: string; note: string } | null = null
 
 export async function getRequestCenter() {
   requestCenterAttempts += 1
@@ -84,7 +85,8 @@ export async function getRequestCenter() {
       requested_minutes: 480,
       return_on: '2099-11-03',
       reason: 'Family appointment.',
-      status: 'approved',
+      status: approvedCancellation ? 'canceled' : 'approved',
+      cancellation: approvedCancellation,
       decision_note: 'Coverage is confirmed.',
       decided_at: '2026-09-29T16:00:00.000Z',
       decided_by_name: 'Taylor Supervisor',
@@ -176,6 +178,10 @@ export async function getTimeOffReviewContext(requestId: string) {
 export async function submitTimeOffRequestV2() { return '60000000-0000-4000-8000-000000000001' }
 export async function decideTimeOffRequestV2() {}
 export async function withdrawTimeOff() {}
+export async function cancelApprovedTimeOff(requestId: string, note: string) {
+  if (requestId !== approvedRequestId || params.get('viewer') !== 'manager' || !note.trim()) throw new Error('Cancellation could not be confirmed.')
+  approvedCancellation = { canceledAt: '2026-11-05T18:00:00Z', canceledByName: 'Morgan Manager', note: note.trim() }
+}
 export async function decideShiftRequest() {}
 export async function reportCallOff() { return '70000000-0000-4000-8000-000000000001' }
 export async function getCallOffCoverageWorkspace() { throw new Error('No call-off is selected in this fixture.') }

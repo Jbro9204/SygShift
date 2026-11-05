@@ -27,6 +27,7 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import { TimeOffRequestModal, TimeOffReviewDialog } from '../components/TimeOffRequestModal'
 import {
+  cancelApprovedTimeOff,
   decideShiftRequest,
   employeeName,
   getCallOffCoverageWorkspace,
@@ -51,6 +52,7 @@ import { buildCoverageCandidateDirectory } from './coverageCandidates'
 
 type RequestAction =
   | { kind: 'withdraw-time-off'; requestId: string }
+  | { kind: 'cancel-time-off'; requestId: string; note: string }
   | { kind: 'report-call-off'; shiftId: string; reason: string }
   | { kind: 'decide-shift'; requestId: string; decision: 'approved' | 'declined'; note: string | null }
 
@@ -60,6 +62,7 @@ function useRequestAction() {
     mutationFn: async (action: RequestAction) => {
       switch (action.kind) {
         case 'withdraw-time-off': return withdrawTimeOff(action.requestId)
+        case 'cancel-time-off': return cancelApprovedTimeOff(action.requestId, action.note)
         case 'report-call-off': return reportCallOff(action.shiftId, action.reason)
         case 'decide-shift': return decideShiftRequest(action.requestId, action.decision, action.note)
       }
@@ -80,16 +83,20 @@ function useRequestAction() {
 
       return { previous }
     },
-    onError: (_error, _action, context) => {
+    onError: async (_error, action, context) => {
       if (context?.previous) {
         queryClient.setQueryData(['request-center'], context.previous)
       }
+      if (action.kind === 'cancel-time-off') await queryClient.invalidateQueries({ queryKey: ['request-center'] })
     },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['request-center'] }),
         queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
         queryClient.invalidateQueries({ queryKey: ['weekly-schedule'] }),
+        queryClient.invalidateQueries({ queryKey: ['personal-schedule-range'] }),
+        queryClient.invalidateQueries({ queryKey: ['availability-workspace'] }),
+        queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions'] }),
       ])
     },
   })
@@ -323,6 +330,7 @@ function TimeOffRequestCard({
   mutationPending,
   onReview,
   onWithdraw,
+  onCancel,
   ownRequest,
   request,
 }: {
@@ -331,6 +339,7 @@ function TimeOffRequestCard({
   mutationPending: boolean
   onReview?: (requestId: string) => void
   onWithdraw?: (requestId: string) => void
+  onCancel?: (requestId: string) => void
   ownRequest: boolean
   request: TimeOffRequest
 }) {
@@ -366,12 +375,20 @@ function TimeOffRequestCard({
         <div><span>Reason</span><p>{request.reason || 'No reason was provided.'}</p></div>
         {request.decision_note ? <div><span>Decision note</span><p>{request.decision_note}</p></div> : null}
         {request.decided_at ? <div><span>Decision recorded</span><p>{formatSubmittedDate(request.decided_at)}{request.decided_by_name ? ` by ${request.decided_by_name}` : ''}</p></div> : null}
+        {request.cancellation ? <div><span>Cancellation</span><p>{request.cancellation.note}</p><small>{formatSubmittedDate(request.cancellation.canceledAt)} by {request.cancellation.canceledByName}. The original approval above is retained.</small></div> : null}
       </div>
       {request.status === 'pending' ? (
         <footer className="time-off-record__actions">
           {manager && ownRequest ? <span className="time-off-record__self-note">Your request is waiting for a different authorized reviewer.</span> : null}
           {manager && !ownRequest && onReview ? <button className="primary-action" onClick={() => onReview(request.id)} type="button">Review request</button> : null}
           {ownRequest && onWithdraw ? <button className="secondary-button" disabled={mutationPending} onClick={() => onWithdraw(request.id)} type="button">Withdraw request</button> : null}
+        </footer>
+      ) : null}
+      {request.status === 'approved' && manager && !ownRequest ? (
+        <footer className="time-off-record__actions">
+          {request.employment_type_snapshot === 'salary'
+            ? <p className="form-note">Salary time off requires HR or Payroll reconciliation before cancellation because it can affect salary-default hours.</p>
+            : onCancel ? <button className="secondary-button" disabled={mutationPending} onClick={() => onCancel(request.id)} type="button">Cancel approved time off</button> : null}
         </footer>
       ) : null}
     </article>
@@ -387,6 +404,7 @@ function TimeOffWorkspace({
   onNewRequest,
   onReview,
   onWithdraw,
+  onCancel,
   requests,
   viewerEmployeeId,
   viewerTimeZone,
@@ -399,6 +417,7 @@ function TimeOffWorkspace({
   onNewRequest: () => void
   onReview: (requestId: string) => void
   onWithdraw: (requestId: string) => void
+  onCancel: (requestId: string) => void
   requests: TimeOffRequest[]
   viewerEmployeeId: string
   viewerTimeZone: string
@@ -436,6 +455,7 @@ function TimeOffWorkspace({
       mutationPending={mutation.isPending}
       onReview={onReview}
       onWithdraw={onWithdraw}
+      onCancel={onCancel}
       ownRequest={request.employee_id === viewerEmployeeId}
       request={request}
     />
@@ -531,6 +551,37 @@ function WithdrawTimeOffDialog({
           {mutation.isPending ? 'Withdrawing…' : 'Withdraw request'}
         </button>
       </div>
+    </ModalDialog>
+  )
+}
+
+function CancelTimeOffDialog({ mutation, onClose, onCanceled, request }: {
+  mutation: ReturnType<typeof useRequestAction>
+  onClose: () => void
+  onCanceled: () => void
+  request: TimeOffRequest
+}) {
+  const [note, setNote] = useState('')
+  const stillApproved = request.status === 'approved'
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!stillApproved || !note.trim() || mutation.isPending) return
+    mutation.mutate({ kind: 'cancel-time-off', requestId: request.id, note: note.trim() }, { onSuccess: onCanceled })
+  }
+  return (
+    <ModalDialog busy={mutation.isPending} busyLabel="Canceling approved time off..." onClose={onClose}
+      title="Cancel approved time off?" description="Only future, unused hourly or flex time off can be canceled here. Original approval and request history are preserved.">
+      <form className="time-off-review-form" onSubmit={submit}>
+        <div className="time-off-withdraw-summary"><strong>{employeeName(request.employee)}</strong><span>{formatRequestDateRange(request)}</span></div>
+        <p className="form-note">Cancel only when the employee no longer needs this leave. This removes the time-off scheduling restriction; it does not assign a shift, change published schedules, or change hours, pay, or leave balances. HR-linked leave and locked payroll require separate reconciliation.</p>
+        <label className="field-stack"><span>Cancellation reason</span><textarea disabled={mutation.isPending} maxLength={2000} onChange={(event) => setNote(event.target.value)} required rows={3} value={note} /></label>
+        {!stillApproved ? <div className="inline-alert" role="status">{request.status === 'canceled' ? 'The refreshed record is already canceled. Review its cancellation history; no further cancellation is needed.' : 'The refreshed request is no longer approved. Close this dialog and review its current status.'}</div> : null}
+        {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+        <div className="modal-actions">
+          <button className="secondary-button" disabled={mutation.isPending} onClick={onClose} type="button">{stillApproved ? 'Keep approved time off' : 'Close'}</button>
+          <button className="primary-action danger-primary" disabled={mutation.isPending || !stillApproved || !note.trim()} type="submit">{mutation.isPending ? 'Canceling…' : 'Confirm cancellation'}</button>
+        </div>
+      </form>
     </ModalDialog>
   )
 }
@@ -895,6 +946,7 @@ export function RequestsPage() {
   const [timeOffOpen, setTimeOffOpen] = useState(false)
   const [timeOffReviewId, setTimeOffReviewId] = useState<string | null>(null)
   const [withdrawRequestId, setWithdrawRequestId] = useState<string | null>(null)
+  const [cancelRequestId, setCancelRequestId] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState<Pick<CallOffReport, 'id'> | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const requestQuery = useQuery({
@@ -918,6 +970,9 @@ export function RequestsPage() {
       : 'time-off'
   const withdrawRequest = withdrawRequestId
     ? requestQuery.data?.timeOff.find((request) => request.id === withdrawRequestId) ?? null
+    : null
+  const cancelRequest = cancelRequestId
+    ? requestQuery.data?.timeOff.find((request) => request.id === cancelRequestId) ?? null
     : null
   const viewerTimeZone = isContinentalUsTimeZone(requestQuery.data?.employeeTimeZone)
     ? requestQuery.data.employeeTimeZone
@@ -1017,6 +1072,22 @@ export function RequestsPage() {
     setWithdrawRequestId(null)
   }
 
+  function openCancelRequest(requestId: string) {
+    mutation.reset()
+    setCancelRequestId(requestId)
+  }
+
+  function closeCancelRequest() {
+    if (mutation.isPending) return
+    mutation.reset()
+    setCancelRequestId(null)
+  }
+
+  function finishCancelRequest() {
+    setActionMessage('Approved time off was canceled and its history was retained. The employee can be considered for scheduling again; no shift was assigned automatically.')
+    setCancelRequestId(null)
+  }
+
   function closeCoverageWorkflow() {
     setAnnouncement(null)
     if (!linkedCallOffId) return
@@ -1088,6 +1159,7 @@ export function RequestsPage() {
               onNewRequest={openTimeOffRequest}
               onReview={openTimeOffReview}
               onWithdraw={openWithdrawRequest}
+              onCancel={openCancelRequest}
               requests={requestQuery.data.timeOff}
               viewerEmployeeId={requestQuery.data.employeeId}
               viewerTimeZone={viewerTimeZone}
@@ -1143,6 +1215,7 @@ export function RequestsPage() {
           request={withdrawRequest}
         />
       ) : null}
+      {cancelRequest ? <CancelTimeOffDialog mutation={mutation} onClose={closeCancelRequest} onCanceled={finishCancelRequest} request={cancelRequest} /> : null}
       {announcement ? <CoverageWorkflowDialog onClose={closeCoverageWorkflow} onSaved={setActionMessage} report={announcement} /> : null}
     </div>
   )

@@ -30,6 +30,12 @@ const employeeSchema = z.object({
   preferred_name: z.string().nullable(),
 })
 
+const timeOffCancellationSchema = z.object({
+  canceledAt: z.string(),
+  canceledByName: z.string(),
+  note: z.string(),
+})
+
 const requestShiftSchema = z.object({
   id: z.string().uuid(),
   starts_at: z.string(),
@@ -70,6 +76,7 @@ const timeOffSchema = z.object({
   decided_at: z.string().nullable().optional().default(null),
   decided_by_name: z.string().nullable().optional().default(null),
   updated_at: z.string().nullable().optional().default(null),
+  cancellation: timeOffCancellationSchema.nullable().optional(),
   created_at: z.string(),
   employee: employeeSchema,
 })
@@ -294,6 +301,7 @@ export const requestCenterPayloadSchema = z.object({
     decidedAt: z.string().nullable().optional().default(null),
     decidedByName: z.string().nullable().optional().default(null),
     updatedAt: z.string().nullable().optional().default(null),
+    cancellation: timeOffCancellationSchema.nullable().optional(),
     createdAt: z.string(),
   })),
   shiftRequests: z.array(z.object({
@@ -352,7 +360,7 @@ function shiftFromPayload(shift: z.infer<typeof rpcShiftSchema>): RequestShift {
 }
 
 export async function getRequestCenter(): Promise<RequestCenter> {
-  const { data, error } = await getSupabaseClient().rpc('get_request_center_payload')
+  const { data, error } = await getSupabaseClient().rpc('get_request_center_payload_v2')
 
   if (error) {
     throw new Error(error.message || 'The request center could not be loaded for this account.')
@@ -381,6 +389,7 @@ export async function getRequestCenter(): Promise<RequestCenter> {
       decided_at: request.decidedAt,
       decided_by_name: request.decidedByName,
       updated_at: request.updatedAt,
+      cancellation: request.cancellation ?? null,
       created_at: request.createdAt,
       employee: employeeFromPayload(request.employeeId, request.employeeName),
     })),
@@ -567,6 +576,29 @@ export async function withdrawTimeOff(requestId: string): Promise<void> {
     target_request_id: requestId,
   })
   if (error) throw new Error('The time-off request could not be withdrawn in its current state.')
+}
+
+const safeTimeOffCancellationMessages = new Set([
+  'Only an approved request can be canceled. Refresh its status.',
+  'Enter a cancellation reason of 1 to 2,000 characters.',
+  'Salary time off requires Payroll reconciliation before cancellation because it can affect salary-default hours. Contact HR or Payroll; no hours or pay have changed.',
+  'HR must review this employment classification before cancellation.',
+  'This time off has already started. HR must reconcile any used leave before it can be changed.',
+  'This request is linked to an HR leave case. HR must reconcile the case and any authorized treatment before cancellation.',
+  'A locked payroll export covers this employee and date range. Payroll must reconcile it before cancellation.',
+])
+
+export async function cancelApprovedTimeOff(requestId: string, note: string): Promise<void> {
+  const { data, error } = await getSupabaseClient().rpc('cancel_approved_time_off_request', {
+    target_request_id: requestId,
+    target_note: note.trim(),
+  })
+  if (error) {
+    if (error.code === '42501') throw new Error('Another authorized time-off reviewer with MFA must perform this cancellation.')
+    if (error.code === '23514' && safeTimeOffCancellationMessages.has(error.message)) throw new Error(error.message)
+    throw new Error('Cancellation could not be confirmed. Refresh the request status before trying again.')
+  }
+  if (data !== true) throw new Error('Cancellation could not be confirmed. Refresh the request status before trying again.')
 }
 
 export async function reportCallOff(shiftId: string, reason: string): Promise<string> {

@@ -68,6 +68,23 @@ async function expectContainedDialog(page: Page, dialog: Locator) {
 }
 
 for (const viewport of viewports) {
+  test(`manager cancellation retains approval and fits ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await openFixture(page, { viewer: 'manager' })
+    const request = page.locator('.time-off-record').filter({ hasText: 'Family appointment.' })
+    await request.getByRole('button', { name: 'Cancel approved time off' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Cancel approved time off?' })
+    await expectContainedDialog(page, dialog)
+    await expect(dialog.getByRole('button', { name: 'Confirm cancellation' })).toBeDisabled()
+    await dialog.getByRole('textbox', { name: 'Cancellation reason' }).fill('Employee no longer needs this leave.')
+    await dialog.getByRole('button', { name: 'Confirm cancellation' }).click()
+    await expect(dialog).not.toBeVisible()
+    await expect(request.getByText('Canceled', { exact: true })).toBeVisible()
+    await expect(request.getByText('Coverage is confirmed.')).toBeVisible()
+    await expect(request.getByText('Employee no longer needs this leave.')).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+  })
+
   test(`employee upcoming, history, and withdrawal stay usable at ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
     await openFixture(page)

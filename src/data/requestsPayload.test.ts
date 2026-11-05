@@ -6,7 +6,7 @@ vi.mock('../lib/supabase', () => ({
   getSupabaseClient: () => ({ rpc: supabaseMocks.rpc }),
 }))
 
-import { getRequestCenter, getTimeOffRequestContext } from './requests'
+import { cancelApprovedTimeOff, getRequestCenter, getTimeOffRequestContext } from './requests'
 
 describe('request-center payload mapping', () => {
   beforeEach(() => {
@@ -65,7 +65,7 @@ describe('request-center payload mapping', () => {
   it('maps every rich time-off and bounded-history field into the page record model', async () => {
     const result = await getRequestCenter()
 
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('get_request_center_payload')
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('get_request_center_payload_v2')
     expect(result.employeeTimeZone).toBe('America/New_York')
     expect(result.timeOffHistory).toEqual({ managerHistoryLimit: 100, truncated: true })
     expect(result.timeOff[0]).toMatchObject({
@@ -115,5 +115,35 @@ describe('request-center payload mapping', () => {
     })
     expect(current.requestedMinutes).toBe(180)
     expect(legacy.requestedMinutes).toBeNull()
+  })
+
+  it('keeps cancellation evidence separate from the original approval', async () => {
+    const original = await supabaseMocks.rpc()
+    const request = original.data.timeOff[0]
+    request.status = 'canceled'
+    request.cancellation = { canceledAt: '2026-10-01T15:00:00Z', canceledByName: 'Morgan Manager', note: 'Employee no longer needs leave.' }
+    supabaseMocks.rpc.mockResolvedValueOnce(original)
+    const result = await getRequestCenter()
+    expect(result.timeOff[0]).toMatchObject({ status: 'canceled', decision_note: 'Coverage is confirmed.', cancellation: request.cancellation })
+  })
+
+  it('uses the narrow cancellation RPC and requires an explicit success receipt', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: true, error: null })
+    await cancelApprovedTimeOff('20000000-0000-4000-8000-000000000001', '  Employee changed plans.  ')
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('cancel_approved_time_off_request', {
+      target_request_id: '20000000-0000-4000-8000-000000000001', target_note: 'Employee changed plans.',
+    })
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: null, error: null })
+    await expect(cancelApprovedTimeOff('20000000-0000-4000-8000-000000000001', 'Employee changed plans.')).rejects.toThrow('Cancellation could not be confirmed.')
+  })
+
+  it('preserves actionable reconciliation errors without exposing arbitrary database text', async () => {
+    const message = 'This request is linked to an HR leave case. HR must reconcile the case and any authorized treatment before cancellation.'
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: null, error: { code: '23514', message } })
+    await expect(cancelApprovedTimeOff('20000000-0000-4000-8000-000000000001', 'Changed plans.')).rejects.toThrow(message)
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: null, error: { code: '23514', message: 'private.payroll_secret SQL failed' } })
+    await expect(cancelApprovedTimeOff('20000000-0000-4000-8000-000000000001', 'Changed plans.')).rejects.toThrow('Cancellation could not be confirmed.')
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'private permission internals' } })
+    await expect(cancelApprovedTimeOff('20000000-0000-4000-8000-000000000001', 'Changed plans.')).rejects.toThrow('Another authorized time-off reviewer with MFA')
   })
 })

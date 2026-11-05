@@ -14,7 +14,7 @@ export function getSupabaseClient(){
   const base=clockClient()
   const resolveRpc=async(name:string,input?:Record<string,unknown>)=>{
     if(name==='get_payroll_period_context')return{error:null,data:{serverTimestamp,fromDate:'2026-09-06',throughDate:'2026-09-19',timeZone:'America/Denver',weekStartsOn:0,weekStartsOnLabel:'Sunday',payFrequency:'biweekly',payrollConfigurationVersion:2,availablePeriods:[{offset:0,fromDate:'2026-09-06',throughDate:'2026-09-19'}]}}
-    if(name==='get_request_center_payload')return{error:null,data:{employeeId,employeeTimeZone:'America/New_York',role:'guard',permissions:{canManage:false},timeOff:[],shiftRequests:[],callOffs:[],upcomingAssignments:[{id:shiftId,status:'assigned',shift:{id:shiftId,startsAt:'2026-09-07T20:00:00Z',endsAt:'2026-09-08T00:00:00Z',timeZone:'America/Denver',title:'Front desk',location:'Test site'}}]}}
+    if(name==='get_request_center_payload'||name==='get_request_center_payload_v2')return{error:null,data:{employeeId,employeeTimeZone:'America/New_York',role:'guard',permissions:{canManage:false},timeOff:[],shiftRequests:[],callOffs:[],upcomingAssignments:[{id:shiftId,status:'assigned',shift:{id:shiftId,startsAt:'2026-09-07T20:00:00Z',endsAt:'2026-09-08T00:00:00Z',timeZone:'America/Denver',title:'Front desk',location:'Test site'}}]}}
     if(name==='get_maintenance_status')return{error:null,data:{serverTime:serverTimestamp,active:[fullMaintenance],upcoming:[],recentlyCompleted:[]}}
     if(name==='get_time_work_type_map'||name==='get_time_payroll_category_map')return{error:null,data:[]}
     if(/^(update_|apply_|resolve_|service_)/u.test(name))return{data:null,error:{code:'42501',message:'Full database maintenance is temporarily read-only for manager/time-attendance changes.'}}

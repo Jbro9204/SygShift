@@ -1,5 +1,11 @@
 # SygShift Development Log
 
+## 11/05/2026 - Approved Time Off Cancellation Candidate
+
+- Added independent MFA-reviewed cancellation of future unused hourly/flex approved leave, with a separate append-only receipt and original approval/submission retained. Salary, used leave, HR-linked cases and locked payroll require explicit reconciliation rather than automatic changes.
+- Preserved the existing pending self-withdrawal, assignment guard, effective permissions, payroll, punches and published schedules. Cancellation refreshes schedule/availability data but never assigns a shift or resets selected weeks.
+- Focused data/component 32/32, native PostgreSQL 35-check lifecycle/concurrency regression, and 8/8 mobile actual-component browser checks passed. The cancellation-only clone passed the complete release verification (404 files / 2,519 tests plus one intentional skip, governance, 42/42 Time Clock browser checks, fresh production builds and no known production dependency vulnerabilities). Exact-commit push/hosted verification and production activation remain pending. See `docs/changelogs/CHANGELOG_2026-11-05_APPROVED_TIME_OFF_CANCELLATION.md`.
+
 ## 11/02/2026 - Employee Own-Time MFA Routing Repair
 
 - Traced the widespread Time & Attendance checkpoint to the employee-own-time accessor calling the MFA-only team/payroll v2 endpoint. Production direct-RPC failures and a read-only AAL1 guard probe reproduce the exact rejection; general health/readiness remain healthy.

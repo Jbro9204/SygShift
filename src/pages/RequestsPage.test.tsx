@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RequestsPage } from './RequestsPage'
 
 const dataMocks = vi.hoisted(() => ({
+  cancelApprovedTimeOff: vi.fn(),
   getCallOffCoverageWorkspace: vi.fn(),
   getRequestCenter: vi.fn(),
   getTimeOffRequestContext: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('../data/requests', async (loadOriginal) => {
   const original = await loadOriginal<typeof import('../data/requests')>()
   return {
     ...original,
+    cancelApprovedTimeOff: dataMocks.cancelApprovedTimeOff,
     getCallOffCoverageWorkspace: dataMocks.getCallOffCoverageWorkspace,
     getRequestCenter: dataMocks.getRequestCenter,
     getTimeOffRequestContext: dataMocks.getTimeOffRequestContext,
@@ -155,8 +157,7 @@ function coverageWorkspace() {
   }
 }
 
-function renderPage(initialEntry = '/time-off?tab=call-offs') {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+function renderPage(initialEntry = '/time-off?tab=call-offs', queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) {
   return render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[initialEntry]}><RequestsPage /></MemoryRouter></QueryClientProvider>)
 }
 
@@ -190,6 +191,7 @@ describe('Requests absence coverage workflow', () => {
       idempotentReplay: false,
     })
     dataMocks.withdrawTimeOff.mockResolvedValue(undefined)
+    dataMocks.cancelApprovedTimeOff.mockReset().mockResolvedValue(undefined)
   })
 
   it('keeps manager time-off work in a dedicated review and decision-history view', async () => {
@@ -257,6 +259,85 @@ describe('Requests absence coverage workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Review Time-Off Request' })).toBeVisible()
     expect(await screen.findByText('Alex Guard')).toBeVisible()
     expect(screen.getByText('Return 10/15/2026')).toBeVisible()
+  })
+
+  it('confirms a reason before canceling approved leave and refreshes scheduling availability without assigning a shift', async () => {
+    const approved = timeOffRequest({ status: 'approved', starts_on: '2099-10-12', ends_on: '2099-10-14', decision_note: 'Original coverage approval.' })
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [approved] })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+    const user = userEvent.setup()
+    renderPage('/time-off', client)
+    await user.click(await screen.findByRole('button', { name: 'Cancel approved time off' }))
+    const dialog = screen.getByRole('dialog', { name: 'Cancel approved time off?' })
+    const confirm = within(dialog).getByRole('button', { name: 'Confirm cancellation' })
+    expect(confirm).toBeDisabled()
+    expect(within(dialog).getByText(/does not assign a shift, change published schedules/)).toBeVisible()
+    await user.type(within(dialog).getByRole('textbox', { name: 'Cancellation reason' }), 'Employee no longer needs the leave.')
+    const cancellation = { canceledAt: '2026-11-05T18:00:00Z', canceledByName: 'Morgan Manager', note: 'Employee no longer needs the leave.' }
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [{ ...approved, status: 'canceled', cancellation }] })
+    await user.click(confirm)
+    await waitFor(() => expect(dataMocks.cancelApprovedTimeOff).toHaveBeenCalledExactlyOnceWith(timeOffRequestId, cancellation.note))
+    expect(await screen.findByText(/The employee can be considered for scheduling again/)).toBeVisible()
+    expect(screen.getByText('Original coverage approval.')).toBeVisible()
+    expect(screen.getByText(cancellation.note)).toBeVisible()
+    expect(screen.queryByRole('dialog', { name: 'Cancel approved time off?' })).not.toBeInTheDocument()
+    for (const key of ['request-center', 'weekly-schedule', 'personal-schedule-range', 'availability-workspace', 'schedule-staffing-suggestions']) {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: [key] })
+    }
+  })
+
+  it.each([false, true])('never offers approved self-cancellation when manager is %s', async (canManage) => {
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), employeeId: absentEmployeeId, permissions: { canManage }, callOffs: [], timeOff: [timeOffRequest({ status: 'approved' })] })
+    renderPage('/time-off')
+    expect(await screen.findByText('Medical appointment and recovery time.')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Cancel approved time off' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Withdraw request' })).not.toBeInTheDocument()
+  })
+
+  it('holds salary cancellation for Payroll reconciliation with a clear explanation', async () => {
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [timeOffRequest({ status: 'approved', employment_type_snapshot: 'salary' })] })
+    renderPage('/time-off')
+    expect(await screen.findByText(/Salary time off requires HR or Payroll reconciliation/)).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Cancel approved time off' })).not.toBeInTheDocument()
+  })
+
+  it('retains the cancellation reason on failure and disables duplicate submissions while saving', async () => {
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [timeOffRequest({ status: 'approved' })] })
+    let fail: (reason: Error) => void = () => undefined
+    dataMocks.cancelApprovedTimeOff.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { fail = reject }))
+    const user = userEvent.setup()
+    renderPage('/time-off')
+    await user.click(await screen.findByRole('button', { name: 'Cancel approved time off' }))
+    const dialog = screen.getByRole('dialog', { name: 'Cancel approved time off?' })
+    const reason = within(dialog).getByRole('textbox', { name: 'Cancellation reason' })
+    await user.type(reason, 'Employee changed plans.')
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }))
+    expect(within(dialog).getByRole('button', { name: 'Canceling…' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: 'Keep approved time off' })).toBeDisabled()
+    fail(new Error('Cancellation could not be confirmed. Refresh the request status before trying again.'))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cancellation could not be confirmed.')
+    expect(reason).toHaveValue('Employee changed plans.')
+    expect(dataMocks.cancelApprovedTimeOff).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not resubmit when a failed response is followed by a refreshed already-canceled record', async () => {
+    const approved = timeOffRequest({ status: 'approved' })
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [approved] })
+    dataMocks.cancelApprovedTimeOff.mockRejectedValueOnce(new Error('Cancellation could not be confirmed. Refresh the request status before trying again.'))
+    const user = userEvent.setup()
+    renderPage('/time-off')
+    await user.click(await screen.findByRole('button', { name: 'Cancel approved time off' }))
+    const dialog = screen.getByRole('dialog', { name: 'Cancel approved time off?' })
+    await user.type(within(dialog).getByRole('textbox', { name: 'Cancellation reason' }), 'Employee changed plans.')
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [{ ...approved, status: 'canceled', cancellation: { canceledAt: '2026-11-05T18:00:00Z', canceledByName: 'Morgan Manager', note: 'Employee changed plans.' } }] })
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }))
+    expect(await within(dialog).findByText(/The refreshed record is already canceled/)).toBeVisible()
+    expect(within(dialog).getByRole('button', { name: 'Confirm cancellation' })).toBeDisabled()
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }))
+    expect(dataMocks.cancelApprovedTimeOff).toHaveBeenCalledTimes(1)
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog', { name: 'Cancel approved time off?' })).not.toBeInTheDocument()
   })
 
   it('highlights a completed manager deep link without opening a stale decision form', async () => {
