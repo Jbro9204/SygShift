@@ -1,7 +1,7 @@
 # Approved Time Off Cancellation
 
 Date: 11/05/2026
-Status: Isolated local verification complete; migration activation and production release pending
+Status: Database activation verified; exact-commit application release pending
 
 ## Problem and cause
 
@@ -88,6 +88,33 @@ No salary, accrued balance, used leave, HR leave treatment, payroll export,
 permission, account, punch or published schedule has been changed. The existing
 100-record bounded management history remains unchanged.
 
-Migration activation, clean commit, exact GitHub quality results, Cloudflare
-deployment, live health/readiness, signed-in confirmation, and the matching
-Desktop changelog copy remain pending and must be recorded before closeout.
+## Reviewed database activation
+
+On 11/05/2026 at approximately 20:09 UTC, the exact migration was activated
+atomically with its ordered 17-statement ledger entry after a successful
+production rollback-only rehearsal and independent readback. The ledger moved
+from 446 to 447; every prior row remained exact. No operational record was
+written. All 1,405 prior full function/ACL contracts, 556 existing triggers and
+six protected relation contracts remained unchanged. Both new RPCs have the
+reviewed authenticated-only grants; the new evidence relation is empty,
+forced-RLS and deny-by-default.
+
+The separate reviewed baseline
+`docs/reliability/migration-ownership-2026-11-05-time-off-v2.json` records the
+447-version stage. All 442 entries and 574 owning sources in the prior November
+2 baseline remain unchanged. The five additions are exactly the four separately
+reviewed Sygilant migrations and this SygShift migration; every new applied
+statement array matches its owning source. Existing reconciliation debt remains
+unchanged; this baseline does not authorize bulk migration replay.
+
+The isolated activation-wrapper suite passed 467 assertions, including explicit
+refusal/rollback for ledger, permission and operational-write faults. Database
+rollback means aborting the activation transaction before commit. After a
+successful commit, application rollback uses the exact previous Worker version;
+the additive database objects and append-only evidence are retained, not removed
+or rewritten.
+
+Application source was committed separately as `88d540a`. The final clean-main
+hook, exact GitHub quality results, Cloudflare deployment, live health/readiness,
+signed-in confirmation and matching Desktop changelog copy remain pending and
+must be recorded before closeout. No real request is canceled merely to test.
