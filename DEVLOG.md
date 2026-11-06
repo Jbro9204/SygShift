@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 11/06/2026 - Routine Reinstatement Database Ownership Baseline
+
+- Added a separate 450-entry ownership manifest for the approved Sygilant routine-reinstatement migration, verified against its exact committed source and a read-only production ledger capture after activation.
+- Preserved the previous 449-entry and 447-entry manifests, all previous ledger/source fingerprints, and existing historical reconciliation debt. No replay, changed gate rule, or new exception is authorized.
+- Clarified the existing central Security Center documentation: routine reinstatement preserves valid credentials and current reviewed access; explicit security recovery remains a distinct credential-replacement process. Neither restores revoked sessions or removed permissions.
+- This is metadata and documentation only: no SygShift application, login, schedule, clock, payroll, or Worker deployment. The governed source/clock/build/CI checks remain required; see `docs/changelogs/CHANGELOG_2026-11-06_ROUTINE_REINSTATEMENT_DATABASE_OWNERSHIP.md` and the final operator receipt.
+
 ## 11/05/2026 - Shared Admin Preview Database Ownership Baseline
 
 - Added a separate 449-entry ownership manifest for the two approved Sygilant Admin-preview migrations, verified from the exact committed owning source and read-only production ledger after activation.
