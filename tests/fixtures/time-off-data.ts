@@ -8,6 +8,7 @@ const pendingRequestId = '30000000-0000-4000-8000-000000000001'
 const selfRequestId = '30000000-0000-4000-8000-000000000002'
 const approvedRequestId = '30000000-0000-4000-8000-000000000003'
 const withdrawnRequestId = '30000000-0000-4000-8000-000000000004'
+const activeRequestId = '30000000-0000-4000-8000-000000000005'
 const affectedShift = {
   shiftId: '40000000-0000-4000-8000-000000000001',
   assignmentId: '50000000-0000-4000-8000-000000000001',
@@ -66,6 +67,8 @@ function timeOffRequest(overrides: Record<string, unknown> = {}) {
 
 let requestCenterAttempts = 0
 let approvedCancellation: { canceledAt: string; canceledByName: string; note: string } | null = null
+let earlyReturn: { endedAt: string; recordedAt: string; endedByName: string; note: string; timeZone: string } | null = null
+let endLeaveAttempts = 0
 
 export async function getRequestCenter() {
   requestCenterAttempts += 1
@@ -87,6 +90,7 @@ export async function getRequestCenter() {
       reason: 'Family appointment.',
       status: approvedCancellation ? 'canceled' : 'approved',
       cancellation: approvedCancellation,
+      cancellationContext: { phase: 'future', canCancel: !approvedCancellation, canEndNow: false, blockReason: null, startsAt: '2099-11-02T07:00:00Z', endsAt: '2099-11-03T07:00:00Z', timeZone: 'America/Denver' },
       decision_note: 'Coverage is confirmed.',
       decided_at: '2026-09-29T16:00:00.000Z',
       decided_by_name: 'Taylor Supervisor',
@@ -107,6 +111,17 @@ export async function getRequestCenter() {
       created_at: '2025-02-10T17:00:00.000Z',
     }),
   ]
+  if (params.get('scenario')?.startsWith('early-return')) {
+    sharedRequests.push(timeOffRequest({
+      id: activeRequestId, starts_on: '2026-11-06', ends_on: '2026-11-08', return_on: '2026-11-09',
+      request_type: 'unpaid_time_off', pay_treatment: 'unpaid', status: 'approved',
+      reason: 'Unused leave remainder.', decision_note: 'Original approved leave.', earlyReturn,
+      cancellationContext: {
+        phase: earlyReturn ? 'ended_early' : 'in_progress', canCancel: false, canEndNow: !earlyReturn,
+        blockReason: null, startsAt: '2026-11-06T07:00:00Z', endsAt: '2026-11-09T07:00:00Z', timeZone: 'America/Denver',
+      },
+    }))
+  }
   const managerOnlyRequests = [
     timeOffRequest({
       id: selfRequestId,
@@ -181,6 +196,12 @@ export async function withdrawTimeOff() {}
 export async function cancelApprovedTimeOff(requestId: string, note: string) {
   if (requestId !== approvedRequestId || params.get('viewer') !== 'manager' || !note.trim()) throw new Error('Cancellation could not be confirmed.')
   approvedCancellation = { canceledAt: '2026-11-05T18:00:00Z', canceledByName: 'Morgan Manager', note: note.trim() }
+}
+export async function endApprovedTimeOffNow(requestId: string, note: string) {
+  if (requestId !== activeRequestId || params.get('viewer') !== 'manager' || !note.trim()) throw new Error('Ending leave could not be confirmed.')
+  endLeaveAttempts += 1
+  if (params.get('scenario') === 'early-return-error' && endLeaveAttempts === 1) throw new Error('Ending leave could not be confirmed. Refresh the request status before trying again.')
+  earlyReturn = { endedAt: '2026-11-06T20:05:00Z', recordedAt: '2026-11-06T20:05:00Z', endedByName: 'Morgan Manager', note: note.trim(), timeZone: 'America/Denver' }
 }
 export async function decideShiftRequest() {}
 export async function reportCallOff() { return '70000000-0000-4000-8000-000000000001' }

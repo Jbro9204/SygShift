@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 11/06/2026 - Started Unpaid Leave Early Return
+
+- Added a separate server-timed End leave now action for eligible in-progress unpaid hourly/flex leave. Original approved request, used prefix and approval evidence are retained; the unused remainder becomes available without assigning a shift.
+- Connected the effective interval to assignment validation, week-copy eligibility, new-request overlap, shift-presence eligibility and receipt-only attendance projection. Existing unaffected date-only attendance output is preserved.
+- Independent reviewer/MFA, salary/paid/unknown-classification, saved timezone, HR-linked and locked-payroll protections remain. No identities, permissions, logins, punches, payroll or published schedules are changed.
+- Native PostgreSQL, actual-component phone/failure/retry, full application/clock, guarded rollback rehearsal and exact-commit release gates are required. See `docs/changelogs/CHANGELOG_2026-11-06_STARTED_LEAVE_EARLY_RETURN.md` and the final release receipt for completed verification and live activation status.
+
 ## 11/06/2026 - Routine Reinstatement Database Ownership Baseline
 
 - Added a separate 450-entry ownership manifest for the approved Sygilant routine-reinstatement migration, verified against its exact committed source and a read-only production ledger capture after activation.

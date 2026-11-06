@@ -36,6 +36,24 @@ const timeOffCancellationSchema = z.object({
   note: z.string(),
 })
 
+const timeOffEarlyReturnSchema = z.object({
+  endedAt: z.string(),
+  recordedAt: z.string(),
+  endedByName: z.string(),
+  note: z.string(),
+  timeZone: z.string(),
+})
+
+const timeOffCancellationContextSchema = z.object({
+  phase: z.enum(['future', 'in_progress', 'ended', 'ended_early']),
+  canEndNow: z.boolean(),
+  canCancel: z.boolean(),
+  blockReason: z.string().nullable(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  timeZone: z.string(),
+})
+
 const requestShiftSchema = z.object({
   id: z.string().uuid(),
   starts_at: z.string(),
@@ -77,6 +95,8 @@ const timeOffSchema = z.object({
   decided_by_name: z.string().nullable().optional().default(null),
   updated_at: z.string().nullable().optional().default(null),
   cancellation: timeOffCancellationSchema.nullable().optional(),
+  earlyReturn: timeOffEarlyReturnSchema.nullable().optional(),
+  cancellationContext: timeOffCancellationContextSchema.optional(),
   created_at: z.string(),
   employee: employeeSchema,
 })
@@ -302,6 +322,8 @@ export const requestCenterPayloadSchema = z.object({
     decidedByName: z.string().nullable().optional().default(null),
     updatedAt: z.string().nullable().optional().default(null),
     cancellation: timeOffCancellationSchema.nullable().optional(),
+    earlyReturn: timeOffEarlyReturnSchema.nullable().optional(),
+    cancellationContext: timeOffCancellationContextSchema.optional(),
     createdAt: z.string(),
   })),
   shiftRequests: z.array(z.object({
@@ -360,7 +382,7 @@ function shiftFromPayload(shift: z.infer<typeof rpcShiftSchema>): RequestShift {
 }
 
 export async function getRequestCenter(): Promise<RequestCenter> {
-  const { data, error } = await getSupabaseClient().rpc('get_request_center_payload_v2')
+  const { data, error } = await getSupabaseClient().rpc('get_request_center_payload_v3')
 
   if (error) {
     throw new Error(error.message || 'The request center could not be loaded for this account.')
@@ -390,6 +412,8 @@ export async function getRequestCenter(): Promise<RequestCenter> {
       decided_by_name: request.decidedByName,
       updated_at: request.updatedAt,
       cancellation: request.cancellation ?? null,
+      earlyReturn: request.earlyReturn ?? null,
+      cancellationContext: request.cancellationContext,
       created_at: request.createdAt,
       employee: employeeFromPayload(request.employeeId, request.employeeName),
     })),
@@ -599,6 +623,33 @@ export async function cancelApprovedTimeOff(requestId: string, note: string): Pr
     throw new Error('Cancellation could not be confirmed. Refresh the request status before trying again.')
   }
   if (data !== true) throw new Error('Cancellation could not be confirmed. Refresh the request status before trying again.')
+}
+
+const safeTimeOffEarlyReturnMessages = new Set([
+  'Only an approved request can be changed. Refresh its status.',
+  'This leave has already ended early. Its original dates and used leave remain in history.',
+  'This leave has already ended. HR must review historical corrections.',
+  'Salary time off requires HR or Payroll reconciliation; no hours or pay have changed.',
+  'HR must review this employment classification before changing leave.',
+  'Only unpaid hourly or flex leave can end now. HR must reconcile paid or policy-managed leave.',
+  'This request is linked to an HR leave case. HR must reconcile it before changing leave.',
+  'A locked payroll export covers this employee and date range. Payroll must reconcile it before changing leave.',
+  'Enter an early-return reason of 1 to 2,000 characters.',
+  'This leave has not started. Use Cancel approved time off for a future request.',
+  'This leave has no saved time zone. HR must review it before ending leave early.',
+])
+
+export async function endApprovedTimeOffNow(requestId: string, note: string): Promise<void> {
+  const { data, error } = await getSupabaseClient().rpc('end_approved_time_off_now', {
+    target_request_id: requestId,
+    target_note: note.trim(),
+  })
+  if (error) {
+    if (error.code === '42501') throw new Error('Another authorized time-off reviewer with MFA must end this leave.')
+    if (error.code === '23514' && safeTimeOffEarlyReturnMessages.has(error.message)) throw new Error(error.message)
+    throw new Error('Ending leave could not be confirmed. Refresh the request status before trying again.')
+  }
+  if (data !== true) throw new Error('Ending leave could not be confirmed. Refresh the request status before trying again.')
 }
 
 export async function reportCallOff(shiftId: string, reason: string): Promise<string> {

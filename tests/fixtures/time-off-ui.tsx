@@ -5,6 +5,7 @@ import { RequestsPage } from '../../src/pages/RequestsPage'
 import './time-off-ui.css'
 import '../../src/index.css'
 import '../../src/App.css'
+import '../../src/theme.css'
 
 const params = new URLSearchParams(location.search)
 const deepLink = params.get('deep')

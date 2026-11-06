@@ -7,6 +7,7 @@ import { RequestsPage } from './RequestsPage'
 
 const dataMocks = vi.hoisted(() => ({
   cancelApprovedTimeOff: vi.fn(),
+  endApprovedTimeOffNow: vi.fn(),
   getCallOffCoverageWorkspace: vi.fn(),
   getRequestCenter: vi.fn(),
   getTimeOffRequestContext: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('../data/requests', async (loadOriginal) => {
   return {
     ...original,
     cancelApprovedTimeOff: dataMocks.cancelApprovedTimeOff,
+    endApprovedTimeOffNow: dataMocks.endApprovedTimeOffNow,
     getCallOffCoverageWorkspace: dataMocks.getCallOffCoverageWorkspace,
     getRequestCenter: dataMocks.getRequestCenter,
     getTimeOffRequestContext: dataMocks.getTimeOffRequestContext,
@@ -107,9 +109,29 @@ function timeOffRequest(overrides: Record<string, unknown> = {}) {
     decided_by_name: null,
     updated_at: '2026-09-28T15:00:00.000Z',
     created_at: '2026-09-28T15:00:00.000Z',
+    cancellationContext: {
+      phase: 'future', canCancel: true, canEndNow: false, blockReason: null,
+      startsAt: '2099-10-12T06:00:00Z', endsAt: '2099-10-15T06:00:00Z', timeZone: 'America/Denver',
+    },
     employee: { id: absentEmployeeId, first_name: 'Alex', last_name: 'Guard', preferred_name: null },
     ...overrides,
   }
+}
+
+function activeUnpaidLeave() {
+  return timeOffRequest({
+    status: 'approved', starts_on: '2026-11-06', ends_on: '2026-11-08', return_on: '2026-11-09',
+    request_type: 'unpaid_time_off', pay_treatment: 'unpaid', decision_note: 'Original approval remains.',
+    cancellationContext: {
+      phase: 'in_progress', canCancel: false, canEndNow: true, blockReason: null,
+      startsAt: '2026-11-06T07:00:00Z', endsAt: '2026-11-09T07:00:00Z', timeZone: 'America/Denver',
+    },
+  })
+}
+
+const earlyReturn = {
+  endedAt: '2026-11-06T20:05:00Z', recordedAt: '2026-11-06T20:05:00Z',
+  endedByName: 'Morgan Manager', note: 'Available starting now, including tonight.', timeZone: 'America/Denver',
 }
 
 function coverageWorkspace() {
@@ -192,6 +214,7 @@ describe('Requests absence coverage workflow', () => {
     })
     dataMocks.withdrawTimeOff.mockResolvedValue(undefined)
     dataMocks.cancelApprovedTimeOff.mockReset().mockResolvedValue(undefined)
+    dataMocks.endApprovedTimeOffNow.mockReset().mockResolvedValue(undefined)
   })
 
   it('keeps manager time-off work in a dedicated review and decision-history view', async () => {
@@ -273,7 +296,9 @@ describe('Requests absence coverage workflow', () => {
     const confirm = within(dialog).getByRole('button', { name: 'Confirm cancellation' })
     expect(confirm).toBeDisabled()
     expect(within(dialog).getByText(/does not assign a shift, change published schedules/)).toBeVisible()
-    await user.type(within(dialog).getByRole('textbox', { name: 'Cancellation reason' }), 'Employee no longer needs the leave.')
+    const reason = within(dialog).getByRole('textbox', { name: 'Cancellation reason' })
+    await waitFor(() => expect(reason).toHaveFocus())
+    await user.type(reason, 'Employee no longer needs the leave.')
     const cancellation = { canceledAt: '2026-11-05T18:00:00Z', canceledByName: 'Morgan Manager', note: 'Employee no longer needs the leave.' }
     dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [{ ...approved, status: 'canceled', cancellation }] })
     await user.click(confirm)
@@ -287,6 +312,107 @@ describe('Requests absence coverage workflow', () => {
     }
   })
 
+  it('ends only the remaining leave using server eligibility and shows the exact cutoff without rewriting the approval', async () => {
+    const approved = activeUnpaidLeave()
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [approved] })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+    const user = userEvent.setup()
+    renderPage('/time-off', client)
+    await user.click(await screen.findByRole('button', { name: 'End leave now' }))
+    expect(screen.queryByRole('button', { name: 'Cancel approved time off' })).not.toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'End approved leave now?' })
+    const reason = within(dialog).getByRole('textbox', { name: 'Early-return reason' })
+    const confirm = within(dialog).getByRole('button', { name: 'Confirm end leave now' })
+    await waitFor(() => expect(reason).toHaveFocus())
+    expect(confirm).toBeDisabled()
+    expect(within(dialog).getByText(/server records the end time when you confirm/)).toBeVisible()
+    expect(within(dialog).getByText(/Leave time zone: America\/Denver/)).toBeVisible()
+    expect(dialog.querySelector('input[type="date"], input[type="datetime-local"]')).toBeNull()
+    await user.type(reason, earlyReturn.note)
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [{ ...approved, earlyReturn }] })
+    await user.click(confirm)
+    await waitFor(() => expect(dataMocks.endApprovedTimeOffNow).toHaveBeenCalledExactlyOnceWith(timeOffRequestId, earlyReturn.note))
+    expect(dataMocks.cancelApprovedTimeOff).not.toHaveBeenCalled()
+    expect(await screen.findByText(/Leave ended now and its earlier approved portion was retained/)).toBeVisible()
+    expect(screen.getByText('Original approval remains.')).toBeVisible()
+    expect(screen.getByText('Originally approved: 11/06/2026 – 11/08/2026')).toBeVisible()
+    expect(screen.getByText('11/06/2026, 1:05 PM MST')).toBeVisible()
+    expect(screen.getByText('Ended early', { selector: '.status-badge' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'End leave now' })).not.toBeInTheDocument()
+    for (const key of ['request-center', 'open-opportunities', 'weekly-schedule', 'personal-schedule-range', 'availability-workspace', 'schedule-staffing-suggestions']) {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: [key] })
+    }
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'ended_early')
+    expect(screen.getByText(earlyReturn.note)).toBeVisible()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'approved')
+    expect(screen.queryByText(earlyReturn.note)).not.toBeInTheDocument()
+  })
+
+  it('keeps an ended-early approved record in employee history instead of upcoming leave', async () => {
+    dataMocks.getRequestCenter.mockResolvedValue({
+      ...requestCenter(), employeeId: absentEmployeeId, permissions: { canManage: false }, callOffs: [],
+      timeOff: [{ ...activeUnpaidLeave(), ends_on: '2099-11-08', earlyReturn }],
+    })
+    renderPage('/time-off')
+    const history = (await screen.findByRole('heading', { name: 'Past and closed requests' })).closest('section')!
+    const upcoming = screen.getByRole('heading', { name: 'Upcoming requests' }).closest('section')!
+    expect(within(history).getByText('Ended early')).toBeVisible()
+    expect(within(upcoming).queryByText('Ended early')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'End leave now' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    'Salary leave requires HR or Payroll reconciliation.',
+    'Paid or unclassified leave requires HR reconciliation.',
+    'This request is linked to an HR leave case.',
+    'A locked payroll export requires reconciliation.',
+  ])('honors the server reconciliation hold: %s', async (blockReason) => {
+    const approved = activeUnpaidLeave()
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [{ ...approved, cancellationContext: { ...approved.cancellationContext, canEndNow: false, blockReason } }] })
+    renderPage('/time-off')
+    expect(await screen.findByText(blockReason)).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'End leave now' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancel approved time off' })).not.toBeInTheDocument()
+  })
+
+  it('fails closed when leave-change eligibility is absent and never offers a manager their own early return', async () => {
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [
+      { ...activeUnpaidLeave(), cancellationContext: undefined },
+      { ...activeUnpaidLeave(), id: '80000000-0000-4000-8000-000000000002', employee_id: managerEmployeeId },
+    ] })
+    renderPage('/time-off')
+    expect(await screen.findByText(/Leave changes are unavailable until eligibility is verified/)).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'End leave now' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancel approved time off' })).not.toBeInTheDocument()
+  })
+
+  it('retains the early-return reason and prevents duplicate saves, then stops on an already-ended refresh', async () => {
+    const approved = activeUnpaidLeave()
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [approved] })
+    let fail: (reason: Error) => void = () => undefined
+    dataMocks.endApprovedTimeOffNow.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { fail = reject }))
+    const user = userEvent.setup()
+    renderPage('/time-off')
+    await user.click(await screen.findByRole('button', { name: 'End leave now' }))
+    const dialog = screen.getByRole('dialog', { name: 'End approved leave now?' })
+    const reason = within(dialog).getByRole('textbox', { name: 'Early-return reason' })
+    await waitFor(() => expect(reason).toHaveFocus())
+    await user.type(reason, earlyReturn.note)
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm end leave now' }))
+    expect(within(dialog).getByRole('button', { name: 'Ending leave…' })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: 'Keep approved time off' })).toBeDisabled()
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [{ ...approved, earlyReturn }] })
+    fail(new Error('Ending leave could not be confirmed. Refresh the request status before trying again.'))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Ending leave could not be confirmed.')
+    expect(reason).toHaveValue(earlyReturn.note)
+    expect(await within(dialog).findByText(/The refreshed record already ended early/)).toBeVisible()
+    expect(within(dialog).getByRole('button', { name: 'Confirm end leave now' })).toBeDisabled()
+    expect(dataMocks.endApprovedTimeOffNow).toHaveBeenCalledTimes(1)
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(dialog).not.toBeInTheDocument()
+  })
+
   it.each([false, true])('never offers approved self-cancellation when manager is %s', async (canManage) => {
     dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), employeeId: absentEmployeeId, permissions: { canManage }, callOffs: [], timeOff: [timeOffRequest({ status: 'approved' })] })
     renderPage('/time-off')
@@ -296,7 +422,7 @@ describe('Requests absence coverage workflow', () => {
   })
 
   it('holds salary cancellation for Payroll reconciliation with a clear explanation', async () => {
-    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [timeOffRequest({ status: 'approved', employment_type_snapshot: 'salary' })] })
+    dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [timeOffRequest({ status: 'approved', employment_type_snapshot: 'salary', cancellationContext: undefined })] })
     renderPage('/time-off')
     expect(await screen.findByText(/Salary time off requires HR or Payroll reconciliation/)).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Cancel approved time off' })).not.toBeInTheDocument()
@@ -311,6 +437,7 @@ describe('Requests absence coverage workflow', () => {
     await user.click(await screen.findByRole('button', { name: 'Cancel approved time off' }))
     const dialog = screen.getByRole('dialog', { name: 'Cancel approved time off?' })
     const reason = within(dialog).getByRole('textbox', { name: 'Cancellation reason' })
+    await waitFor(() => expect(reason).toHaveFocus())
     await user.type(reason, 'Employee changed plans.')
     await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }))
     expect(within(dialog).getByRole('button', { name: 'Canceling…' })).toBeDisabled()
@@ -329,7 +456,9 @@ describe('Requests absence coverage workflow', () => {
     renderPage('/time-off')
     await user.click(await screen.findByRole('button', { name: 'Cancel approved time off' }))
     const dialog = screen.getByRole('dialog', { name: 'Cancel approved time off?' })
-    await user.type(within(dialog).getByRole('textbox', { name: 'Cancellation reason' }), 'Employee changed plans.')
+    const reason = within(dialog).getByRole('textbox', { name: 'Cancellation reason' })
+    await waitFor(() => expect(reason).toHaveFocus())
+    await user.type(reason, 'Employee changed plans.')
     dataMocks.getRequestCenter.mockResolvedValue({ ...requestCenter(), callOffs: [], timeOff: [{ ...approved, status: 'canceled', cancellation: { canceledAt: '2026-11-05T18:00:00Z', canceledByName: 'Morgan Manager', note: 'Employee changed plans.' } }] })
     await user.click(within(dialog).getByRole('button', { name: 'Confirm cancellation' }))
     expect(await within(dialog).findByText(/The refreshed record is already canceled/)).toBeVisible()

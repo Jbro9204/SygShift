@@ -6,7 +6,7 @@ vi.mock('../lib/supabase', () => ({
   getSupabaseClient: () => ({ rpc: supabaseMocks.rpc }),
 }))
 
-import { cancelApprovedTimeOff, getRequestCenter, getTimeOffRequestContext } from './requests'
+import { cancelApprovedTimeOff, endApprovedTimeOffNow, getRequestCenter, getTimeOffRequestContext } from './requests'
 
 describe('request-center payload mapping', () => {
   beforeEach(() => {
@@ -65,7 +65,7 @@ describe('request-center payload mapping', () => {
   it('maps every rich time-off and bounded-history field into the page record model', async () => {
     const result = await getRequestCenter()
 
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('get_request_center_payload_v2')
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('get_request_center_payload_v3')
     expect(result.employeeTimeZone).toBe('America/New_York')
     expect(result.timeOffHistory).toEqual({ managerHistoryLimit: 100, truncated: true })
     expect(result.timeOff[0]).toMatchObject({
@@ -125,6 +125,48 @@ describe('request-center payload mapping', () => {
     supabaseMocks.rpc.mockResolvedValueOnce(original)
     const result = await getRequestCenter()
     expect(result.timeOff[0]).toMatchObject({ status: 'canceled', decision_note: 'Coverage is confirmed.', cancellation: request.cancellation })
+  })
+
+  it('maps an immutable early-return receipt and server eligibility without changing approved dates or requested hours', async () => {
+    const original = await supabaseMocks.rpc()
+    const request = original.data.timeOff[0]
+    request.earlyReturn = {
+      endedAt: '2026-11-06T20:05:00Z', recordedAt: '2026-11-06T20:05:00Z',
+      endedByName: 'Morgan Manager', note: 'Returned early.', timeZone: 'America/Denver',
+    }
+    request.cancellationContext = {
+      phase: 'ended_early', canEndNow: false, canCancel: false, blockReason: null,
+      startsAt: '2026-11-06T07:00:00Z', endsAt: '2026-11-09T07:00:00Z', timeZone: 'America/Denver',
+    }
+    supabaseMocks.rpc.mockResolvedValueOnce(original)
+    const result = await getRequestCenter()
+    expect(result.timeOff[0]).toMatchObject({
+      status: 'approved', starts_on: request.startsOn, ends_on: request.endsOn, requested_minutes: 960,
+      decision_note: 'Coverage is confirmed.', earlyReturn: request.earlyReturn, cancellationContext: request.cancellationContext,
+    })
+  })
+
+  it('ends leave through the dedicated RPC with no client-provided cutoff and requires an explicit receipt', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: true, error: null })
+    await endApprovedTimeOffNow('20000000-0000-4000-8000-000000000001', '  Returned early.  ')
+    expect(supabaseMocks.rpc).toHaveBeenCalledExactlyOnceWith('end_approved_time_off_now', {
+      target_request_id: '20000000-0000-4000-8000-000000000001', target_note: 'Returned early.',
+    })
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: null, error: null })
+    await expect(endApprovedTimeOffNow('20000000-0000-4000-8000-000000000001', 'Returned early.')).rejects.toThrow('Ending leave could not be confirmed.')
+  })
+
+  it('keeps early-return authorization and unexpected server details out of the interface', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'private permission internals' } })
+    await expect(endApprovedTimeOffNow('20000000-0000-4000-8000-000000000001', 'Returned early.')).rejects.toThrow('Another authorized time-off reviewer with MFA must end this leave.')
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: null, error: { code: '23514', message: 'private.payroll_secret SQL failed' } })
+    await expect(endApprovedTimeOffNow('20000000-0000-4000-8000-000000000001', 'Returned early.')).rejects.toThrow('Ending leave could not be confirmed.')
+    const message = 'A locked payroll export covers this employee and date range. Payroll must reconcile it before changing leave.'
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: null, error: { code: '23514', message } })
+    await expect(endApprovedTimeOffNow('20000000-0000-4000-8000-000000000001', 'Returned early.')).rejects.toThrow(message)
+    const missingZone = 'This leave has no saved time zone. HR must review it before ending leave early.'
+    supabaseMocks.rpc.mockResolvedValueOnce({ data: null, error: { code: '23514', message: missingZone } })
+    await expect(endApprovedTimeOffNow('20000000-0000-4000-8000-000000000001', 'Returned early.')).rejects.toThrow(missingZone)
   })
 
   it('uses the narrow cancellation RPC and requires an explicit success receipt', async () => {
