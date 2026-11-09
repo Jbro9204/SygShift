@@ -1,5 +1,11 @@
 # SygShift Development Log
 
+## 11/09/2026 - Terminal coverage open-state consistency
+
+- The natural-cycle check exposed the existing capacity normalizer reopening a retired empty vacancy. Added a separate forward correction; did not rewrite the earlier migration or weaken the published-schedule guard.
+- Matched terminal coverage identity now keeps only an unassigned generated vacancy closed; the one existing shift write follows case closure in the same transaction. Ordinary capacity calculations and assigned replacements remain unchanged.
+- Fifty-four integrated native PostgreSQL checks include the actual normalizer, guard and retirement routine. A rollback rehearsal preceded production application, and the reviewed 457-entry baseline preserves all prior migration history. Final natural-cycle and exact-candidate app verification remain required.
+
 ## 11/09/2026 - Published coverage retirement and release reconciliation
 
 - Repaired the pre-existing operational-alert cleanup failure by respecting published-shift immutability: only the live open flag closes on an expired, unassigned published vacancy. Draft cancellation and assigned replacement protections remain intact.
