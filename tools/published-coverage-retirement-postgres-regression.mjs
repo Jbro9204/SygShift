@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import net from 'node:net'
+import { isolatedPostgresRuntime, startIsolatedPostgres, stopIsolatedPostgres } from './isolated-postgres-startup.mjs'
 
 // Isolated native PostgreSQL only. Never reads application credential files.
 assert.equal(process.versions.node, '24.19.0')
-const extension = process.platform === 'win32' ? '.exe' : ''
-const bin = resolve(process.env.COVERAGE_TEST_POSTGRES_BIN ?? (process.platform === 'win32' ? 'C:/Program Files/PostgreSQL/18/bin' : '/usr/lib/postgresql/18/bin'))
 const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^PG|^(?:DATABASE_URL|SUPABASE_)/iu.test(key)))
+const { bin, extension } = isolatedPostgresRuntime({ platform: process.platform,
+  override: process.env.COVERAGE_TEST_POSTGRES_BIN, environment })
 const directory = mkdtempSync(join(tmpdir(), 'sygshift-coverage-retirement-'))
 const data = join(directory, 'data')
 const listener = net.createServer()
@@ -53,9 +54,10 @@ function seed(n, status, assigned = false, generated = true) {
       values('${id(600+n)}','call_off_report','${id(300+n)}',true,'active_operations');`)
 }
 let started = false
+let rehearsalFailure
 try {
   run('initdb', ['-D', data, '-U', 'postgres', '-A', 'trust', '--no-locale', '-E', 'UTF8'])
-  run('pg_ctl', ['-D', data, '-l', join(directory, 'postgres.log'), '-o', `-h 127.0.0.1 -p ${port} -c timezone=UTC`, '-w', 'start'])
+  startIsolatedPostgres({ data, directory, port, run, utc: true })
   started = true
   sql(`create role anon; create role authenticated; create role service_role;
     create schema private;
@@ -159,6 +161,9 @@ try {
   const replay = spawnSync(join(bin, 'psql'+extension), connection, { input: read('supabase/migrations/20261109203718_published_coverage_retirement_immutability.sql'), encoding:'utf8',env:environment,windowsHide:true })
   check(replay.status !== 0, true, 'Migration replay fails closed')
   console.log(JSON.stringify({ passed:true, syntheticOnly:true, productionConnections:0, checks, priorPublishedFailureReproduced:true, actualOpenStateNormalizer:true, reopeningInteractionReproduced:true, publishedGuardPreserved:true, publishedAndDraftRetirement:true, assignedReplacementsPreserved:true, retriesIdempotent:true }))
+} catch (error) {
+  rehearsalFailure = error
+  throw error
 } finally {
-  if (started || existsSync(join(data, 'postmaster.pid'))) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
+  stopIsolatedPostgres({ data, run, started, priorError: rehearsalFailure })
 }

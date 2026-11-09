@@ -1,16 +1,15 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import net from 'node:net'
+import { isolatedPostgresRuntime, startIsolatedPostgres, stopIsolatedPostgres } from './isolated-postgres-startup.mjs'
 
 // Deliberately no production, environment-file, or connection-string mode.
-const bin = resolve(process.env.PASSWORD_TEST_POSTGRES_BIN ?? (process.platform === 'win32'
-  ? 'C:/Program Files/PostgreSQL/18/bin'
-  : execFileSync('pg_config', ['--bindir'], {encoding: 'utf8'}).trim()))
-const ext = process.platform === 'win32' ? '.exe' : ''
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^PG|^(DATABASE_URL|SUPABASE_)/u.test(key)))
+const { bin, extension: ext } = isolatedPostgresRuntime({ platform: process.platform,
+  override: process.env.PASSWORD_TEST_POSTGRES_BIN, environment: env })
 const folder = mkdtempSync(join(tmpdir(), 'sygshift-password-change-'))
 const data = join(folder, 'data')
 const listener = net.createServer()
@@ -56,10 +55,11 @@ const projectionPath = canonicalOnly ? undefined : process.argv[2]
 const adminPasswordPath = canonicalOnly ? new URL('../supabase/migrations/20261109182242_admin_chosen_password_next_login.sql', import.meta.url) : process.argv[3]
 const passwordBoundaryPath = canonicalOnly ? undefined : process.argv[4]
 let started = false
+let rehearsalFailure
 const scenarios = []
 try {
   run('initdb', ['-D', data, '-U', 'postgres', '-A', 'trust', '--no-locale', '-E', 'UTF8'])
-  run('pg_ctl', ['-D', data, '-l', join(folder, 'postgres.log'), '-o', `-h 127.0.0.1 -p ${port}`, '-w', 'start'])
+  startIsolatedPostgres({ data, directory: folder, port, run })
   started = true
   sql(`create role anon; create role authenticated; create role service_role;
     create schema auth; create schema private;
@@ -202,6 +202,9 @@ try {
     await suite.runAdminPasswordCancellationRaces(fixture)
   }
   console.log(JSON.stringify({ passed: true, syntheticOnly: true, productionConnections: 0, canonicalBoundaryContractFixture: canonicalOnly, crossAppProjectionTested: Boolean(projectionPath), adminPasswordSetTested: Boolean(adminPasswordPath), crossAppPasswordBoundaryTested: Boolean(passwordBoundaryPath), scenarios }, null, 2))
+} catch (error) {
+  rehearsalFailure = error
+  throw error
 } finally {
-  if (started || existsSync(join(data, 'postmaster.pid'))) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])
+  stopIsolatedPostgres({ data, run, started, priorError: rehearsalFailure })
 }
