@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 11/09/2026 - Published coverage retirement and release reconciliation
+
+- Repaired the pre-existing operational-alert cleanup failure by respecting published-shift immutability: only the live open flag closes on an expired, unassigned published vacancy. Draft cancellation and assigned replacement protections remain intact.
+- Thirty-four native PostgreSQL checks passed. A complete rollback-only production rehearsal preceded the exact-source-fenced forward migration; the next natural minute cycle restored readiness with no manual cron invocation.
+- Installed the four manual-password foundation/boundary migrations atomically with default-off controls, preserving all 82 account settings and existing migration history. No credential or email operation was performed.
+- Captured the reviewed 456-entry cross-repository migration baseline, preserving the prior 450 entries and admitting only the previously approved early-return entry, four password entries and the retirement repair.
+- Full pre-release tests passed 2,556 application checks and 42 desktop/mobile clock checks; the final exact-candidate gate remains mandatory before release. Details are in the two dated November 9 changelogs.
+
 ## 11/09/2026 - Explicit Admin-set employee passwords
 
 - Added the canonical, no-email Admin-selected password operation with optional next-login change and no credential expiration.
