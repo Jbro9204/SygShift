@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 11/09/2026 - Manual password release closeout
+
+- Deployed the chosen, non-expiring password workflow and independent next-login change checkbox, retaining current Admin verification and all employee access, Guard MFA, timekeeping and payroll boundaries.
+- The owner completed the designated Test McTester assignment and personal-change flow and confirmed both apps. Authoritative receipts verified completion; Guard/access/permission fingerprints stayed unchanged. No other employee password operation or company-wide campaign was activated.
+- Released direct verification/retry for an Admin password-status read, the narrow published-vacancy retirement repair, and the report iframe error-capture correction. Both exact-SHA hosted checks passed, and final production health/readiness and natural-runtime checks passed.
+- Final Worker version: `9d275e99-6f25-4f86-82de-0abcc0b4553c`; Sygilant Pages: `3d83f187-8685-4f9e-9c3b-c687f85e6ecd`. Full evidence, limitations and rollback: `docs/changelogs/CHANGELOG_2026-11-09_MANUAL_PASSWORD_CLOSEOUT.md` and its matching Desktop copy.
+
 ## 11/09/2026 - Terminal coverage open-state consistency
 
 - The natural-cycle check exposed the existing capacity normalizer reopening a retired empty vacancy. Added a separate forward correction; did not rewrite the earlier migration or weaken the published-schedule guard.
