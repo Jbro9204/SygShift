@@ -269,9 +269,10 @@ export function AppShell() {
     setIdentityVerificationSurface(location.pathname, location.search)
   }, [location.pathname, location.search])
   useLayoutEffect(() => {
+    if (!verificationEmployeeId || sessionContext?.mustChangePassword) return
     if (verificationEmployeeId && verificationAccessGeneration !== undefined) setIdentityVerificationAccessGeneration(verificationEmployeeId, verificationAccessGeneration)
     void captureIdentityVerificationActor().catch(() => undefined)
-  }, [authSessionId, verificationEmployeeId, verificationAccessGeneration])
+  }, [authSessionId, verificationEmployeeId, verificationAccessGeneration, sessionContext?.mustChangePassword])
   const internalHistoryRef = useRef<InternalNavigationEntry[]>(parseInternalHistory(window.sessionStorage.getItem(INTERNAL_NAVIGATION_STORAGE_KEY)))
   const authRecoveryRetryRef = useRef<(() => Promise<void>) | null>(null)
   const authSessionInvalidationRef = useRef<(() => void) | null>(null)
@@ -279,9 +280,10 @@ export function AppShell() {
   const navigate = useNavigate()
   const payrollReminderWeek = lastCompletedPayrollWeek()
   const showPayrollReminder = shouldShowPayrollExportReminder(sessionContext)
-  const canViewOperationalAlerts = canAccessRoute('/time/operations', sessionContext)
+  const workspaceDataAllowed = Boolean(sessionContext && !sessionContext.mustChangePassword)
+  const canViewOperationalAlerts = workspaceDataAllowed && canAccessRoute('/time/operations', sessionContext)
   const activeBannerQuery = useQuery({
-    enabled: isSupabaseConfigured && Boolean(sessionContext),
+    enabled: isSupabaseConfigured && workspaceDataAllowed,
     queryFn: getActiveAnnouncementBanners,
     queryKey: ['active-announcement-banners'],
     refetchInterval: 60_000,
@@ -296,19 +298,19 @@ export function AppShell() {
     refetchInterval: 30_000,
   })
   const maintenanceStatusQuery = useQuery({
-    enabled: isSupabaseConfigured && Boolean(sessionContext),
+    enabled: isSupabaseConfigured && workspaceDataAllowed,
     queryFn: getMaintenanceStatus,
     queryKey: ['maintenance-status'],
     refetchInterval: 30_000,
   })
   const readinessQuery = useQuery({
-    enabled: isSupabaseConfigured && Boolean(sessionContext),
+    enabled: isSupabaseConfigured && workspaceDataAllowed,
     queryFn: getSystemReadiness,
     queryKey: ['system-readiness'],
     refetchInterval: 30_000,
   })
   const requiredActionQuery = useQuery({
-    enabled: isSupabaseConfigured && Boolean(sessionContext),
+    enabled: isSupabaseConfigured && workspaceDataAllowed,
     queryFn: ({ signal }) => getRequiredActionCheckpointWithinDeadline(signal),
     queryKey: ['required-action-checkpoint', sessionContext?.employeeId],
     refetchInterval: 10_000,
@@ -1106,7 +1108,7 @@ export function AppShell() {
 
     setAccountPhotoUrl(null)
     setAccountSummary(null)
-    if (!sessionContext?.employeeId) return () => { active = false }
+    if (!sessionContext?.employeeId || sessionContext.mustChangePassword) return () => { active = false }
 
     void (async () => {
       try {
@@ -1124,7 +1126,7 @@ export function AppShell() {
       active = false
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [accountRefreshVersion, sessionContext?.employeeId])
+  }, [accountRefreshVersion, sessionContext?.employeeId, sessionContext?.mustChangePassword])
 
   async function handleSignOut() {
     authSessionInvalidationRef.current?.()
@@ -1455,7 +1457,7 @@ export function AppShell() {
                 </button>
               </div>
               <span aria-hidden="true" className="user-menu__divider" />
-              <HeaderNotificationButton enabled={Boolean(sessionContext)} />
+              <HeaderNotificationButton enabled={workspaceDataAllowed} />
               <span aria-hidden="true" className="user-menu__divider" />
               <Link
                 aria-label={`Open My Account for ${accountSummary?.employment.legalName ?? sessionContext.displayName}`}

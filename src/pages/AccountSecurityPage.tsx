@@ -55,16 +55,24 @@ function isAlreadyCurrentPasswordError(error: unknown): boolean {
 
 async function markPasswordChangedWithRetry(): Promise<void> {
   const supabase = getSupabaseClient()
-  let marked = await supabase.rpc('mark_password_changed')
+  let marked = await supabase.rpc('mark_password_changed_verified')
 
   if (!marked.error) return
+  const proofMissing = (error: { code?: string; message?: string } | null) =>
+    error?.code === '23514' && error.message?.includes('No completed credential change was verified')
+  if (proofMissing(marked.error)) {
+    throw new Error('Choose a different password. The current password does not complete this required change.')
+  }
 
   await supabase.auth.refreshSession()
-  marked = await supabase.rpc('mark_password_changed')
+  marked = await supabase.rpc('mark_password_changed_verified')
 
   if (marked.error) {
+    if (proofMissing(marked.error)) {
+      throw new Error('Choose a different password. The current password does not complete this required change.')
+    }
     throw new Error(
-      'Your password was accepted, but SygShift could not finish clearing the temporary-password checkpoint. Please sign out and try again, or contact an administrator.',
+      'SygShift could not verify completion of this password change. Your sign-in is still here; retry or contact an administrator.',
     )
   }
 }

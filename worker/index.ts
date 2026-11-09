@@ -42,6 +42,7 @@ import { parseSygSphereCommsWebSocketRouteReference } from './comms/websocketTic
 import { buildSygSphereCommsUsageResponse } from './comms/usageContract'
 import { parseSygSphereCommsCommand } from '../shared/sygsphere-communications/v1/contract'
 import { isHrDocumentSourceVersionTimestamp, normalizeHrDocumentLibraryTimestamps } from './hrDocumentLibraryPayload'
+import { cancelEmployeePasswordSet, confirmEmployeePasswordSet, readEmployeePasswordSet, setEmployeePassword, type PasswordSetActor } from './adminPasswordSet'
 
 export { ReportWorkloadCoordinator, ScheduledRuntimeCoordinator, TenantCommsDurableObject }
 
@@ -96,6 +97,8 @@ type Environment = Partial<Env> & {
   SYGILANT_SHARED_IDENTITY_SIGNING_SECRET?: string
   SYGILANT_SHARED_IDENTITY_TOKEN_TTL_SECONDS?: string
   SYGSHIFT_PASSWORD_RECOVERY_BRIDGE_SECRET?: string
+  SYGSHIFT_ADMIN_SET_PASSWORD_ENABLED?: string
+  SYGSHIFT_ADMIN_SET_PASSWORD_CANARY_EMPLOYEE_ID?: string
   SYGSHIFT_SOURCE_COMMIT?: string
   SCHEDULE_COORDINATOR?: DurableObjectNamespace<ScheduledRuntimeCoordinator>
 }
@@ -8244,6 +8247,7 @@ async function handleMyAccountApi(request: Request, environment: Environment, re
 
 async function handleAdminUsersApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
   const url = new URL(request.url)
+  const chosenPasswordMatch = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/password$/i.exec(url.pathname)
   const isNewUserInviteRequest = url.pathname === '/api/v1/admin/users/login-emails'
     || /^\/api\/v1\/admin\/users\/[0-9a-f-]{36}\/(?:login-email|welcome-email)$/i.test(url.pathname)
   const isPasswordResetRequest = /^\/api\/v1\/admin\/users\/[0-9a-f-]{36}\/password-reset$/i.test(url.pathname)
@@ -8254,7 +8258,7 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       environment,
       isNewUserInviteRequest
         ? 'admin.users.invite'
-        : isPasswordResetRequest
+        : isPasswordResetRequest || chosenPasswordMatch
           ? 'admin.users.password_reset'
           : 'admin.users.manage',
     )
@@ -8274,6 +8278,98 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
   }
 
   const body = request.method === 'GET' ? {} : await readJsonBody(request)
+
+  if (chosenPasswordMatch) {
+    if (!['GET', 'POST'].includes(request.method)) return errorJson('method_not_allowed', requestId, 405)
+    const employeeId = chosenPasswordMatch[1]
+    const passwordCanaryId = environment.SYGSHIFT_ADMIN_SET_PASSWORD_CANARY_EMPLOYEE_ID?.trim()
+    const passwordSetEnabled = environment.SYGSHIFT_ADMIN_SET_PASSWORD_ENABLED === 'true'
+      && (!passwordCanaryId || (validUuid(passwordCanaryId) && passwordCanaryId.toLowerCase() === employeeId.toLowerCase()))
+    // Rollback disables new credentials, not truthful status or protected
+    // resolution of an operation whose provider request already started.
+    if (!passwordSetEnabled && request.method === 'POST' && body.action !== 'confirm' && body.action !== 'cancel') {
+      return errorJson('admin_set_password_disabled', requestId, 503, 'New Admin-set passwords are awaiting approved activation.')
+    }
+    const claims = accessTokenClaims(admin.token)
+    if (!claims?.session_id || !validUuid(claims.session_id)) throw new ApiError('auth_required', 401, 'An active Admin session is required.')
+    const actor: PasswordSetActor = { actorEmployeeId: admin.context.employee_id, actorAuthSessionId: claims.session_id }
+    const serviceConfig = { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url }
+    const dependencies = {
+      rpc: (name: string, payload: Record<string, unknown>) => callRpc<unknown>(serviceConfig, name, { target_payload: payload }, serviceConfig.serviceRoleKey),
+      digest: sha256Hex,
+      replacePassword: async (authUserId: string, password: string, operationId: string): Promise<{ outcome: 'confirmed' | 'known_failed' | 'unknown', authUserId?: string }> => {
+        const authHeaders = { apikey: serviceConfig.serviceRoleKey, authorization: `Bearer ${serviceConfig.serviceRoleKey}`, 'content-type': 'application/json' }
+        const verifiedReceipt = (payload: unknown): boolean => {
+          const response = payload as { id?: unknown, app_metadata?: Record<string, unknown>, user?: { id?: unknown, app_metadata?: Record<string, unknown> } } | null
+          const user = response?.user ?? response
+          return user?.id === authUserId && user.app_metadata?.sygshift_password_set_operation_id === operationId
+        }
+        try {
+          // Auth atomically writes this protected nonsecret receipt marker with
+          // the password. Its metadata merge preserves other keys. Never unban,
+          // change roles/factors, confirm email or send a recovery link.
+          const response = await fetch(`${serviceConfig.url}/auth/v1/admin/users/${encodeURIComponent(authUserId)}`, {
+            method: 'PUT', redirect: 'manual', signal: AbortSignal.timeout(10_000),
+            headers: authHeaders,
+            body: JSON.stringify({ password, app_metadata: { sygshift_password_set_operation_id: operationId } }),
+          })
+          if (!response.ok && [400, 401, 403, 404, 422].includes(response.status)) return { outcome: 'known_failed' }
+          if (response.ok && verifiedReceipt(await response.json().catch(() => null))) return { outcome: 'confirmed', authUserId }
+        } catch { /* Inspect the exact nonsecret marker once; never repeat PUT. */ }
+        try {
+          const readback = await fetch(`${serviceConfig.url}/auth/v1/admin/users/${encodeURIComponent(authUserId)}`, { headers: authHeaders, redirect: 'manual', signal: AbortSignal.timeout(10_000) })
+          if (readback.ok && verifiedReceipt(await readback.json().catch(() => null))) return { outcome: 'confirmed', authUserId }
+        } catch { /* Unknown remains unknown; no credential write is retried. */ }
+        return { outcome: 'unknown' }
+      },
+    }
+    if (request.method === 'GET') {
+      const operationId = url.searchParams.get('operationId') ?? undefined
+      if (operationId && !validUuid(operationId)) throw new ApiError('invalid_password_request', 422, 'The password request reference is invalid.')
+      let latestOperation
+      try {
+        latestOperation = await readEmployeePasswordSet(dependencies, actor, employeeId, operationId)
+      } catch (error) {
+        // Before this staged migration is installed, an off feature may have no
+        // status reader yet. Do not hide real authorization, timeout, or data errors.
+        if (passwordSetEnabled || !(error instanceof SupabaseRequestError)
+          || error.operation !== 'service_get_employee_password_set' || !['PGRST202', '42883'].includes(error.code ?? '')) throw error
+        latestOperation = null
+      }
+      return json({ ok: true, enabled: passwordSetEnabled, latestOperation })
+    }
+    const idempotencyKey = request.headers.get('idempotency-key')?.trim().toLowerCase() ?? ''
+    const username = typeof body.confirmationUsername === 'string' ? body.confirmationUsername.trim().toLowerCase().replace(/^@/, '') : ''
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
+    const confirming = body.action === 'confirm'
+    const canceling = body.action === 'cancel'
+    if (!validUuid(idempotencyKey) || !/^[a-z0-9._-]{2,80}$/.test(username)
+      || (confirming || canceling ? typeof body.operationId !== 'string' || !validUuid(body.operationId)
+        : (body.action !== undefined && body.action !== 'set') || typeof body.password !== 'string'
+          || new TextEncoder().encode(body.password).length > 72 || validateSuppliedTemporaryPassword(body.password, username).length > 0
+          || typeof body.requireChangeAtNextLogin !== 'boolean')
+      || reason.length < 12 || reason.length > 1000) {
+      throw new ApiError('invalid_password_request', 422, 'Review the username, reason, password policy and next-login choice.')
+    }
+    const proof = await requireRecentDocumentMfa(request, admin)
+    const verifiedAt = Date.parse(proof.verifiedAt)
+    if (!Number.isFinite(verifiedAt) || verifiedAt < Date.now() - 5 * 60_000 || verifiedAt > Date.now() + 30_000) {
+      throw new ApiError('recent_password_mfa_required', 403, 'Verify your authenticator or security key again before setting this password.')
+    }
+    actor.recentMfaAt = proof.verifiedAt
+    actor.mfaMethod = proof.method
+    actor.securityKeyTokenHash = proof.method === 'security_key' ? await sha256Hex(request.headers.get('x-sygshift-security-key')?.trim() ?? '') : null
+    const operation = canceling
+      ? await cancelEmployeePasswordSet(dependencies, actor, employeeId, body.operationId as string, username, reason)
+      : confirming ? await confirmEmployeePasswordSet(dependencies, actor, employeeId, body.operationId as string, username)
+      : await setEmployeePassword(dependencies, actor, { employeeId, confirmationUsername: username,
+        password: body.password as string, requireChangeAtNextLogin: body.requireChangeAtNextLogin as boolean, reason, idempotencyKey })
+    const completed = operation.status === 'confirmed' || (canceling && operation.status === 'canceled')
+    return json({ ok: completed, enabled: passwordSetEnabled, operation, noEmailSent: true,
+      passwordChanged: operation.status === 'confirmed', ...(operation.status === 'confirmed' ? {} : {
+        ...(completed ? {} : { error: 'password_set_unconfirmed', detail: 'The password change is not confirmed. Check this request before starting another action.' }),
+      }) }, completed ? 200 : 409)
+  }
   let usersByEmail: Promise<Map<string, AuthUser>> | null = null
   const getUsersByEmail = (validateResponse = false) => {
     if (!usersByEmail) {

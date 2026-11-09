@@ -166,6 +166,47 @@ describe('AccountSecurityPage', () => {
     expect(supabaseMock.client.auth.refreshSession).not.toHaveBeenCalled()
   })
 
+  it('does not treat the existing password as completing a required change without server proof', async () => {
+    authMock.getSessionContext.mockReset()
+    authMock.getSessionContext.mockResolvedValue(sessionContext({ role: 'guard', mfaRequired: false, hasMfa: false }))
+    supabaseMock.client.auth.updateUser.mockResolvedValue({ data: null, error: { message: 'New password should be different from the old password.' } })
+    supabaseMock.client.rpc.mockResolvedValue({ data: null, error: { code: '23514', message: 'Choose a different password. No completed credential change was verified.' } })
+    render(<MemoryRouter><AccountSecurityPage /></MemoryRouter>)
+    fireEvent.change(await screen.findByLabelText('New password'), { target: { value: 'StrongAdmin123!' } })
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'StrongAdmin123!' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save password' }))
+    expect(await screen.findByText('Choose a different password. The current password does not complete this required change.')).toBeInTheDocument()
+    expect(supabaseMock.client.rpc).toHaveBeenCalledTimes(1)
+    expect(authMock.signOut).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('New password')).toBeInTheDocument()
+    expect(screen.queryByText('Authenticator app')).not.toBeInTheDocument()
+  })
+
+  it('accepts a lost-response retry only when canonical completion proves the earlier password change', async () => {
+    supabaseMock.client.auth.updateUser.mockResolvedValue({ data: null, error: { message: 'New password should be different from the old password.' } })
+    supabaseMock.client.rpc.mockResolvedValue({ data: true, error: null })
+    render(<MemoryRouter><AccountSecurityPage /></MemoryRouter>)
+    fireEvent.change(await screen.findByLabelText('New password'), { target: { value: 'StrongAdmin123!' } })
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'StrongAdmin123!' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save password' }))
+    await waitFor(() => expect(supabaseMock.client.rpc).toHaveBeenCalledWith('mark_password_changed_verified'))
+    await waitFor(() => expect(authMock.getSessionContext).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('Choose a different password. The current password does not complete this required change.')).not.toBeInTheDocument()
+  })
+
+  it('fails closed without falling back when the verified completion RPC has not been installed', async () => {
+    authMock.getSessionContext.mockReset()
+    authMock.getSessionContext.mockResolvedValue(sessionContext())
+    supabaseMock.client.rpc.mockResolvedValue({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.mark_password_changed_verified' } })
+    render(<MemoryRouter><AccountSecurityPage /></MemoryRouter>)
+    fireEvent.change(await screen.findByLabelText('New password'), { target: { value: 'StrongAdmin123!' } })
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'StrongAdmin123!' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save password' }))
+    expect(await screen.findByText('SygShift could not verify completion of this password change. Your sign-in is still here; retry or contact an administrator.')).toBeInTheDocument()
+    expect(supabaseMock.client.rpc).not.toHaveBeenCalledWith('mark_password_changed')
+    expect(authMock.signOut).not.toHaveBeenCalled()
+  })
+
   it('allows permanent password fields to be shown and hidden independently', async () => {
     render(
       <MemoryRouter>

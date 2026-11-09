@@ -53,6 +53,7 @@ const shared = vi.hoisted(() => ({
   operationalWorkspace: { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' } as OperationalWorkspaceFixture,
   requiredActionBlocking: false,
   requiredActionError: null as Error | null,
+  mustChangePassword: false,
   scope: null as null | 'platform' | 'sygsphere',
   sessionContextError: null as Error | null,
   sessionContextFailureKind: 'transient' as 'compatibility' | 'revoked' | 'transient',
@@ -142,7 +143,7 @@ vi.mock('../data/auth', () => ({
       hasMfa: false,
       mfaEnrolledAt: null,
       mfaRequired: true,
-      mustChangePassword: false,
+      mustChangePassword: shared.mustChangePassword,
       passwordChangedAt: null,
       permissions: ['actions.self.view', 'apps.sygilant.access', 'operations.view', 'time.view'],
       role: 'guard',
@@ -159,7 +160,7 @@ vi.mock('../data/auth', () => ({
       hasMfa: false,
       mfaEnrolledAt: null,
       mfaRequired: true,
-      mustChangePassword: false,
+      mustChangePassword: shared.mustChangePassword,
       passwordChangedAt: null,
       permissions: ['actions.self.view', 'apps.sygilant.access', 'operations.view', 'time.view'],
       role: 'guard',
@@ -256,6 +257,7 @@ vi.mock('./HeaderNotificationButton', () => ({ HeaderNotificationButton: () => n
 vi.mock('./LiveNotifications', () => ({ LiveNotifications: () => null }))
 
 beforeEach(() => {
+  shared.mustChangePassword = false
   shared.activeAccessToken = null
   shared.activationError = null
   shared.activationFailureKind = 'transient'
@@ -292,6 +294,25 @@ afterEach(() => {
 })
 
 describe('AppShell shared-session lifecycle', () => {
+  it('opens password setup without fetching the protected workspace first', async () => {
+    shared.mustChangePassword = true
+    shared.activeAccessToken = accessToken
+    const { getActiveAnnouncementBanners } = await import('../data/announcements')
+    const { getMaintenanceStatus } = await import('../data/maintenance')
+    const { getSystemReadiness } = await import('../data/systemStatus')
+    const { getRequiredActionCheckpoint } = await import('../data/actionCenter')
+    const { getMyAccount } = await import('../data/myAccount')
+    const { getTimekeepingOperationsWorkspace } = await import('../data/timeOperations')
+    renderShell('/')
+    expect(await screen.findByText('Account security')).toBeInTheDocument()
+    expect(getActiveAnnouncementBanners).not.toHaveBeenCalled()
+    expect(getMaintenanceStatus).not.toHaveBeenCalled()
+    expect(getSystemReadiness).not.toHaveBeenCalled()
+    expect(getRequiredActionCheckpoint).not.toHaveBeenCalled()
+    expect(getMyAccount).not.toHaveBeenCalled()
+    expect(getTimekeepingOperationsWorkspace).not.toHaveBeenCalled()
+  })
+
   it('clears a SygSphere-scoped session opened on the platform home and falls back to login', async () => {
     prepareSharedSession('sygsphere')
     renderShell('/')

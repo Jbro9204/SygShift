@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 11/09/2026 - Explicit Admin-set employee passwords
+
+- Added the canonical, no-email Admin-selected password operation with optional next-login change and no credential expiration.
+- Preserved role, MFA, suspension, scheduling, clock-in and payroll boundaries; the provider affects only the selected employee's existing sessions.
+- Added once-only writes, transaction-bound non-secret receipts, explicit uncertain-outcome recovery and cancellation fences.
+- Repaired stale operation-marker compatibility with later ordinary password recovery and added exact-employee canary narrowing.
+- Verified 24 combined native PostgreSQL scenarios, 22 standalone canonical scenarios, 75 focused interface/Worker tests and six release-artifact tests before the full release gates. Production activation remains subject to the recorded coordinated release checks and the approved Test McTester canary.
+- Details: `docs/changelogs/CHANGELOG_2026-11-09_ADMIN_SET_PASSWORD.md`.
+
 ## 11/06/2026 - Started Unpaid Leave Early Return
 
 - Added a separate server-timed End leave now action for eligible in-progress unpaid hourly/flex leave. Original approved request, used prefix and approval evidence are retained; the unused remainder becomes available without assigning a shift.
