@@ -1201,22 +1201,29 @@ describe('AppShell shared-session lifecycle', () => {
     expect(shared.activeAccessToken).toBeNull()
   })
 
-  it('purges Client Communications and session context caches when the authenticated session ends', async () => {
-    shared.activeAccessToken = accessToken
+  it('purges private communication, time-off list and exact-row caches when the authenticated session ends', async () => {
+    prepareSharedSession('platform')
     const { queryClient } = renderShell('/')
     await waitFor(() => expect(shared.authListeners.size).toBe(2))
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
 
     const communicationsKey = ['client-communications', employeeId, 'workspace', 'all', '', 1, 20]
     const requiredActionKey = ['required-action-checkpoint', employeeId]
+    const timeOffPageKey = ['time-off-request-page', employeeId, 1, '', 'all', 'history', 0, null]
+    const timeOffExactKey = ['time-off-request-page', employeeId, 1, 'exact-action', 'selected-request']
     queryClient.setQueryData(communicationsKey, { privatePreview: 'Employee A message' })
     queryClient.setQueryData(requiredActionKey, { blocking: true, items: [{ title: 'Private employee action' }] })
+    queryClient.setQueryData(timeOffPageKey, { items: [{ reason: 'Private leave reason' }] })
+    queryClient.setQueryData(timeOffExactKey, { items: [{ reason: 'Private selected leave' }] })
     queryClient.setQueryData(['session-context'], { employeeId })
     queryClient.setQueryData(['unrelated-cache'], { retained: true })
 
-    act(() => shared.authListener?.('SIGNED_OUT', null))
+    await act(async () => shared.authListener?.('SIGNED_OUT', null))
 
     expect(queryClient.getQueryData(communicationsKey)).toBeUndefined()
     expect(queryClient.getQueryData(requiredActionKey)).toBeUndefined()
+    expect(queryClient.getQueryData(timeOffPageKey)).toBeUndefined()
+    expect(queryClient.getQueryData(timeOffExactKey)).toBeUndefined()
     expect(queryClient.getQueryData(['session-context'])).toBeUndefined()
     expect(queryClient.getQueryData(['unrelated-cache'])).toEqual({ retained: true })
   })

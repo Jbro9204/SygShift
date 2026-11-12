@@ -1,5 +1,16 @@
 # SygShift Development Log
 
+## 11/12/2026 - Complete Time Off history and verified context
+
+- Replaced the Time Off page's capped client-side history/search with a bounded authenticated keyset reader, exact server counts and independent request-ID lookup. Other request tabs and all mutations remain unchanged.
+- Preserved original approvals, early-return/cancellation receipts and historical timezone facts. Unverifiable historical action context leaves the record visible with HR guidance and no unverified Cancel/End action.
+- Verified 47 native database checks, 134 focused application/session tests, 13 browser checks and desktop layouts. No leave, credential, permission, schedule, punch or payroll record was changed. Full candidate and production verification remain required; see `docs/changelogs/CHANGELOG_2026-11-12_TIME_OFF_HISTORY.md`.
+
+## 11/12/2026 - Operational email delivery integrity
+
+- Added recipient eligibility and current-address verification, immutable per-recipient delivery outcomes and guarded retry/finalization across the five operational lanes. Recovery, invitations and manual-password paths remain separate and unchanged.
+- Installed the reviewed additive migration after 108 native checks, full application checks and 42 clock regressions. Exact source `2574c782571244f7dde00043def46a57da8a979b` passed GitHub, deployed, and completed a verified empty-claim cutover plus healthy post-activation natural cycle. See `docs/changelogs/CHANGELOG_2026-11-12_OPERATIONAL_EMAIL_RECIPIENTS.md`.
+
 ## 11/09/2026 - Manual password release closeout
 
 - Deployed the chosen, non-expiring password workflow and independent next-login change checkbox, retaining current Admin verification and all employee access, Guard MFA, timekeeping and payroll boundaries.

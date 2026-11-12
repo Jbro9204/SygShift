@@ -110,6 +110,7 @@ class RequiredActionCheckpointTimeoutError extends Error {
 }
 const COMPACT_NAVIGATION_QUERY = '(max-width: 1280px), (max-width: 1366px) and (max-height: 800px)'
 const SESSION_SCOPED_QUERY_ROOTS = [
+  'time-off-request-page',
   'support',
   'my-notifications',
   'notification-device-session',

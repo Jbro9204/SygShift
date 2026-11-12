@@ -1,6 +1,7 @@
 # Operational email recipient and delivery integrity — November 12, 2026
 
-Status: database support applied in inactive mode; application release pending.
+Status: database and application deployed; guarded sender activated after a
+verified empty old-sender claim cohort. Post-activation natural cycle verified.
 
 ## Verified defects
 
@@ -103,6 +104,31 @@ normal source-job outcomes are written only by later operational processing.
 - Existing Worker rollback checkpoint: version
   `9d275e99-6f25-4f86-82de-0abcc0b4553c`, source
   `0c2809ee5f9af375936806635a3aadd8c9e0ad75`.
+
+## Production activation checkpoint
+
+- Exact source `2574c782571244f7dde00043def46a57da8a979b` passed the clean
+  local main gate and GitHub push run `43310455293`, including CodeQL.
+- Normal guarded release promoted Worker version
+  `482cd229-19ba-4937-ac7d-0c7eb1285c66`, deployment
+  `00763bb5-780d-48f1-ad21-b7e99dd8b57b`, without rollback.
+- Fresh production build, mandatory 42-clock matrix, database ownership and
+  upstream/anonymous boundary checks passed. Wrangler did not provide a
+  candidate Version URL, so candidate-only smoke testing was unavailable.
+  A signed-in canary was not used; this retains the documented fallback limit.
+- The normal runtime advanced to the new source at
+  `2026-11-12T21:42:54.209Z`, with readiness restored and zero failures.
+- All five lane locks were acquired for a finite legacy pause at
+  `2026-11-12T21:43:18.134529Z`. Two observations and the atomic enable guard
+  found zero unfinished attempts (all ages), zero pause-window unfinished
+  attempts and zero post-pause claims. The one historical exhausted general
+  notification remained untouched. No unclaimed queue items required replay.
+- Guarded delivery enabled at `2026-11-12T21:43:29.741432Z`; the legacy pause
+  was cleared. No manual processor, test email or source-job edit was used.
+- Post-activation natural runtime succeeded at `2026-11-12T21:43:52.905Z`.
+  Readiness was true, consecutive failures zero and the runtime source matched
+  the deployed revision. The guarded ledger remained empty because no normal
+  jobs needed delivery during this observation; no provider delivery was forced.
 
 ## Limitations and rollback
 

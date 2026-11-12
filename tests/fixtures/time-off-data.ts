@@ -144,11 +144,51 @@ export async function getRequestCenter() {
     role: isManager ? 'supervisor' : 'guard',
     permissions: { canManage: isManager },
     timeOffHistory: { managerHistoryLimit: isManager ? 100 : null, truncated: isManager },
-    timeOff: isManager ? [...sharedRequests, ...managerOnlyRequests] : sharedRequests,
+    timeOff: (isManager ? [...sharedRequests, ...managerOnlyRequests] : sharedRequests).map((request) => (
+      params.get('scenario') === 'context-unavailable' && request.id === approvedRequestId
+        ? { ...request, cancellationContext: undefined, cancellationContextUnavailable: true,
+          cancellationContextIssue: 'Action availability could not be verified for this historical request. Ask HR to review it before making changes.' }
+        : request
+    )),
     shiftRequests: [],
     callOffs: [],
     upcomingAssignments: [],
   }
+}
+
+export async function getSessionContextWithSignal() {
+  const isManager = params.get('viewer') === 'manager'
+  return { employeeId: isManager ? managerEmployeeId : employeeId, accessGeneration: 1,
+    timeZone: 'America/Denver', permissions: isManager ? ['requests.manage'] : [] }
+}
+
+export async function getTimeOffRequestPage(input: { search?: string; status?: string; bucket?: string; limit?: number; cursor?: { asOf: string; id: string | null } | null; requestId?: string | null }) {
+  const center = await getRequestCenter()
+  const rows = params.get('scenario') === 'history'
+    ? Array.from({ length: 121 }, (_, index) => timeOffRequest({ id: `30000000-0000-4000-8000-${String(index + 10).padStart(12, '0')}`,
+      status: 'approved', reason: `Historical approved request ${index + 1}`, cancellationContext: { phase: 'future', canCancel: true, canEndNow: false, blockReason: null, startsAt: '2099-11-02T07:00:00Z', endsAt: '2099-11-03T07:00:00Z', timeZone: 'America/Denver' } }))
+    : center.timeOff
+  const displayStatus = (request: typeof rows[number]) => 'earlyReturn' in request && request.earlyReturn ? 'ended_early' : request.status
+  const upcoming = (request: typeof rows[number]) => !('earlyReturn' in request && request.earlyReturn) && request.ends_on >= '2026-11-12' && ['pending', 'approved'].includes(request.status)
+  const closed = (request: typeof rows[number]) => ['declined', 'withdrawn', 'canceled', 'ended_early'].includes(displayStatus(request))
+  const matching = rows.filter((request) => (!input.requestId || request.id === input.requestId)
+    && (!input.search || [request.reason, request.decision_note, employeeName(request.employee)].join(' ').toLowerCase().includes(input.search)))
+  const selected = matching.filter((request) => (!input.status || input.status === 'all' || displayStatus(request) === input.status)
+    && (!input.bucket || input.bucket === 'all' || (input.bucket === 'pending' ? request.status === 'pending' : input.bucket === 'history' ? request.status !== 'pending' : input.bucket === 'upcoming' ? upcoming(request) : !upcoming(request))))
+  const limit = input.limit ?? 20
+  const offset = input.cursor?.id ? Number(input.cursor.id.slice(-12)) : 0
+  const cursor = { version: 1, scope: 'a'.repeat(64), asOf: input.cursor?.asOf ?? '2026-11-12T20:00:00.123456Z', createdAt: offset ? '2026-11-01T00:00:00.000001Z' : null, id: input.cursor?.id ?? null }
+  const hasMore = offset + limit < selected.length
+  return { employeeId: center.employeeId, employeeTimeZone: 'America/Denver', permissions: center.permissions,
+    items: selected.slice(offset, offset + limit),
+    counts: { all: matching.length, pending: matching.filter((request) => request.status === 'pending').length,
+      approved: matching.filter((request) => displayStatus(request) === 'approved').length,
+      closed: matching.filter(closed).length, pastOrClosed: matching.filter((request) => request.ends_on < '2026-11-12' || closed(request)).length,
+      upcoming: matching.filter(upcoming).length, history: matching.filter((request) => !upcoming(request)).length,
+      declined: 0, withdrawn: 0, canceled: 0, endedEarly: 0 },
+    page: { limit, total: selected.length, currentCursor: cursor,
+      nextCursor: hasMore ? { ...cursor, createdAt: '2026-11-01T00:00:00.000001Z', id: `40000000-0000-4000-8000-${String(offset + limit).padStart(12, '0')}` } : null,
+      hasMore, asOf: cursor.asOf }, filters: { search: input.search ?? '', status: input.status ?? 'all', bucket: input.bucket ?? 'all', requestId: input.requestId ?? null } }
 }
 
 export async function getTimeOffRequestContext() {

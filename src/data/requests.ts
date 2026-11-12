@@ -97,6 +97,8 @@ const timeOffSchema = z.object({
   cancellation: timeOffCancellationSchema.nullable().optional(),
   earlyReturn: timeOffEarlyReturnSchema.nullable().optional(),
   cancellationContext: timeOffCancellationContextSchema.optional(),
+  cancellationContextUnavailable: z.boolean().optional(),
+  cancellationContextIssue: z.string().optional(),
   created_at: z.string(),
   employee: employeeSchema,
 })
@@ -368,6 +370,87 @@ function employeeFromPayload(id: string, displayName: string): z.infer<typeof em
   }
 }
 
+function timeOffFromPayload(request: z.infer<typeof requestCenterPayloadSchema>['timeOff'][number] & {
+  cancellationContextUnavailable?: boolean; cancellationContextIssue?: string;
+}): TimeOffRequest {
+  return {
+    id: request.id, employee_id: request.employeeId, employee_number: request.employeeNumber,
+    starts_on: request.startsOn, ends_on: request.endsOn, partial_day_start: request.partialDayStart,
+    partial_day_end: request.partialDayEnd, request_type: request.requestType,
+    employment_type_snapshot: request.employmentType, pay_treatment: request.payTreatment,
+    requested_minutes: request.requestedMinutes, return_on: request.returnOn,
+    affected_shift_count: request.affectedShiftCount, affected_shifts: request.affectedShifts,
+    reason: request.reason, status: request.status, decision_note: request.decisionNote,
+    decided_at: request.decidedAt, decided_by_name: request.decidedByName, updated_at: request.updatedAt,
+    cancellation: request.cancellation ?? null, earlyReturn: request.earlyReturn ?? null,
+    cancellationContext: request.cancellationContextUnavailable ? undefined : request.cancellationContext,
+    cancellationContextUnavailable: request.cancellationContextUnavailable,
+    cancellationContextIssue: request.cancellationContextIssue,
+    created_at: request.createdAt,
+    employee: employeeFromPayload(request.employeeId, request.employeeName),
+  }
+}
+
+const timeOffPageStatusSchema = z.enum(['all', 'pending', 'approved', 'declined', 'withdrawn', 'canceled', 'ended_early'])
+const timeOffPageBucketSchema = z.enum(['all', 'pending', 'history', 'upcoming', 'past'])
+const timeOffPageCursorSchema = z.object({
+  version: z.literal(1), scope: z.string().regex(/^[a-f0-9]{64}$/), asOf: z.string().datetime(),
+  createdAt: z.string().datetime().nullable(), id: z.string().uuid().nullable(),
+}).strict().refine((value) => (value.createdAt === null) === (value.id === null))
+const timeOffCount = z.number().int().nonnegative()
+const timeOffRequestPageSchema = z.object({
+  employeeId: z.string().uuid(), employeeTimeZone: z.string().nullable(), permissions: z.object({ canManage: z.boolean() }),
+  items: z.array(requestCenterPayloadSchema.shape.timeOff.element.extend({
+    cancellationContextUnavailable: z.boolean().optional(), cancellationContextIssue: z.string().optional(),
+  })),
+  counts: z.object({ all: timeOffCount, pending: timeOffCount, approved: timeOffCount, declined: timeOffCount,
+    withdrawn: timeOffCount, canceled: timeOffCount, endedEarly: timeOffCount, closed: timeOffCount,
+    pastOrClosed: timeOffCount, upcoming: timeOffCount, history: timeOffCount }),
+  page: z.object({ limit: z.number().int().min(1).max(50), total: timeOffCount,
+    currentCursor: timeOffPageCursorSchema, nextCursor: timeOffPageCursorSchema.nullable(),
+    hasMore: z.boolean(), asOf: z.string().datetime() }),
+  filters: z.object({ search: z.string().nullable(), status: timeOffPageStatusSchema, bucket: timeOffPageBucketSchema, requestId: z.string().uuid().nullable() }),
+}).superRefine((value, context) => {
+  if (value.items.length > value.page.limit || value.page.total < value.items.length
+    || value.page.hasMore !== Boolean(value.page.nextCursor)
+    || value.page.currentCursor.asOf !== value.page.asOf
+    || (value.page.nextCursor && (value.page.nextCursor.scope !== value.page.currentCursor.scope || value.page.nextCursor.asOf !== value.page.asOf))) {
+    context.addIssue({ code: 'custom', message: 'Invalid time-off page metadata.' })
+  }
+})
+
+export type TimeOffPageCursor = z.infer<typeof timeOffPageCursorSchema>
+export type TimeOffPageStatus = z.infer<typeof timeOffPageStatusSchema>
+export type TimeOffPageBucket = z.infer<typeof timeOffPageBucketSchema>
+export type TimeOffRequestPage = Omit<z.infer<typeof timeOffRequestPageSchema>, 'items'> & { items: TimeOffRequest[] }
+
+export async function getTimeOffRequestPage(input: {
+  search?: string; status?: TimeOffPageStatus; bucket?: TimeOffPageBucket; limit?: number;
+  cursor?: TimeOffPageCursor | null; requestId?: string | null; employeeId?: string; signal?: AbortSignal;
+} = {}): Promise<TimeOffRequestPage> {
+  const query = getSupabaseClient().rpc('get_time_off_request_page_v1', {
+    target_search: input.search?.trim() || null, target_status: input.status ?? 'all', target_bucket: input.bucket ?? 'all',
+    target_limit: input.limit ?? 20, target_cursor: input.cursor ?? null, target_request_id: input.requestId ?? null,
+  })
+  const { data, error } = await (input.signal ? query.abortSignal(input.signal) : query)
+  if (error) throw new Error('Time-off requests could not be loaded. Your saved requests have not changed.')
+  const parsed = timeOffRequestPageSchema.safeParse(data)
+  if (!parsed.success || (input.employeeId && parsed.data.employeeId !== input.employeeId)
+    || parsed.data.filters.search !== (input.search?.trim().toLowerCase() ?? '')
+    || parsed.data.filters.status !== (input.status ?? 'all')
+    || parsed.data.filters.bucket !== (input.bucket ?? 'all')
+    || parsed.data.filters.requestId !== (input.requestId ?? null)
+    || parsed.data.page.limit !== (input.limit ?? 20)
+    || (input.requestId && parsed.data.items.some((row) => row.id !== input.requestId))
+    || (input.cursor && (parsed.data.page.asOf !== input.cursor.asOf
+      || parsed.data.page.currentCursor.scope !== input.cursor.scope
+      || parsed.data.page.currentCursor.createdAt !== input.cursor.createdAt
+      || parsed.data.page.currentCursor.id !== input.cursor.id))) {
+    throw new Error('The time-off request page could not be verified. Refresh and try again.')
+  }
+  return { ...parsed.data, items: parsed.data.items.map(timeOffFromPayload) }
+}
+
 function shiftFromPayload(shift: z.infer<typeof rpcShiftSchema>): RequestShift {
   return {
     id: shift.id,
@@ -390,33 +473,7 @@ export async function getRequestCenter(): Promise<RequestCenter> {
 
   const payload = parseRequestCenterPayload(data)
   const records: RequestCenterRecords = {
-    timeOff: payload.timeOff.map((request) => ({
-      id: request.id,
-      employee_id: request.employeeId,
-      employee_number: request.employeeNumber,
-      starts_on: request.startsOn,
-      ends_on: request.endsOn,
-      partial_day_start: request.partialDayStart,
-      partial_day_end: request.partialDayEnd,
-      request_type: request.requestType,
-      employment_type_snapshot: request.employmentType,
-      pay_treatment: request.payTreatment,
-      requested_minutes: request.requestedMinutes,
-      return_on: request.returnOn,
-      affected_shift_count: request.affectedShiftCount,
-      affected_shifts: request.affectedShifts,
-      reason: request.reason,
-      status: request.status,
-      decision_note: request.decisionNote,
-      decided_at: request.decidedAt,
-      decided_by_name: request.decidedByName,
-      updated_at: request.updatedAt,
-      cancellation: request.cancellation ?? null,
-      earlyReturn: request.earlyReturn ?? null,
-      cancellationContext: request.cancellationContext,
-      created_at: request.createdAt,
-      employee: employeeFromPayload(request.employeeId, request.employeeName),
-    })),
+    timeOff: payload.timeOff.map(timeOffFromPayload),
     shiftRequests: payload.shiftRequests.map((request) => ({
       id: request.id,
       employee_id: request.employeeId,
