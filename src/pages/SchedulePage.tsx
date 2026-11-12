@@ -48,7 +48,7 @@ import {
   type StaffingSuggestion,
   type WeeklySchedule,
 } from '../data/schedule'
-import { processNotificationBatch } from '../data/operations'
+import { notificationProcessSummary, processNotificationBatch } from '../data/operations'
 import { getMaintenanceStatus } from '../data/maintenance'
 import {
   getVacancyPatrolRecoveryMap,
@@ -3056,12 +3056,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     onSuccess: async ({ delivery, queued }) => {
       setNotifyScheduleOpen(false)
       const weekLabel = `${format(new Date(`${queued.weekStartsOn}T12:00:00`), 'MM/dd/yyyy')} - ${format(new Date(`${queued.weekEndsOn}T12:00:00`), 'MM/dd/yyyy')}`
-      const delivered = delivery.delivered.length
-      const failed = delivery.failed.length
-      const deliverySummary = delivery.processed === 0
-        ? 'No queued emails were waiting to send.'
-        : `${delivery.processed} email${delivery.processed === 1 ? '' : 's'} processed (${delivered} delivered, ${failed} failed).`
-      setBuilderMessage(`Schedule notification sent for ${weekLabel}. ${deliverySummary}`)
+      setBuilderMessage(`Schedule notification queued for ${weekLabel}. ${notificationProcessSummary(delivery)}`)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['notification-center'] }),
         queryClient.invalidateQueries({ queryKey: ['overview-metrics'] }),

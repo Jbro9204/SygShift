@@ -38,8 +38,11 @@ describe('My Account self-service guardrails', () => {
   it('makes notification preferences operational without suppressing required alerts', () => {
     expect(migration).toContain('service_filter_notification_recipients')
     expect(migration).toContain("target_message_type = 'call_off_supervisor_alert'")
-    expect(worker).toContain('deliverJobs(generalJobs, true)')
-    expect(worker).toContain('Suppressed — Employee Preference')
+    expect(worker).toContain("deliverJobs(generalJobs, 'general')")
+    expect(worker).toContain('deliverOperationalEmailJob(job, lane')
+    const delivery = readFileSync(join(root, 'supabase', 'migrations', '20261112205236_operational_email_recipient_delivery_guard.sql'), 'utf8')
+    expect(delivery).toContain('private.employee_notification_preferences')
+    expect(delivery).toContain("when kind='announcement_published' then not p.announcements else false end")
     expect(page).toContain('Security and account notices')
     expect(page).toContain('cannot be disabled')
   })

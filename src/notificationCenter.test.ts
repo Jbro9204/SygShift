@@ -47,7 +47,8 @@ describe('employee notification center', () => {
     expect(page).toContain('Also send by email')
     expect(migration).toContain('mirror_support_ticket_notification_to_inbox')
     expect(migration).toContain('employee_notification_email_deliveries')
-    expect(worker).toContain("'service_claim_employee_notification_batch'")
+    expect(worker).toContain("'service_claim_guarded_operational_email_batch'")
+    expect(worker).toContain("claimJobs('employee')")
     expect(worker).toContain("relatedRecordType: 'employee_notification'")
   })
 

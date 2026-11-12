@@ -52,9 +52,11 @@ describe('employee write-up and signature delivery', () => {
     expect(migration).not.toContain('pg_get_functiondef')
     expect(migration).not.toContain("outbox.message_type <> 'document_signature_required'")
     expect(migration).toContain("interval '20 minutes'")
-    expect(worker).toContain("const isRequiredDocumentDelivery = job.messageType === 'document_signature_required'")
-    expect(worker).toContain('respectEmployeePreferences && !isRequiredDocumentDelivery')
-    expect(worker).toContain("'service_mark_notification_result'")
+    const recipientGuard = readFileSync(join(root, 'supabase', 'migrations', '20261112205236_operational_email_recipient_delivery_guard.sql'), 'utf8')
+    expect(recipientGuard).toContain("kind<>'document_signature_required' or a.employee_id is not null")
+    expect(recipientGuard).toContain("when kind='announcement_published' then not p.announcements else false end")
+    expect(worker).toContain('deliverOperationalEmailJob(job, lane')
+    expect(worker).toContain('deferOperationalEmailJob(job, lane')
   })
 
   it('keeps the generic delivery worker from stealing another processor\'s queue rows', () => {
