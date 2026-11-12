@@ -89,10 +89,15 @@ describe('production timekeeping operations expansion', () => {
   })
 
   it('suppresses the configured blocked email domain before provider delivery while retaining an audit record', () => {
+    const delivery = readFileSync(join(root, 'worker', 'operationalEmailDelivery.ts'), 'utf8')
+    const recipientGuard = readFileSync(join(root, 'supabase', 'migrations', '20261112205236_operational_email_recipient_delivery_guard.sql'), 'utf8')
     expect(worker).toContain("'guardianshipsecurity.net'")
     expect(worker).toContain('isBlockedEmailRecipient(environment, recipient)')
     expect(worker).toContain("'suppressed_blocked_domain'")
-    expect(worker).toContain("'service_mark_notification_suppressed'")
+    expect(delivery).toContain("if (dependencies.blocked(claimed.email)) outcome = 'suppressed'")
+    expect(delivery.indexOf('dependencies.blocked(claimed.email)')).toBeLessThan(delivery.indexOf('dependencies.send(claimed.email)'))
+    expect(recipientGuard).toContain('private.operational_email_delivery_ledger')
+    expect(recipientGuard).toContain("'accepted','unknown','suppressed'")
     expect(foundation).toContain('private.email_delivery_audit')
     expect(foundation).toContain("'Suppressed — Blocked Domain'")
     expect(wrangler).toContain('SYGSHIFT_BLOCKED_EMAIL_DOMAINS')

@@ -3771,3 +3771,16 @@ pnpm exec wrangler deploy --keep-vars
 - Focused browser/session validation passed 4 files and 51 tests, including completed transient and terminal Auth-session failures after a mounted workspace. Full `pnpm check` passed 390 application files with 2,311 of 2,312 tests, 189 release-control tests, strict TypeScript, zero-warning lint, production build, and static-asset validation. All 42 mandatory desktop/mobile Time Clock checks also passed, followed by a fresh production build.
 - No database migration or production record change is required.
 - See `docs/changelogs/CHANGELOG_10-30-2026_SECURE_ACCESS_BROWSER_RECOVERY_RACE_REPAIR.md`.
+
+# 11/12/2026 - Operational email recipient and delivery integrity
+
+- Replace address-only operational delivery with exact job/employee proof and
+  delivery-time eligibility, canonical address and existing preference checks.
+- Retain published audience evidence and first-dispatch dynamic identities;
+  append recipient claims/outcomes so partial sends and uncertain provider
+  responses cannot trigger blind repeat delivery.
+- Leave recovery, security, onboarding, manual passwords, timekeeping records,
+  schedules, payroll, reports and original notification history unchanged.
+- Focused Worker/adapter and native PostgreSQL checks passed. Complete release
+  status and limitations are recorded in
+  `docs/changelogs/CHANGELOG_2026-11-12_OPERATIONAL_EMAIL_RECIPIENTS.md`.

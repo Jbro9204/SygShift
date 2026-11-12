@@ -43,6 +43,7 @@ import { buildSygSphereCommsUsageResponse } from './comms/usageContract'
 import { parseSygSphereCommsCommand } from '../shared/sygsphere-communications/v1/contract'
 import { isHrDocumentSourceVersionTimestamp, normalizeHrDocumentLibraryTimestamps } from './hrDocumentLibraryPayload'
 import { cancelEmployeePasswordSet, confirmEmployeePasswordSet, readEmployeePasswordSet, setEmployeePassword, type PasswordSetActor } from './adminPasswordSet'
+import { deferOperationalEmailJob, deliverOperationalEmailJob, type OperationalEmailLane } from './operationalEmailDelivery'
 
 export { ReportWorkloadCoordinator, ScheduledRuntimeCoordinator, TenantCommsDurableObject }
 
@@ -9174,6 +9175,7 @@ async function processNotificationJobs(
 ): Promise<{
   delivered: string[]
   failed: Array<{ id: string, error: string }>
+  held: string[]
   processed: number
   suppressed: string[]
 }> {
@@ -9181,16 +9183,18 @@ async function processNotificationJobs(
   if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
   if (!environment.EMAIL) throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
 
+  const claimJobs = (targetLane: OperationalEmailLane) => rpc<NotificationJob[]>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_claim_guarded_operational_email_batch',
+    { target_lane: targetLane, target_limit: limit },
+    config.serviceRoleKey,
+  )
   const timekeepingJobs = lane === 'noncritical'
     ? []
-    : await rpc<NotificationJob[]>(
-      { serviceRoleKey: config.serviceRoleKey, url: config.url },
-      'service_claim_timekeeping_notification_batch',
-      { target_limit: limit },
-      config.serviceRoleKey,
-    )
+    : await claimJobs('timekeeping')
   const delivered: string[] = []
   const failed: Array<{ id: string, error: string }> = []
+  const held: string[] = []
   const suppressed: string[] = []
   const recordDeferredAudit = async (
     job: NotificationJob,
@@ -9205,205 +9209,122 @@ async function processNotificationJobs(
     }
   }
 
-  const deliverJobs = async (jobs: NotificationJob[], respectEmployeePreferences = false) => {
+  const deliverJob = async (job: NotificationJob, lane: OperationalEmailLane, context: EmailAuditContext) => {
+    if (!environment.SYGSHIFT_EMAIL_FROM?.trim()) throw new ApiError('email_sender_not_configured', 503, 'The email sender address is not configured.')
+    if (!job.message || typeof job.message.subject !== 'string' || typeof job.message.text !== 'string') {
+      throw new Error('The operational email content could not be verified.')
+    }
+    const audit: EmailDeliveryResult = { failed: [], sent: [], suppressed: [] }
+    try {
+      return await deliverOperationalEmailJob(job, lane, {
+        rpc: (name, parameters) => rpc<unknown>(
+          { serviceRoleKey: config.serviceRoleKey, url: config.url }, name, parameters, config.serviceRoleKey,
+        ),
+        blocked: (email) => isBlockedEmailRecipient(environment, email),
+        send: async (email) => {
+          const result = await sendAuditedEmail(environment, email, job.message, context, undefined, rpc, 'deferred')
+          audit.sent.push(...result.sent)
+          audit.suppressed.push(...result.suppressed)
+          audit.failed.push(...result.failed.map((failure) => ({ ...failure, error: 'The operational email provider outcome is unknown.' })))
+          if (result.sent.length !== 1 || result.failed.length > 0 || result.suppressed.length > 0) {
+            throw new Error('The operational email provider outcome is unknown.')
+          }
+        },
+      })
+    } finally {
+      if (audit.sent.length + audit.suppressed.length + audit.failed.length > 0) {
+        await recordDeferredAudit(job, audit, context)
+      }
+    }
+  }
+  const recordOutcome = (job: NotificationJob, outcome: Awaited<ReturnType<typeof deliverJob>>) => {
+    if (outcome.status === 'delivered') delivered.push(job.id)
+    else if (outcome.status === 'suppressed') suppressed.push(job.id)
+    else held.push(job.id)
+  }
+  const deferDeliveryFailure = async (job: NotificationJob, lane: OperationalEmailLane, error: unknown) => {
+    if (isScheduledContainmentError(error)) throw error
+    let status: Awaited<ReturnType<typeof deferOperationalEmailJob>> | null = null
+    try {
+      status = await deferOperationalEmailJob(job, lane, (name, parameters) => rpc<unknown>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url }, name, parameters, config.serviceRoleKey,
+      ))
+    } catch (deferError) {
+      if (isScheduledContainmentError(deferError)) throw deferError
+      // Never use a legacy negative marker here: it could reopen a terminal
+      // accepted or held outcome after the finalization response was lost.
+    }
+    if (status === 'delivered') delivered.push(job.id)
+    else if (status === 'suppressed') suppressed.push(job.id)
+    else if (status === 'held') held.push(job.id)
+    else failed.push({ id: job.id, error: 'Operational email eligibility or delivery could not be verified.' })
+  }
+  const deliverJobs = async (jobs: NotificationJob[], lane: OperationalEmailLane) => {
     for (const job of jobs) {
       const auditContext: EmailAuditContext = {
         notificationType: job.messageType ?? 'outbox_notification',
         relatedRecordId: job.aggregateId ?? null,
         relatedRecordType: job.aggregateType ?? null,
       }
-      let deferredAudit: EmailDeliveryResult | null = null
       try {
-        let recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
-        if (job.messageType === 'announcement_published' && job.aggregateId) {
-          recipients = await rpc<string[]>(
-            { serviceRoleKey: config.serviceRoleKey, url: config.url },
-            'service_get_announcement_email_recipients',
-            { target_announcement_id: job.aggregateId },
-            config.serviceRoleKey,
-          )
-        }
-        const isRequiredDocumentDelivery = job.messageType === 'document_signature_required'
-        if (respectEmployeePreferences && !isRequiredDocumentDelivery && recipients.length > 0) {
-          recipients = await rpc<string[]>(
-            { serviceRoleKey: config.serviceRoleKey, url: config.url },
-            'service_filter_notification_recipients',
-            {
-              target_aggregate_id: job.aggregateId ?? null,
-              target_message_type: job.messageType ?? 'outbox_notification',
-              target_recipients: recipients,
-            },
-            config.serviceRoleKey,
-          )
-        }
-        if (recipients.length === 0) {
-          await rpc<unknown>(
-            { serviceRoleKey: config.serviceRoleKey, url: config.url },
-            'service_mark_notification_suppressed',
-            { target_notification_id: job.id, target_reason: 'Suppressed — Employee Preference' },
-            config.serviceRoleKey,
-          )
-          suppressed.push(job.id)
-          continue
-        }
-
-        deferredAudit = await sendAuditedEmail(
-          environment,
-          recipients,
-          job.message,
-          auditContext,
-          undefined,
-          rpc,
-          'deferred',
-        )
-        if (deferredAudit.failed.length > 0) {
-          throw new Error(deferredAudit.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
-        }
-        if (deferredAudit.sent.length === 0 && deferredAudit.suppressed.length > 0) {
-          await rpc<unknown>(
-            { serviceRoleKey: config.serviceRoleKey, url: config.url },
-            'service_mark_notification_suppressed',
-            { target_notification_id: job.id, target_reason: 'Suppressed — Blocked Domain' },
-            config.serviceRoleKey,
-          )
-          suppressed.push(job.id)
-        } else {
-          // Provider acceptance is made durable before the optional audit row.
-          // If audit storage is temporarily unavailable, the claimed outbox row
-          // is already complete and a later cycle cannot resend the email.
-          await rpc<unknown>(
-            { serviceRoleKey: config.serviceRoleKey, url: config.url },
-            'service_mark_notification_result',
-            { delivered: true, delivery_error: null, target_notification_id: job.id },
-            config.serviceRoleKey,
-          )
-          delivered.push(job.id)
-        }
+        recordOutcome(job, await deliverJob(job, lane, auditContext))
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Email delivery failed.'
-        await rpc<unknown>(
-          { serviceRoleKey: config.serviceRoleKey, url: config.url },
-          'service_mark_notification_result',
-          { delivered: false, delivery_error: message, target_notification_id: job.id },
-          config.serviceRoleKey,
-        )
-        failed.push({ id: job.id, error: message })
-      }
-      if (deferredAudit) {
-        await recordDeferredAudit(job, deferredAudit, auditContext)
+        await deferDeliveryFailure(job, lane, error)
       }
     }
   }
 
-  await deliverJobs(timekeepingJobs)
+  await deliverJobs(timekeepingJobs, 'timekeeping')
 
   if (lane === 'timekeeping') {
     return {
       delivered,
       failed,
-      processed: delivered.length + failed.length + suppressed.length,
+      held,
+      processed: delivered.length + failed.length + held.length + suppressed.length,
       suppressed,
     }
   }
 
-  const timeOffJobs = await rpc<NotificationJob[]>(
-    { serviceRoleKey: config.serviceRoleKey, url: config.url },
-    'service_claim_time_off_notification_batch',
-    { target_limit: limit },
-    config.serviceRoleKey,
-  )
-  await deliverJobs(timeOffJobs, true)
+  const timeOffJobs = await claimJobs('time_off')
+  await deliverJobs(timeOffJobs, 'time_off')
 
-  const generalJobs = await rpc<NotificationJob[]>(
-    { serviceRoleKey: config.serviceRoleKey, url: config.url },
-    'service_claim_notification_batch',
-    { target_limit: limit },
-    config.serviceRoleKey,
-  )
-  await deliverJobs(generalJobs, true)
+  const generalJobs = await claimJobs('general')
+  await deliverJobs(generalJobs, 'general')
 
-  const supportJobs = await rpc<NotificationJob[]>(
-    { serviceRoleKey: config.serviceRoleKey, url: config.url },
-    'service_claim_support_ticket_notification_batch',
-    { target_limit: limit },
-    config.serviceRoleKey,
-  )
+  const supportJobs = await claimJobs('support')
   for (const job of supportJobs) {
     const auditContext: EmailAuditContext = {
       notificationType: job.messageType ?? 'support_ticket_update',
       relatedRecordId: job.aggregateId ?? null,
       relatedRecordType: 'support_ticket',
     }
-    let deferredAudit: EmailDeliveryResult | null = null
     try {
-      const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
-      if (recipients.length === 0) throw new Error('No approved employee email is available for this ticket update.')
-      deferredAudit = await sendAuditedEmail(environment, recipients, job.message, auditContext, undefined, rpc, 'deferred')
-      if (deferredAudit.failed.length > 0) throw new Error(deferredAudit.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
-      if (deferredAudit.sent.length === 0) throw new Error('The ticket email was suppressed by the active recipient safeguards.')
-      await rpc<unknown>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
-        'service_mark_support_ticket_notification_result',
-        { delivered: true, delivery_error: null, target_notification_id: job.id },
-        config.serviceRoleKey,
-      )
-      delivered.push(job.id)
+      recordOutcome(job, await deliverJob(job, 'support', auditContext))
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Ticket email delivery failed.'
-      await rpc<unknown>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
-        'service_mark_support_ticket_notification_result',
-        { delivered: false, delivery_error: message, target_notification_id: job.id },
-        config.serviceRoleKey,
-      )
-      failed.push({ id: job.id, error: message })
+      await deferDeliveryFailure(job, 'support', error)
     }
-    if (deferredAudit) await recordDeferredAudit(job, deferredAudit, auditContext)
   }
 
-  const employeeNotificationJobs = await rpc<NotificationJob[]>(
-    { serviceRoleKey: config.serviceRoleKey, url: config.url },
-    'service_claim_employee_notification_batch',
-    { target_limit: limit },
-    config.serviceRoleKey,
-  )
+  const employeeNotificationJobs = await claimJobs('employee')
   for (const job of employeeNotificationJobs) {
     const auditContext: EmailAuditContext = {
       notificationType: job.messageType ?? 'direct_employee_notification',
       relatedRecordId: job.aggregateId ?? null,
       relatedRecordType: 'employee_notification',
     }
-    let deferredAudit: EmailDeliveryResult | null = null
     try {
-      const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
-      if (recipients.length === 0) throw new Error('No approved employee email is available for this notification.')
-      deferredAudit = await sendAuditedEmail(environment, recipients, job.message, auditContext, undefined, rpc, 'deferred')
-      if (deferredAudit.failed.length > 0) throw new Error(deferredAudit.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
-      if (deferredAudit.sent.length === 0) throw new Error('The notification email was suppressed by the active recipient safeguards.')
-      await rpc<unknown>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
-        'service_mark_employee_notification_result',
-        { delivered: true, delivery_error: null, target_delivery_id: job.id },
-        config.serviceRoleKey,
-      )
-      delivered.push(job.id)
+      recordOutcome(job, await deliverJob(job, 'employee', auditContext))
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Notification email delivery failed.'
-      await rpc<unknown>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
-        'service_mark_employee_notification_result',
-        { delivered: false, delivery_error: message, target_delivery_id: job.id },
-        config.serviceRoleKey,
-      )
-      failed.push({ id: job.id, error: message })
+      await deferDeliveryFailure(job, 'employee', error)
     }
-    if (deferredAudit) await recordDeferredAudit(job, deferredAudit, auditContext)
   }
 
   return {
     delivered,
     failed,
-    processed: delivered.length + failed.length + suppressed.length,
+    held,
+    processed: delivered.length + failed.length + held.length + suppressed.length,
     suppressed,
   }
 }

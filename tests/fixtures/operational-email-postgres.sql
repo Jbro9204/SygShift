@@ -1,0 +1,57 @@
+create role anon;create role authenticated;create role service_role;
+create schema private;create schema auth;
+create function auth.uid() returns uuid language sql stable as $$select null::uuid$$;
+create function auth.role() returns text language sql stable as $$select current_setting('request.jwt.claim.role',true)$$;
+create function auth.jwt() returns jsonb language sql stable as $$select jsonb_build_object('role',auth.role())$$;
+create type public.app_role as enum('guard','dispatcher','scheduler','supervisor','admin');
+create type public.employee_status as enum('active','leave','inactive','separated');
+create type public.announcement_kind as enum('general','open_shift','overtime','event');
+create table public.employees(id uuid primary key,status public.employee_status,role public.app_role,created_at timestamptz default now(),first_name text default 'Fixture',last_name text default 'Employee',preferred_name text,employee_number text);
+create table auth.users(id uuid primary key,deleted_at timestamptz,banned_until timestamptz);
+create table private.employee_contacts(employee_id uuid primary key,personal_email text,company_email text);
+create table private.employee_accounts(employee_id uuid primary key,auth_user_id uuid,disabled_at timestamptz);
+create table private.emergency_access_authority(employee_id uuid primary key,access_state text);
+create table private.employee_notification_preferences(employee_id uuid primary key,schedule_published boolean default true,schedule_changed boolean default true,time_off_decision boolean default true,open_shift_available boolean default true,announcements boolean default true);
+create table public.announcements(id uuid primary key,kind public.announcement_kind,title text default 'Fixture',body text default 'Fixture body',shift_id uuid,event_id uuid);
+create table public.schedules(id uuid primary key,week_starts_on date default current_date,revision integer default 1);
+create table public.shifts(id uuid primary key,schedule_id uuid,canceled_at timestamptz,ends_at timestamptz,requires_armed boolean default false,headcount_required integer default 1,time_zone text default 'America/Denver');
+create table public.events(id uuid primary key,requires_armed boolean);
+create function public.has_valid_credential(uuid,text,date)returns boolean language sql stable as $$select true$$;
+create table public.shift_assignments(id uuid primary key,shift_id uuid,employee_id uuid,status text);
+create table public.call_off_reports(id uuid primary key,shift_id uuid,canceled_at timestamptz,resolved_at timestamptz,duplicate_of_call_off_report_id uuid,replacement_needed boolean,employee_id uuid);
+create table public.timekeeping_operational_exceptions(id uuid primary key,employee_id uuid,shift_id uuid,scheduled_end_at timestamptz);
+create table public.time_off_requests(id uuid primary key,employee_id uuid,request_type text,starts_on date,ends_on date,status text);
+create table private.announcement_recipient_snapshots(announcement_id uuid,employee_id uuid,email_enabled boolean,primary key(announcement_id,employee_id));
+create table private.notification_outbox(id uuid primary key,message_type text,aggregate_id uuid,recipient_employee_id uuid,attempt_count integer,attempted_at timestamptz,delivered_at timestamptz,failed_at timestamptz,last_error text,available_at timestamptz,aggregate_type text default 'fixture',created_at timestamptz default now(),payload jsonb default '{}',idempotency_key text);
+create table public.support_tickets(id uuid primary key,submitted_by uuid,route_permission text,ticket_number bigint default 1,priority text default 'normal',confidential boolean default false,subject text default 'Fixture ticket',description text default 'Fixture details',category text default 'technical',status text default 'open',created_at timestamptz default now(),subcategory text,impact jsonb default '{}',source_path text,technical_context jsonb default '{}');
+create table public.support_ticket_notifications(id uuid primary key,ticket_id uuid,recipient_employee_id uuid,message_type text,attempt_count integer,attempted_at timestamptz,delivered_at timestamptz,failed_at timestamptz,last_error text,available_at timestamptz,created_at timestamptz default now(),body text default 'Fixture update');
+create table public.permission_catalog(code text primary key,name text);
+create table public.employee_notifications(id uuid primary key,recipient_employee_id uuid,resolved_at timestamptz,dismissed_at timestamptz,expires_at timestamptz,source_type text,source_id uuid);
+create table public.employee_notification_email_deliveries(id uuid primary key,notification_id uuid,recipient_employee_id uuid,attempt_count integer,attempted_at timestamptz,delivered_at timestamptz,failed_at timestamptz,last_error text,available_at timestamptz,created_at timestamptz default now(),subject text default 'Fixture',body text default 'Fixture');
+create table public.shift_coverage_cases(id uuid,coverage_shift_id uuid,call_off_report_id uuid);
+create table public.shift_requests(id uuid,shift_id uuid);
+create table public.time_events(id integer,at timestamptz);insert into public.time_events values(1,now());
+create table private.payroll_rows(id integer,minutes integer);insert into private.payroll_rows values(1,480);
+create table private.audit_events(auth_user_id uuid,employee_id uuid,request_id text,schema_name text,table_name text,operation text,row_id text,old_record jsonb,new_record jsonb);
+create function private.current_employee_id() returns uuid language sql stable as $$select null::uuid$$;
+create function private.employee_effective_permissions(uuid) returns text[] language sql stable as $$select array['support.tickets.view','support.route']::text[]$$;
+create function private.preferred_delivery_email(personal_email text,company_email text) returns text language sql immutable set search_path='' as $$
+select lower(btrim(candidate.email)) from unnest(array[personal_email,company_email]) with ordinality candidate(email,priority)
+where nullif(btrim(candidate.email),'') is not null and btrim(candidate.email)~'^[^[:space:]@]+@[^[:space:]@]+$'
+and lower(split_part(btrim(candidate.email),'@',2))<>'guardianshipsecurity.net' order by priority limit 1$$;
+insert into public.employees(id,status,role) select ('12000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+case n when 2 then 'inactive' when 3 then 'separated' when 4 then 'leave' else 'active' end::public.employee_status,'guard'::public.app_role from generate_series(1,6)n;
+insert into auth.users select id,null,null from public.employees;
+insert into private.employee_accounts select id,id,null from public.employees;
+insert into private.employee_contacts select id,'person'||row_number()over(order by id)||'@example.test',null from public.employees;
+insert into private.employee_notification_preferences(employee_id)select id from public.employees;
+insert into private.emergency_access_authority values('12000000-0000-4000-8000-000000000005','suspended');
+insert into public.announcements(id,kind) values('12000000-0000-4000-8000-000000000101','general'),('12000000-0000-4000-8000-000000000105','general'),('12000000-0000-4000-8000-000000000106','general');
+insert into private.announcement_recipient_snapshots select '12000000-0000-4000-8000-000000000101',id,true from public.employees where id<>'12000000-0000-4000-8000-000000000006';
+insert into private.announcement_recipient_snapshots values('12000000-0000-4000-8000-000000000105','12000000-0000-4000-8000-000000000001',true);
+insert into public.schedules values('12000000-0000-4000-8000-000000000102');
+insert into public.shifts(id,schedule_id,canceled_at,ends_at) values('12000000-0000-4000-8000-000000000112','12000000-0000-4000-8000-000000000102',null,now()+interval '1 day');
+insert into public.shift_assignments values('12000000-0000-4000-8000-000000000122','12000000-0000-4000-8000-000000000112','12000000-0000-4000-8000-000000000001','confirmed');
+insert into public.time_off_requests(id,employee_id) values('12000000-0000-4000-8000-000000000103','12000000-0000-4000-8000-000000000001');
+insert into public.timekeeping_operational_exceptions(id,employee_id) values('12000000-0000-4000-8000-000000000104','12000000-0000-4000-8000-000000000001');
+grant usage on schema auth to service_role;grant execute on function auth.role(),auth.jwt()to service_role;

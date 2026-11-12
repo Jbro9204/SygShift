@@ -136,6 +136,33 @@ function withClearMaintenanceStatus(
   })
 }
 
+function operationalDeliveryFixture(job: { id: string; aggregateId: string; messageType: string; recipients: string[] }, onFinalize?: () => void) {
+  let state = 'send'
+  return (input: RequestInfo | URL, init?: RequestInit): Response | null => {
+    const name = String(input).split('/rpc/')[1]
+    if (!name || !['service_resolve_operational_email_recipients', 'service_claim_operational_email_recipient', 'service_record_operational_email_recipient_result', 'service_finalize_operational_email_job'].includes(name)) return null
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    const employeeId = '50000000-0000-4000-8000-000000000001'
+    const proof = { jobId: job.id, lane: body.target_lane, messageType: job.messageType, aggregateId: job.aggregateId }
+    let payload: Record<string, unknown>
+    if (name === 'service_resolve_operational_email_recipients') payload = { ...proof, recipientEmployeeIds: [employeeId] }
+    else if (name === 'service_claim_operational_email_recipient') payload = { ...proof, employeeId, state, attemptId: '60000000-0000-4000-8000-000000000001', email: job.recipients[0].toLowerCase() }
+    else if (name === 'service_record_operational_email_recipient_result') {
+      state = body.target_outcome === 'accepted' ? 'accepted' : body.target_outcome === 'suppressed' ? 'suppressed' : 'held'
+      payload = { ...proof, employeeId, state }
+    } else {
+      payload = { ...proof, status: state === 'accepted' ? 'delivered' : state, acceptedCount: state === 'accepted' ? 1 : 0, suppressedCount: state === 'suppressed' ? 1 : 0, heldCount: state === 'held' ? 1 : 0 }
+      onFinalize?.()
+    }
+    return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } })
+  }
+}
+
+function isOperationalClaim(input: RequestInfo | URL, init: RequestInit | undefined, lane: string) {
+  return String(input).endsWith('/rpc/service_claim_guarded_operational_email_batch')
+    && (JSON.parse(String(init?.body)) as { target_lane?: string }).target_lane === lane
+}
+
 describe('Cloudflare Worker boundary', () => {
   it('protects service-role writes only for active read-only or unavailable feature windows', () => {
     const status = {
@@ -1366,6 +1393,7 @@ describe('Cloudflare Worker boundary', () => {
   })
 
   it('allows MFA-verified schedulers to process queued announcement emails', async () => {
+    const operational = operationalDeliveryFixture({ id: '20000000-0000-4000-8000-000000000001', aggregateId: '30000000-0000-4000-8000-000000000001', messageType: 'announcement_published', recipients: ['jbrown@example.com'] })
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -1388,18 +1416,12 @@ describe('Cloudflare Worker boundary', () => {
         recipients: ['jbrown@example.com'],
         aggregateId: '30000000-0000-4000-8000-000000000001',
         aggregateType: 'announcement',
-        messageType: 'announcement_email',
+        messageType: 'announcement_published',
         message: {
           subject: 'Open shift available',
           text: 'A shift is available.',
         },
       }]), { headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(['jbrown@example.com']), {
-        headers: { 'content-type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
-        headers: { 'content-type': 'application/json' },
-      }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
         headers: { 'content-type': 'application/json' },
       }))
@@ -1410,7 +1432,7 @@ describe('Cloudflare Worker boundary', () => {
         headers: { 'content-type': 'application/json' },
       }))
     const emailSend = vi.fn().mockResolvedValue({ messageId: 'test-message' })
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
+    vi.stubGlobal('fetch', withClearMaintenanceStatus((input, init) => Promise.resolve(operational(input, init) ?? fetchMock(input, init))))
 
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/admin/notifications/process', {
@@ -1423,12 +1445,13 @@ describe('Cloudflare Worker boundary', () => {
         SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
       }),
     )
-    const payload = await response.json() as { delivered: string[]; failed: unknown[]; processed: number; requestedBy: string }
+    const payload = await response.json() as { delivered: string[]; failed: unknown[]; held: string[]; processed: number; requestedBy: string }
 
     expect(response.status, JSON.stringify(payload)).toBe(200)
     expect(payload).toMatchObject({
       delivered: ['20000000-0000-4000-8000-000000000001'],
       failed: [],
+      held: [],
       processed: 1,
       requestedBy: 'scheduler',
     })
@@ -1440,7 +1463,51 @@ describe('Cloudflare Worker boundary', () => {
     vi.unstubAllGlobals()
   })
 
+  it.each([1, 2])('reconciles %i lost finalization responses without reopening or resending an accepted job', async (lostResponses) => {
+    const job = {
+      id: '20000000-0000-4000-8000-000000000121', aggregateId: '30000000-0000-4000-8000-000000000121',
+      messageType: 'announcement_published', recipients: ['approved@example.com'], message: { subject: 'Approved notice', text: 'Open your workspace.' },
+    }
+    const operational = operationalDeliveryFixture(job)
+    let finalizeCalls = 0
+    const seen: string[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const name = String(input).split('/rpc/')[1] ?? ''
+      seen.push(name)
+      if (name === 'get_session_context_emergency') return new Response(JSON.stringify({
+        ...activeEmergencySessionContext, employee_id: '10000000-0000-4000-8000-000000000002', username: 'scheduler',
+        display_name: 'Schedule User', role: 'scheduler', has_mfa: true, permissions: ['announcements.send'],
+      }), { headers: { 'content-type': 'application/json' } })
+      if (isOperationalClaim(input, init, 'general')) return new Response(JSON.stringify([job]), { headers: { 'content-type': 'application/json' } })
+      if (name === 'service_defer_operational_email_job') return new Response(JSON.stringify({
+        jobId: job.id, lane: 'general', messageType: job.messageType, aggregateId: job.aggregateId, status: 'delivered',
+      }), { headers: { 'content-type': 'application/json' } })
+      const response = operational(input, init)
+      if (response) {
+        if (name === 'service_finalize_operational_email_job' && ++finalizeCalls <= lostResponses) throw new TypeError('Lost finalization response')
+        return response
+      }
+      return new Response(name.startsWith('service_claim_') ? '[]' : 'null', { headers: { 'content-type': 'application/json' } })
+    })
+    const emailSend = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
+    try {
+      const response = await worker.fetch(new Request('https://app.sygshift.example/api/v1/admin/notifications/process', {
+        method: 'POST', headers: { authorization: 'Bearer scheduler-token' },
+      }), environment(new Response('asset'), { ...configuredEnvironment, EMAIL: { send: emailSend }, SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us' }))
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ delivered: [job.id], failed: [], held: [], processed: 1 })
+      expect(emailSend).toHaveBeenCalledTimes(1)
+      expect(finalizeCalls).toBe(2)
+      expect(seen).not.toContain('service_mark_notification_result')
+      expect(seen).not.toContain('service_mark_notification_suppressed')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('suppresses blocked company-domain recipients and records the attempted delivery', async () => {
+    const operational = operationalDeliveryFixture({ id: '20000000-0000-4000-8000-000000000002', aggregateId: '30000000-0000-4000-8000-000000000002', messageType: 'call_off_supervisor_alert', recipients: ['ops@guardianshipsecurity.net'] })
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -1488,7 +1555,21 @@ describe('Cloudflare Worker boundary', () => {
         headers: { 'content-type': 'application/json' },
       }))
     const emailSend = vi.fn()
-    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
+    const wrapperCalls: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', withClearMaintenanceStatus(async (input, init) => {
+      const direct = operational(input, init)
+      if (direct) {
+        wrapperCalls.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+        return direct
+      }
+      if (isOperationalClaim(input, init, 'general')) return new Response(JSON.stringify([{
+        id: '20000000-0000-4000-8000-000000000002', aggregateId: '30000000-0000-4000-8000-000000000002',
+        messageType: 'call_off_supervisor_alert', recipients: ['OPS@GUARDIANSHIPSECURITY.NET'],
+        message: { subject: 'Employee call-off reported', text: 'A call-off requires attention.' },
+      }]), { headers: { 'content-type': 'application/json' } })
+      if (String(input).includes('/rpc/service_claim_')) return new Response('[]', { headers: { 'content-type': 'application/json' } })
+      return fetchMock(input, init)
+    }))
 
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/admin/notifications/process', {
@@ -1502,12 +1583,13 @@ describe('Cloudflare Worker boundary', () => {
         SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
       }),
     )
-    const payload = await response.json() as { delivered: string[]; failed: unknown[]; processed: number; suppressed: string[] }
+    const payload = await response.json() as { delivered: string[]; failed: unknown[]; held: string[]; processed: number; suppressed: string[] }
 
     expect(response.status).toBe(200)
     expect(payload).toMatchObject({
       delivered: [],
       failed: [],
+      held: [],
       processed: 1,
       suppressed: ['20000000-0000-4000-8000-000000000002'],
     })
@@ -1515,14 +1597,8 @@ describe('Cloudflare Worker boundary', () => {
     const requestBodies = fetchMock.mock.calls
       .map(([, init]) => typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : null)
       .filter(Boolean)
-    expect(requestBodies).toContainEqual(expect.objectContaining({
-      target_delivery_status: 'suppressed_blocked_domain',
-      target_intended_recipient: 'ops@guardianshipsecurity.net',
-    }))
-    expect(requestBodies).toContainEqual(expect.objectContaining({
-      target_notification_id: '20000000-0000-4000-8000-000000000002',
-      target_reason: 'Suppressed — Blocked Domain',
-    }))
+    expect(wrapperCalls).toContainEqual(expect.objectContaining({ target_outcome: 'suppressed', target_job_id: '20000000-0000-4000-8000-000000000002' }))
+    expect(requestBodies).not.toContainEqual(expect.objectContaining({ delivered: true }))
     vi.unstubAllGlobals()
   })
 
@@ -1576,16 +1652,21 @@ describe('Cloudflare Worker boundary', () => {
       'service_publish_due_announcement_work_items',
       'service_refresh_hr_offboarding_due_cases',
       'service_process_shift_coverage_notification_waves',
-      'service_claim_timekeeping_notification_batch',
-      'service_claim_time_off_notification_batch',
-      'service_claim_notification_batch',
-      'service_claim_support_ticket_notification_batch',
-      'service_claim_employee_notification_batch',
+      'service_claim_guarded_operational_email_batch',
       'service_list_hr_document_availability_recovery',
       'service_list_sygsphere_file_availability_recovery',
       'service_list_sygsphere_resumable_availability_recovery',
       'service_list_sygsphere_resumable_purge',
     ]) expect(calledUrls.some((url) => url.includes(`/rpc/${rpc}`))).toBe(true)
+    const operationalClaims = fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/rpc/service_claim_guarded_operational_email_batch'))
+    expect(operationalClaims.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([
+      { target_lane: 'timekeeping', target_limit: 25 },
+      { target_lane: 'time_off', target_limit: 25 },
+      { target_lane: 'general', target_limit: 25 },
+      { target_lane: 'support', target_limit: 25 },
+      { target_lane: 'employee', target_limit: 25 },
+    ])
+    expect(calledUrls.some((url) => /\/rpc\/service_claim_(?:timekeeping_notification_batch|time_off_notification_batch|notification_batch|support_ticket_notification_batch|employee_notification_batch)$/.test(url))).toBe(false)
     const automationCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/rpc/service_run_timekeeping_automation'))!
     const scheduleRefreshCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/rpc/service_refresh_attendance_alert_schedule_state'))!
     const lifecycleCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/rpc/service_reconcile_operational_alert_lifecycle'))!
@@ -1743,23 +1824,26 @@ describe('Cloudflare Worker boundary', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(Date.UTC(2026, 9, 19, 15, 0)))
     const notificationId = '20000000-0000-4000-8000-000000000099'
+    const operational = operationalDeliveryFixture({ id: notificationId, aggregateId: '30000000-0000-4000-8000-000000000099', messageType: 'automatic_clock_out_employee', recipients: ['employee@example.com'] })
     let releaseEmail: (() => void) | undefined
     const emailPending = new Promise<void>((resolve) => { releaseEmail = resolve })
     const emailSend = vi.fn(() => emailPending)
     let notificationClaimed = false
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const deliveryResponse = operational(input, init)
+      if (deliveryResponse) return deliveryResponse
       const url = String(input)
       let payload: Record<string, unknown> | Record<string, unknown>[] = []
       if (url.includes('/rpc/service_run_timekeeping_automation')) {
         payload = { status: 'completed' }
-      } else if (url.includes('/rpc/service_claim_timekeeping_notification_batch') && !notificationClaimed) {
+      } else if (isOperationalClaim(input, init, 'timekeeping') && !notificationClaimed) {
         notificationClaimed = true
         payload = [{
           aggregateId: '30000000-0000-4000-8000-000000000099',
           aggregateType: 'timekeeping_event',
           id: notificationId,
           message: { subject: 'Timekeeping notice', text: 'Review your timecard.' },
-          messageType: 'automatic_clock_out',
+          messageType: 'automatic_clock_out_employee',
           recipients: ['employee@example.com'],
         }]
       }
@@ -1967,7 +2051,7 @@ describe('Cloudflare Worker boundary', () => {
   })
 
   it('uses only one read-only request during a half-open recovery probe', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
       if (url.includes('/rpc/get_maintenance_status')) {
         return new Response(JSON.stringify({ active: [], recentlyCompleted: [], upcoming: [] }), {
@@ -2018,7 +2102,7 @@ describe('Cloudflare Worker boundary', () => {
       expect(calledUrls).toHaveLength(1)
       expect(calledUrls[0]).toContain('/rpc/get_maintenance_status')
       expect(calledUrls.some((url) => url.includes('/rpc/service_run_timekeeping_automation'))).toBe(false)
-      expect(calledUrls.some((url) => url.includes('/rpc/service_claim_timekeeping_notification_batch'))).toBe(false)
+      expect(fetchMock.mock.calls.some(([input, init]) => isOperationalClaim(input, init, 'timekeeping'))).toBe(false)
       expect(recordRecoverySuccess).toHaveBeenCalledTimes(1)
       expect(recordFullSuccess).not.toHaveBeenCalled()
     } finally {
@@ -2067,12 +2151,15 @@ describe('Cloudflare Worker boundary', () => {
 
   it('delivers critical timekeeping notices before a transient noncritical failure can stop the cycle', async () => {
     const notificationId = '20000000-0000-4000-8000-000000000099'
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const operational = operationalDeliveryFixture({ id: notificationId, aggregateId: '30000000-0000-4000-8000-000000000099', messageType: 'automatic_clock_out_employee', recipients: ['employee@example.com'] })
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const deliveryResponse = operational(input, init)
+      if (deliveryResponse) return deliveryResponse
       const url = String(input)
-      if (url.includes('/rpc/service_claim_timekeeping_notification_batch')) {
+      if (isOperationalClaim(input, init, 'timekeeping')) {
         return new Response(JSON.stringify([{
           id: notificationId,
-          messageType: 'automatic_clock_out',
+          messageType: 'automatic_clock_out_employee',
           aggregateType: 'timekeeping_event',
           aggregateId: '30000000-0000-4000-8000-000000000099',
           recipients: ['employee@example.com'],
@@ -2107,11 +2194,11 @@ describe('Cloudflare Worker boundary', () => {
     const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
     const callIndex = (rpc: string) => calledUrls.findIndex((url) => url.includes(`/rpc/${rpc}`))
     expect(callIndex('service_run_timekeeping_automation')).toBeGreaterThanOrEqual(0)
-    expect(callIndex('service_claim_timekeeping_notification_batch')).toBeGreaterThan(callIndex('service_run_timekeeping_automation'))
-    expect(callIndex('service_mark_notification_result')).toBeGreaterThan(callIndex('service_claim_timekeeping_notification_batch'))
-    expect(callIndex('service_reconcile_patrol_obligations')).toBeGreaterThan(callIndex('service_mark_notification_result'))
-    expect(calledUrls.filter((url) => url.includes('/rpc/service_claim_timekeeping_notification_batch'))).toHaveLength(1)
-    expect(calledUrls.some((url) => url.includes('/rpc/service_claim_time_off_notification_batch'))).toBe(false)
+    expect(callIndex('service_claim_guarded_operational_email_batch')).toBeGreaterThan(callIndex('service_run_timekeeping_automation'))
+    expect(callIndex('service_finalize_operational_email_job')).toBeGreaterThan(callIndex('service_claim_guarded_operational_email_batch'))
+    expect(callIndex('service_reconcile_patrol_obligations')).toBeGreaterThan(callIndex('service_finalize_operational_email_job'))
+    expect(fetchMock.mock.calls.filter(([input, init]) => isOperationalClaim(input, init, 'timekeeping'))).toHaveLength(1)
+    expect(fetchMock.mock.calls.some(([input, init]) => isOperationalClaim(input, init, 'time_off'))).toBe(false)
     expect(errorSpy.mock.calls.some(([value]) => (
       String(value).includes('"event":"scheduled_work_contained"')
       && String(value).includes('"failedOperation":"service_reconcile_patrol_obligations"')
@@ -2121,14 +2208,24 @@ describe('Cloudflare Worker boundary', () => {
     vi.unstubAllGlobals()
   })
 
-  it('withholds full-cycle success when a critical timekeeping notification returns a delivery failure', async () => {
+  it.each(['protected_hold', 'lookup_failure'] as const)('keeps a %s distinct from scheduled infrastructure health', async (outcome) => {
     const notificationId = '20000000-0000-4000-8000-000000000077'
+    const operational = operationalDeliveryFixture({ id: notificationId, aggregateId: '30000000-0000-4000-8000-000000000077', messageType: 'automatic_clock_out_employee', recipients: ['employee@example.com'] })
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (outcome === 'lookup_failure' && String(input).includes('/rpc/service_resolve_operational_email_recipients')) {
+        return new Response('{}', { headers: { 'content-type': 'application/json' } })
+      }
+      if (outcome === 'lookup_failure' && String(input).includes('/rpc/service_defer_operational_email_job')) {
+        return new Response(JSON.stringify({ jobId: notificationId, lane: 'timekeeping', messageType: 'automatic_clock_out_employee',
+          aggregateId: '30000000-0000-4000-8000-000000000077', status: 'deferred' }), { headers: { 'content-type': 'application/json' } })
+      }
+      const deliveryResponse = operational(input, init)
+      if (deliveryResponse) return deliveryResponse
       const url = String(input)
-      if (url.includes('/rpc/service_claim_timekeeping_notification_batch')) {
+      if (isOperationalClaim(input, init, 'timekeeping')) {
         return new Response(JSON.stringify([{
           id: notificationId,
-          messageType: 'automatic_clock_out',
+          messageType: 'automatic_clock_out_employee',
           aggregateType: 'timekeeping_event',
           aggregateId: '30000000-0000-4000-8000-000000000077',
           recipients: ['employee@example.com'],
@@ -2165,19 +2262,19 @@ describe('Cloudflare Worker boundary', () => {
       await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
 
       const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
-      expect(emailSend).toHaveBeenCalledTimes(1)
-      expect(calledUrls.some((url) => url.includes('/rpc/service_mark_notification_result'))).toBe(true)
-      expect(calledUrls.some((url) => url.includes('/rpc/service_claim_notification_batch'))).toBe(true)
+      expect(emailSend).toHaveBeenCalledTimes(outcome === 'protected_hold' ? 1 : 0)
+      expect(calledUrls.some((url) => url.includes('/rpc/service_finalize_operational_email_job'))).toBe(outcome === 'protected_hold')
+      expect(fetchMock.mock.calls.some(([input, init]) => isOperationalClaim(input, init, 'general'))).toBe(true)
       expect(errorSpy.mock.calls.some(([value]) => (
         String(value).includes('"event":"timekeeping_notification_delivery_failed"')
         && String(value).includes('"failureCount":1')
-      ))).toBe(true)
+      ))).toBe(outcome === 'lookup_failure')
       expect(errorSpy.mock.calls.some(([value]) => (
         String(value).includes('"event":"scheduled_runtime_full_success_withheld"')
         && String(value).includes('"timekeeping_notification_delivery"')
-      ))).toBe(true)
-      expect(coordinator.recordFullSuccess).not.toHaveBeenCalled()
-      expect(coordinator.releaseCycle).toHaveBeenCalledTimes(1)
+      ))).toBe(outcome === 'lookup_failure')
+      expect(coordinator.recordFullSuccess).toHaveBeenCalledTimes(outcome === 'protected_hold' ? 1 : 0)
+      expect(coordinator.releaseCycle).toHaveBeenCalledTimes(outcome === 'protected_hold' ? 0 : 1)
     } finally {
       errorSpy.mockRestore()
       vi.unstubAllGlobals()
@@ -2187,15 +2284,18 @@ describe('Cloudflare Worker boundary', () => {
   it('durably completes an accepted email before a deferred audit outage so the next cycle cannot resend it', async () => {
     const notificationId = '20000000-0000-4000-8000-000000000088'
     let delivered = false
+    const operational = operationalDeliveryFixture({ id: notificationId, aggregateId: '30000000-0000-4000-8000-000000000088', messageType: 'automatic_clock_out_employee', recipients: ['employee@example.com'] }, () => { delivered = true })
     const rpcCalls: string[] = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const rpcName = url.split('/rpc/')[1] ?? ''
       rpcCalls.push(rpcName)
-      if (rpcName === 'service_claim_timekeeping_notification_batch') {
+      const deliveryResponse = operational(input, init)
+      if (deliveryResponse) return deliveryResponse
+      if (isOperationalClaim(input, init, 'timekeeping')) {
         return new Response(JSON.stringify(delivered ? [] : [{
           id: notificationId,
-          messageType: 'automatic_clock_out',
+          messageType: 'automatic_clock_out_employee',
           aggregateType: 'timekeeping_event',
           aggregateId: '30000000-0000-4000-8000-000000000088',
           recipients: ['employee@example.com'],
@@ -2240,8 +2340,8 @@ describe('Cloudflare Worker boundary', () => {
 
       expect(delivered).toBe(true)
       expect(emailSend).toHaveBeenCalledTimes(1)
-      expect(rpcCalls.filter((name) => name === 'service_claim_timekeeping_notification_batch')).toHaveLength(2)
-      expect(rpcCalls.indexOf('service_mark_notification_result')).toBeLessThan(rpcCalls.indexOf('service_log_email_delivery'))
+      expect(fetchMock.mock.calls.filter(([input, init]) => isOperationalClaim(input, init, 'timekeeping'))).toHaveLength(2)
+      expect(rpcCalls.indexOf('service_finalize_operational_email_job')).toBeLessThan(rpcCalls.indexOf('service_log_email_delivery'))
       expect(errorSpy.mock.calls.some(([value]) => String(value).includes('"event":"scheduled_work_contained"'))).toBe(true)
     } finally {
       errorSpy.mockRestore()
@@ -2478,7 +2578,7 @@ describe('Cloudflare Worker boundary', () => {
     expectedSummaryKey,
     failedRpc,
   }) => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
       if (url.includes(`/rpc/${failedRpc}`)) {
         return new Response(JSON.stringify({ message: `${failedRpc} failed` }), {
@@ -2510,7 +2610,8 @@ describe('Cloudflare Worker boundary', () => {
     expect(callIndex('service_run_timekeeping_automation')).toBeGreaterThanOrEqual(0)
     expect(callIndex('service_reconcile_operational_alert_lifecycle')).toBeGreaterThan(callIndex('service_run_timekeeping_automation'))
     expect(callIndex('service_process_shift_coverage_notification_waves')).toBeGreaterThan(callIndex('service_reconcile_operational_alert_lifecycle'))
-    expect(callIndex('service_claim_notification_batch')).toBeGreaterThan(callIndex('service_process_shift_coverage_notification_waves'))
+    const generalClaimIndex = fetchMock.mock.calls.findIndex(([input, init]) => isOperationalClaim(input, init, 'general'))
+    expect(generalClaimIndex).toBeGreaterThan(callIndex('service_process_shift_coverage_notification_waves'))
     expect(errorSpy.mock.calls.some(([value]) => String(value).includes(`"event":"${expectedEvent}"`))).toBe(true)
     expect(errorSpy.mock.calls.some(([value]) => (
       String(value).includes('"event":"scheduled_runtime_full_success_withheld"')

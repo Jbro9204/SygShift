@@ -40,7 +40,10 @@ describe('Communication workspace guardrails', () => {
     expect(migration).toContain('public.publish_announcement_work_item')
     expect(migration).toContain('public.preview_announcement_work_item')
     expect(worker).toContain('service_publish_due_announcement_work_items')
-    expect(worker).toContain('service_get_announcement_email_recipients')
+    expect(worker).toContain("deliverJobs(generalJobs, 'general')")
+    const delivery = read('worker/operationalEmailDelivery.ts')
+    expect(delivery).toContain('service_resolve_operational_email_recipients')
+    expect(delivery).toContain('service_claim_operational_email_recipient')
   })
 
   it('keeps banner-alert expiration authoritative and lifecycle changes auditable', () => {

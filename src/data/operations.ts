@@ -91,6 +91,8 @@ const operationsReportSchema = z.object({
 const notificationProcessSchema = z.object({
   delivered: z.array(z.string().uuid()),
   failed: z.array(z.object({ id: z.string().uuid(), error: z.string() })),
+  held: z.array(z.string().uuid()).optional().default([]),
+  suppressed: z.array(z.string().uuid()).optional().default([]),
   processed: z.number().int().nonnegative(),
   requestId: z.string(),
   requestedBy: z.string(),
@@ -103,6 +105,19 @@ const retryNotificationSchema = z.object({
 export type NotificationCenter = z.infer<typeof notificationCenterSchema>
 export type OperationsReport = z.infer<typeof operationsReportSchema>
 export type NotificationProcessResult = z.infer<typeof notificationProcessSchema>
+
+export function notificationProcessSummary(result: NotificationProcessResult): string {
+  if (result.processed === 0) return 'No queued email jobs were waiting to process.'
+  const counts = [
+    `${result.delivered.length} delivered`,
+    `${result.suppressed.length} suppressed (not sent)`,
+    `${result.held.length} held for review (not automatically resent)`,
+    `${result.failed.length} failed`,
+  ]
+  const unclassified = result.processed - result.delivered.length - result.suppressed.length - result.held.length - result.failed.length
+  if (unclassified > 0) counts.push(`${unclassified} additional outcomes; review delivery history`)
+  return `${result.processed} email job${result.processed === 1 ? '' : 's'} processed: ${counts.join(', ')}.`
+}
 
 export async function getNotificationCenter(input: {
   status?: 'all' | 'queued' | 'delivered' | 'failed'
