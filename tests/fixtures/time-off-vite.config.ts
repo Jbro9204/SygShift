@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: /.*\/data\/requests$/, replacement: fixtureData },
+      { find: /.*\/data\/auth$/, replacement: fixtureData },
       { find: /.*\/lib\/supabase$/, replacement: fixtureData },
     ],
   },

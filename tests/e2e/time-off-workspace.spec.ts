@@ -26,7 +26,7 @@ test.afterAll(async () => {
   await fixtureServer?.close()
 })
 
-test.beforeEach(({}, testInfo) => {
+test.beforeEach(({ page: _page }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile-'), 'This suite sets the two required exact mobile viewports in one browser project.')
 })
 
@@ -122,7 +122,7 @@ for (const viewport of viewports) {
     await expect(page.getByRole('heading', { name: 'Upcoming requests' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Past and closed requests' })).toBeAttached()
     await expect(page.getByText('Coverage is confirmed.')).toBeAttached()
-    await expect(page.getByText('Withdrawn', { exact: true })).toBeAttached()
+    await expect(page.locator('.time-off-record').getByText('Withdrawn', { exact: true })).toBeAttached()
     await expectNoHorizontalOverflow(page)
 
     const withdraw = page.getByRole('button', { name: 'Withdraw request' }).first()
@@ -143,7 +143,7 @@ for (const viewport of viewports) {
 
     await expect(page.getByRole('heading', { name: 'Pending Time Off review' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Decision history' })).toBeAttached()
-    await expect(page.getByText(/newest 100 completed team requests/)).toBeVisible()
+    await expect(page.getByText(/Totals cover all authorized requests/)).toBeVisible()
     await expect(page.getByText(/Your request is waiting for a different authorized reviewer/)).toBeAttached()
     await expect(page.getByRole('button', { name: 'Review request' })).toHaveCount(1)
     await expectNoHorizontalOverflow(page)
@@ -173,12 +173,29 @@ test('a plain load failure hides technical details and retry restores the worksp
   await page.setViewportSize({ width: 390, height: 844 })
   await openFixture(page, { scenario: 'error' })
 
-  await expect(page.getByRole('heading', { name: 'Time Off could not be loaded' })).toBeVisible()
-  await expect(page.getByText('Your request records are temporarily unavailable. Nothing was changed. Try again in a moment.')).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('Time-off requests could not be loaded. Your saved requests have not changed.')
   await expect(page.getByText(/fixture database socket/i)).toHaveCount(0)
   await page.getByRole('button', { name: 'Try again' }).click()
   await expect(page.getByRole('heading', { name: 'Upcoming requests' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
+})
+
+test('121 historical approvals are searchable and pageable on a small phone', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 568 })
+  await openFixture(page, { viewer: 'manager', scenario: 'history' })
+  const history = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Decision history', exact: true }) })
+  await expect(history.getByText('Page 1 · 121 matching requests')).toBeVisible()
+  for (let number = 2; number <= 7; number += 1) {
+    await history.getByRole('button', { name: 'Older requests' }).click()
+    await expect(history.getByText(`Page ${number} · 121 matching requests`)).toBeVisible()
+  }
+  await expect(history.getByText('Historical approved request 121')).toBeVisible()
+  const search = page.getByRole('searchbox', { name: 'Search requests' })
+  await search.fill('request 121')
+  await expect(history.getByText('Page 1 · 1 matching requests')).toBeVisible()
+  await expect(search).toBeFocused()
+  await expectNoHorizontalOverflow(page)
+  await page.screenshot({ path: testInfo.outputPath('time-off-history-search-small-phone.png'), fullPage: true })
 })
 
 test('an early-return failure preserves the reason and permits an explicit retry only after refresh', async ({ page }) => {
@@ -196,4 +213,16 @@ test('an early-return failure preserves the reason and permits an explicit retry
   await dialog.getByRole('button', { name: 'Confirm end leave now' }).click()
   await expect(dialog).not.toBeVisible()
   await expect(page.locator('.time-off-record').filter({ hasText: 'Unused leave remainder.' }).getByText('Ended early')).toBeVisible()
+})
+
+test('unverified historical action context remains readable without leave-change actions on a small phone', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 568 })
+  await openFixture(page, { viewer: 'manager', scenario: 'context-unavailable' })
+  const record = page.locator('.time-off-record').filter({ hasText: 'Family appointment.' })
+  await expect(record.getByRole('note')).toHaveText('Action availability could not be verified for this historical request. Ask HR to review it before making changes.')
+  await expect(record.getByText('Coverage is confirmed.')).toBeVisible()
+  await expect(record.getByRole('button', { name: 'Cancel approved time off' })).toHaveCount(0)
+  await expect(record.getByRole('button', { name: 'End leave now' })).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+  await record.screenshot({ path: testInfo.outputPath('historical-context-unavailable-small-phone.png') })
 })

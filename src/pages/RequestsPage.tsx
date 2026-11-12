@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -33,6 +33,7 @@ import {
   employeeName,
   getCallOffCoverageWorkspace,
   getRequestCenter,
+  getTimeOffRequestPage,
   reportCallOff,
   resolveCallOffCoverage,
   requestShiftLocation,
@@ -44,12 +45,15 @@ import {
   type ShiftWorkRequest,
   type TimeOffRequest,
   type TimeOffRequestKind,
+  type TimeOffPageStatus,
   type UpcomingAssignment,
 } from '../data/requests'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { dateKeyInTimeZone, formatDualTimeRange, OPERATIONAL_TIME_ZONE } from '../lib/time'
+import { formatDualTimeRange, OPERATIONAL_TIME_ZONE } from '../lib/time'
 import { isContinentalUsTimeZone } from '../lib/usTimeZones'
 import { buildCoverageCandidateDirectory } from './coverageCandidates'
+import { getSessionContextWithSignal } from '../data/auth'
+import { useTimeOffPage } from './useTimeOffPage'
 
 type RequestAction =
   | { kind: 'withdraw-time-off'; requestId: string }
@@ -90,11 +94,15 @@ function useRequestAction() {
       if (context?.previous) {
         queryClient.setQueryData(['request-center'], context.previous)
       }
-      if (action.kind === 'cancel-time-off' || action.kind === 'end-time-off-now') await queryClient.invalidateQueries({ queryKey: ['request-center'] })
+      if (action.kind === 'cancel-time-off' || action.kind === 'end-time-off-now') await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['request-center'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-off-request-page'] }),
+      ])
     },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['request-center'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-off-request-page'] }),
         queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
         queryClient.invalidateQueries({ queryKey: ['weekly-schedule'] }),
         queryClient.invalidateQueries({ queryKey: ['personal-schedule-range'] }),
@@ -315,12 +323,12 @@ function RequestWorkspaceTabs({
   timeOffCount,
 }: {
   activeTab: RequestTab
-  callOffCount: number
+  callOffCount: number | null
   onChange: (tab: RequestTab) => void
-  shiftRequestCount: number
-  timeOffCount: number
+  shiftRequestCount: number | null
+  timeOffCount: number | null
 }) {
-  const counts: Record<RequestTab, number> = {
+  const counts: Record<RequestTab, number | null> = {
     'call-offs': callOffCount,
     'shift-requests': shiftRequestCount,
     'time-off': timeOffCount,
@@ -340,7 +348,7 @@ function RequestWorkspaceTabs({
           >
             <Icon aria-hidden="true" size={20} />
             <span><strong>{tab.label}</strong><small>{tab.description}</small></span>
-            <em aria-label={`${counts[tab.id]} items`}>{counts[tab.id]}</em>
+            {counts[tab.id] !== null ? <em aria-label={`${counts[tab.id]} items`}>{counts[tab.id]}</em> : null}
           </button>
         )
       })}
@@ -404,6 +412,7 @@ function TimeOffRequestCard({
         {request.cancellation ? <div><span>Cancellation</span><p>{request.cancellation.note}</p><small>{formatSubmittedDate(request.cancellation.canceledAt)} by {request.cancellation.canceledByName}. The original approval above is retained.</small></div> : null}
         {request.earlyReturn ? <div><span>Early return</span><p>{request.earlyReturn.note}</p><small>Recorded {formatLeaveTimestamp(request.earlyReturn.recordedAt, request.earlyReturn.timeZone)} by {request.earlyReturn.endedByName}. Approved leave before the end time and the original approval are retained. The remaining scheduling restriction is released; no shift is assigned automatically.</small></div> : null}
       </div>
+      {request.cancellationContextUnavailable ? <p className="form-note" role="note">Action availability could not be verified for this historical request. Ask HR to review it before making changes.</p> : null}
       {request.status === 'pending' ? (
         <footer className="time-off-record__actions">
           {manager && ownRequest ? <span className="time-off-record__self-note">Your request is waiting for a different authorized reviewer.</span> : null}
@@ -411,7 +420,7 @@ function TimeOffRequestCard({
           {ownRequest && onWithdraw ? <button className="secondary-button" disabled={mutationPending} onClick={() => onWithdraw(request.id)} type="button">Withdraw request</button> : null}
         </footer>
       ) : null}
-      {request.status === 'approved' && !request.earlyReturn && manager && !ownRequest ? (
+      {request.status === 'approved' && !request.earlyReturn && !request.cancellationContextUnavailable && manager && !ownRequest ? (
         <footer className="time-off-record__actions">
           {request.cancellationContext?.canEndNow && onEndNow
             ? <button className="secondary-button" disabled={mutationPending} onClick={() => onEndNow(request.id)} type="button">End leave now</button>
@@ -425,8 +434,9 @@ function TimeOffRequestCard({
 }
 
 function TimeOffWorkspace({
-  historyLimit,
-  historyTruncated,
+  accessGeneration,
+  refreshKey,
+  linkedRequest,
   highlightedRequestId,
   manager,
   mutation,
@@ -435,49 +445,52 @@ function TimeOffWorkspace({
   onWithdraw,
   onCancel,
   onEndNow,
-  requests,
   viewerEmployeeId,
-  viewerTimeZone,
 }: {
-  historyLimit: number | null
-  historyTruncated: boolean
+  accessGeneration: number
+  refreshKey: number
+  linkedRequest: TimeOffRequest | null
   highlightedRequestId: string | null
   manager: boolean
   mutation: ReturnType<typeof useRequestAction>
   onNewRequest: () => void
   onReview: (requestId: string) => void
-  onWithdraw: (requestId: string) => void
-  onCancel: (requestId: string) => void
-  onEndNow: (requestId: string) => void
-  requests: TimeOffRequest[]
+  onWithdraw: (request: TimeOffRequest) => void
+  onCancel: (request: TimeOffRequest) => void
+  onEndNow: (request: TimeOffRequest) => void
   viewerEmployeeId: string
-  viewerTimeZone: string
 }) {
+  const [searchDraft, setSearchDraft] = useState('')
   const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('all')
-  const today = dateKeyInTimeZone(new Date(), viewerTimeZone)
-  const pending = requests.filter((request) => request.status === 'pending')
-  const approved = requests.filter((request) => timeOffDisplayStatus(request) === 'approved')
-  const completed = requests.filter((request) => ['declined', 'withdrawn', 'canceled', 'ended_early'].includes(timeOffDisplayStatus(request)))
-  const pastOrClosed = requests.filter((request) => request.ends_on < today || ['declined', 'withdrawn', 'canceled', 'ended_early'].includes(timeOffDisplayStatus(request)))
-  const normalizedSearch = search.trim().toLocaleLowerCase()
-  const visible = requests.filter((request) => {
-    if (status !== 'all' && timeOffDisplayStatus(request) !== status) return false
-    if (!normalizedSearch) return true
-    return [
-      employeeName(request.employee),
-      timeOffTypeLabel(request.request_type),
-      request.reason,
-      request.decision_note,
-      request.earlyReturn?.note,
-      request.starts_on,
-      request.ends_on,
-    ].some((value) => value?.toLocaleLowerCase().includes(normalizedSearch))
-  })
-  const employeeUpcoming = visible.filter((request) => !request.earlyReturn && request.ends_on >= today && ['pending', 'approved'].includes(request.status))
-  const employeeHistory = visible.filter((request) => !employeeUpcoming.includes(request))
-  const managerPending = visible.filter((request) => request.status === 'pending')
-  const managerHistory = visible.filter((request) => request.status !== 'pending')
+  const [status, setStatus] = useState<TimeOffPageStatus>('all')
+  const [refresh, setRefresh] = useState(0)
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setSearch(searchDraft.trim().toLowerCase()), 250)
+    return () => window.clearTimeout(timeout)
+  }, [searchDraft])
+  const input = { employeeId: viewerEmployeeId, accessGeneration, search, status, refreshKey: refreshKey + refresh }
+  const first = useTimeOffPage({ ...input, bucket: manager ? 'pending' : 'upcoming' })
+  const second = useTimeOffPage({ ...input, bucket: manager ? 'history' : 'past' })
+  const filtersPending = searchDraft.trim().toLowerCase() !== search
+  const firstData = first.query.isError || filtersPending ? undefined : first.query.data
+  const secondData = second.query.isError || filtersPending ? undefined : second.query.data
+  const counts = firstData?.counts ?? secondData?.counts
+  const managerPending = firstData?.items ?? []
+  const managerHistory = secondData?.items ?? []
+  const employeeUpcoming = managerPending
+  const employeeHistory = managerHistory
+
+  function pageStatus(page: typeof first) {
+    if (page.query.isError) return <div className="inline-alert" role="alert">Time-off requests could not be loaded. Your saved requests have not changed. <button className="secondary-button" onClick={() => void page.query.refetch()} type="button">Try again</button></div>
+    if (page.query.isPending || filtersPending) return <p role="status">Loading matching time-off requests…</p>
+    const data = page.query.data
+    if (!data) return null
+    return <nav className="communications-pagination communications-pagination--compact" aria-label={`${page === first ? 'Current' : 'History'} time-off pages`}>
+      <span>Page {page.index + 1} · {data.page.total} matching requests{page.query.isFetching ? ' · Refreshing…' : ''}</span>
+      <button className="secondary-button" disabled={page.index === 0 || page.query.isFetching} onClick={page.newer} type="button"><ChevronLeft aria-hidden="true" size={16} />Newer requests</button>
+      <button className="secondary-button" disabled={!data.page.hasMore || page.query.isFetching} onClick={page.older} type="button">Older requests<ChevronRight aria-hidden="true" size={16} /></button>
+    </nav>
+  }
 
   const renderRecords = (items: TimeOffRequest[]) => items.map((request) => (
     <TimeOffRequestCard
@@ -486,9 +499,9 @@ function TimeOffWorkspace({
       manager={manager}
       mutationPending={mutation.isPending}
       onReview={onReview}
-      onWithdraw={onWithdraw}
-      onCancel={onCancel}
-      onEndNow={onEndNow}
+      onWithdraw={() => onWithdraw(request)}
+      onCancel={() => onCancel(request)}
+      onEndNow={() => onEndNow(request)}
       ownRequest={request.employee_id === viewerEmployeeId}
       request={request}
     />
@@ -507,40 +520,42 @@ function TimeOffWorkspace({
       </section>
 
       <section className="time-off-status-summary" aria-label={manager ? 'Time-off request totals' : 'My time-off status'}>
-        <article className={pending.length > 0 ? 'is-attention' : ''}><Clock3 aria-hidden="true" size={20} /><span>{manager ? 'Awaiting review' : 'Pending'}</span><strong>{pending.length}</strong></article>
-        <article><CheckCircle2 aria-hidden="true" size={20} /><span>Approved</span><strong>{approved.length}</strong></article>
-        <article><History aria-hidden="true" size={20} /><span>{manager ? 'Closed' : 'Past / closed'}</span><strong>{manager ? completed.length : pastOrClosed.length}</strong></article>
-        <article><FileText aria-hidden="true" size={20} /><span>All requests</span><strong>{requests.length}</strong></article>
+        <article className={(counts?.pending ?? 0) > 0 ? 'is-attention' : ''}><Clock3 aria-hidden="true" size={20} /><span>{manager ? 'Awaiting review' : 'Pending'}</span><strong>{counts?.pending ?? '—'}</strong></article>
+        <article><CheckCircle2 aria-hidden="true" size={20} /><span>Approved</span><strong>{counts?.approved ?? '—'}</strong></article>
+        <article><History aria-hidden="true" size={20} /><span>{manager ? 'Closed' : 'Past / closed'}</span><strong>{(manager ? counts?.closed : counts?.pastOrClosed) ?? '—'}</strong></article>
+        <article><FileText aria-hidden="true" size={20} /><span>All requests</span><strong>{counts?.all ?? '—'}</strong></article>
       </section>
 
-      {manager ? (
+      {(
         <section className="time-off-workspace__filters" aria-label="Filter time-off requests">
-          <label><span>Search requests</span><div><Search aria-hidden="true" size={18} /><input onChange={(event) => setSearch(event.target.value)} placeholder="Employee, date, type, or reason" type="search" value={search} /></div></label>
-          <label><span>Status</span><select onChange={(event) => setStatus(event.target.value)} value={status}><option value="all">All statuses</option><option value="pending">Pending review</option><option value="approved">Approved</option><option value="declined">Declined</option><option value="withdrawn">Withdrawn</option><option value="canceled">Canceled</option><option value="ended_early">Ended early</option></select></label>
+          <label><span>Search requests</span><div><Search aria-hidden="true" size={18} /><input onChange={(event) => setSearchDraft(event.target.value)} placeholder="Employee, date, type, or reason" type="search" value={searchDraft} /></div></label>
+          <label><span>Status</span><select onChange={(event) => setStatus(event.target.value as TimeOffPageStatus)} value={status}><option value="all">All statuses</option><option value="pending">Pending review</option><option value="approved">Approved</option><option value="declined">Declined</option><option value="withdrawn">Withdrawn</option><option value="canceled">Canceled</option><option value="ended_early">Ended early</option></select></label>
+          <button className="secondary-button" onClick={() => setRefresh((value) => value + 1)} type="button">Refresh requests</button>
         </section>
-      ) : null}
-      {manager && historyTruncated ? <p className="time-off-history-limit" role="note">Showing the newest {historyLimit ?? 100} completed team requests, plus every pending request and your own history.</p> : null}
+      )}
+      <p className="form-note">Totals cover all authorized requests matching your search, not only the current page. Status filters apply to the lists below.</p>
+      {linkedRequest && ![...managerPending, ...managerHistory].some((request) => request.id === linkedRequest.id) ? <section aria-label="Selected time-off request">{renderRecords([linkedRequest])}</section> : null}
 
       {manager ? (
         <div className="time-off-workspace__sections">
           <section className="time-off-request-section" aria-labelledby="pending-time-off-title">
-            <div className="time-off-request-section__heading"><div><p className="eyebrow">Needs action</p><h2 id="pending-time-off-title">Pending Time Off review</h2><span>Open each request to confirm dates, return date, estimated time, and affected published shifts.</span></div><strong>{managerPending.length}</strong></div>
-            <div className="time-off-record-list">{renderRecords(managerPending)}{managerPending.length === 0 ? <p className="request-list-empty">No pending time-off requests match these filters.</p> : null}</div>
+            <div className="time-off-request-section__heading"><div><p className="eyebrow">Needs action</p><h2 id="pending-time-off-title">Pending Time Off review</h2><span>Open each request to confirm dates, return date, estimated time, and affected published shifts.</span></div><strong>{firstData?.page.total ?? '—'}</strong></div>
+            <div className="time-off-record-list">{renderRecords(managerPending)}{firstData && managerPending.length === 0 ? <p className="request-list-empty">No pending time-off requests match these filters.</p> : null}</div>{pageStatus(first)}
           </section>
           <section className="time-off-request-section" aria-labelledby="time-off-history-title">
-            <div className="time-off-request-section__heading"><div><p className="eyebrow">Tracking</p><h2 id="time-off-history-title">Decision history</h2><span>Approved, declined, withdrawn, and canceled requests remain visible here.</span></div><strong>{managerHistory.length}</strong></div>
-            <div className="time-off-record-list">{renderRecords(managerHistory)}{managerHistory.length === 0 ? <p className="request-list-empty">No completed requests match these filters.</p> : null}</div>
+            <div className="time-off-request-section__heading"><div><p className="eyebrow">Tracking</p><h2 id="time-off-history-title">Decision history</h2><span>Approved, declined, withdrawn, and canceled requests remain visible here.</span></div><strong>{secondData?.page.total ?? '—'}</strong></div>
+            <div className="time-off-record-list">{renderRecords(managerHistory)}{secondData && managerHistory.length === 0 ? <p className="request-list-empty">No completed requests match these filters.</p> : null}</div>{pageStatus(second)}
           </section>
         </div>
       ) : (
         <div className="time-off-workspace__sections">
           <section className="time-off-request-section" aria-labelledby="upcoming-time-off-title">
-            <div className="time-off-request-section__heading"><div><p className="eyebrow">Next up</p><h2 id="upcoming-time-off-title">Upcoming requests</h2><span>Pending and approved time away that has not ended yet.</span></div><strong>{employeeUpcoming.length}</strong></div>
-            <div className="time-off-record-list">{renderRecords(employeeUpcoming)}{employeeUpcoming.length === 0 ? <p className="request-list-empty">You have no upcoming time-off requests.</p> : null}</div>
+            <div className="time-off-request-section__heading"><div><p className="eyebrow">Next up</p><h2 id="upcoming-time-off-title">Upcoming requests</h2><span>Pending and approved time away that has not ended yet.</span></div><strong>{firstData?.page.total ?? '—'}</strong></div>
+            <div className="time-off-record-list">{renderRecords(employeeUpcoming)}{firstData && employeeUpcoming.length === 0 ? <p className="request-list-empty">You have no upcoming time-off requests matching these filters.</p> : null}</div>{pageStatus(first)}
           </section>
           <section className="time-off-request-section" aria-labelledby="past-time-off-title">
-            <div className="time-off-request-section__heading"><div><p className="eyebrow">History</p><h2 id="past-time-off-title">Past and closed requests</h2><span>Previous requests and their final decisions stay here for reference.</span></div><strong>{employeeHistory.length}</strong></div>
-            <div className="time-off-record-list">{renderRecords(employeeHistory)}{employeeHistory.length === 0 ? <p className="request-list-empty">No past or closed time-off requests yet.</p> : null}</div>
+            <div className="time-off-request-section__heading"><div><p className="eyebrow">History</p><h2 id="past-time-off-title">Past and closed requests</h2><span>Previous requests and their final decisions stay here for reference.</span></div><strong>{secondData?.page.total ?? '—'}</strong></div>
+            <div className="time-off-record-list">{renderRecords(employeeHistory)}{secondData && employeeHistory.length === 0 ? <p className="request-list-empty">No past or closed time-off requests matching these filters.</p> : null}</div>{pageStatus(second)}
           </section>
         </div>
       )}
@@ -588,15 +603,18 @@ function WithdrawTimeOffDialog({
   )
 }
 
-function CancelTimeOffDialog({ endNow, mutation, onClose, onCanceled, request }: {
+function CancelTimeOffDialog({ endNow, mutation, onClose, onCanceled, request, statusVerified, statusPending, onRefresh }: {
   endNow: boolean
   mutation: ReturnType<typeof useRequestAction>
   onClose: () => void
   onCanceled: () => void
   request: TimeOffRequest
+  statusVerified: boolean
+  statusPending: boolean
+  onRefresh: () => void
 }) {
   const [note, setNote] = useState('')
-  const stillActionable = request.status === 'approved' && !request.earlyReturn
+  const stillActionable = statusVerified && request.status === 'approved' && !request.earlyReturn
     && (endNow ? request.cancellationContext?.canEndNow : request.cancellationContext?.canCancel) === true
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -610,7 +628,8 @@ function CancelTimeOffDialog({ endNow, mutation, onClose, onCanceled, request }:
         <div className="time-off-withdraw-summary"><strong>{employeeName(request.employee)}</strong><span>{endNow ? 'Originally approved: ' : ''}{formatRequestDateRange(request)}</span>{endNow && request.cancellationContext ? <small>Leave time zone: {request.cancellationContext.timeZone}. Original end: {formatLeaveTimestamp(request.cancellationContext.endsAt, request.cancellationContext.timeZone)}.</small> : null}</div>
         <p className="form-note">{endNow ? 'The server records the end time when you confirm. The employee can be considered for shifts starting then, including tonight, but any time before that stays approved leave. This does not assign a shift, change published schedules, or change hours, pay, or leave balances. HR-linked leave and locked payroll require separate reconciliation.' : 'Cancel only when the employee no longer needs this leave. This removes the time-off scheduling restriction; it does not assign a shift, change published schedules, or change hours, pay, or leave balances. HR-linked leave and locked payroll require separate reconciliation.'}</p>
         <label className="field-stack"><span>{endNow ? 'Early-return reason' : 'Cancellation reason'}</span><textarea data-dialog-autofocus disabled={mutation.isPending} maxLength={2000} onChange={(event) => setNote(event.target.value)} required rows={3} value={note} /></label>
-        {!stillActionable ? <div className="inline-alert" role="status">{request.earlyReturn ? 'The refreshed record already ended early. Review its retained history; no further change is needed.' : request.status === 'canceled' ? 'The refreshed record is already canceled. Review its cancellation history; no further cancellation is needed.' : request.cancellationContext?.blockReason ?? 'The refreshed request is no longer eligible for this action. Close this dialog and review its current status.'}</div> : null}
+        {!statusVerified ? <div className="inline-alert" role={statusPending ? 'status' : 'alert'}>{statusPending ? 'Checking the current request status…' : 'The current request status could not be verified. Your reason is still here; refresh before confirming.'}{!statusPending ? <button className="secondary-button" onClick={onRefresh} type="button">Refresh request status</button> : null}</div>
+          : !stillActionable ? <div className="inline-alert" role="status">{request.earlyReturn ? 'The refreshed record already ended early. Review its retained history; no further change is needed.' : request.status === 'canceled' ? 'The refreshed record is already canceled. Review its cancellation history; no further cancellation is needed.' : request.cancellationContext?.blockReason ?? 'The refreshed request is no longer eligible for this action. Close this dialog and review its current status.'}</div> : null}
         {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
         <div className="modal-actions">
           <button className="secondary-button" disabled={mutation.isPending} onClick={onClose} type="button">{stillActionable ? 'Keep approved time off' : 'Close'}</button>
@@ -980,22 +999,13 @@ export function RequestsPage() {
   const [decision, setDecision] = useState<DecisionDialogState | null>(null)
   const [timeOffOpen, setTimeOffOpen] = useState(false)
   const [timeOffReviewId, setTimeOffReviewId] = useState<string | null>(null)
-  const [withdrawRequestId, setWithdrawRequestId] = useState<string | null>(null)
-  const [cancelRequestId, setCancelRequestId] = useState<string | null>(null)
+  const [withdrawRequest, setWithdrawRequest] = useState<TimeOffRequest | null>(null)
+  const [cancelRequest, setCancelRequest] = useState<TimeOffRequest | null>(null)
+  const [timeOffRefreshKey, setTimeOffRefreshKey] = useState(0)
+  const [selectionAccount, setSelectionAccount] = useState<string | null>(null)
   const [endLeaveNow, setEndLeaveNow] = useState(false)
   const [announcement, setAnnouncement] = useState<Pick<CallOffReport, 'id'> | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
-  const requestQuery = useQuery({
-    queryKey: ['request-center'],
-    queryFn: getRequestCenter,
-    enabled: isSupabaseConfigured,
-  })
-  const mutation = useRequestAction()
-  const privileged = requestQuery.data?.permissions.canManage ?? false
-  const guardAssignments = useMemo(
-    () => requestQuery.data?.upcomingAssignments ?? [],
-    [requestQuery.data?.upcomingAssignments],
-  )
   const linkedCallOffId = searchParams.get('callOff')
   const linkedRequestId = searchParams.get('request')
   const requestedTab = searchParams.get('tab')
@@ -1004,15 +1014,50 @@ export function RequestsPage() {
     : requestedTab === 'shift-requests' || requestedTab === 'call-offs'
       ? requestedTab
       : 'time-off'
-  const withdrawRequest = withdrawRequestId
-    ? requestQuery.data?.timeOff.find((request) => request.id === withdrawRequestId) ?? null
-    : null
-  const cancelRequest = cancelRequestId
-    ? requestQuery.data?.timeOff.find((request) => request.id === cancelRequestId) ?? null
-    : null
-  const viewerTimeZone = isContinentalUsTimeZone(requestQuery.data?.employeeTimeZone)
-    ? requestQuery.data.employeeTimeZone
+  const sessionQuery = useQuery({ queryKey: ['session-context'], queryFn: ({ signal }) => getSessionContextWithSignal(signal), enabled: isSupabaseConfigured })
+  const session = sessionQuery.data
+  const accountScope = session ? `${session.employeeId}:${session.accessGeneration}` : null
+  const requestQuery = useQuery({
+    queryKey: ['request-center'],
+    queryFn: getRequestCenter,
+    enabled: isSupabaseConfigured && activeTab !== 'time-off',
+  })
+  const mutation = useRequestAction()
+  const privileged = activeTab === 'time-off'
+    ? (session?.permissions.includes('requests.manage') ?? false)
+    : (requestQuery.data?.permissions.canManage ?? false)
+  const guardAssignments = useMemo(() => requestQuery.data?.upcomingAssignments ?? [], [requestQuery.data?.upcomingAssignments])
+  const viewerTimeZone = isContinentalUsTimeZone(session?.timeZone)
+    ? session.timeZone
     : OPERATIONAL_TIME_ZONE
+  const linkedQuery = useQuery({
+    queryKey: ['time-off-request-page', session?.employeeId, session?.accessGeneration, 'exact', linkedRequestId, timeOffRefreshKey],
+    queryFn: ({ signal }) => getTimeOffRequestPage({ employeeId: session!.employeeId, requestId: linkedRequestId, limit: 1, signal }),
+    enabled: activeTab === 'time-off' && Boolean(linkedRequestId && session),
+    retry: false,
+  })
+  const linkedRequest = linkedQuery.isError ? null : linkedQuery.data?.items[0] ?? null
+  const modalRequest = cancelRequest ?? withdrawRequest
+  const modalQuery = useQuery({
+    queryKey: ['time-off-request-page', session?.employeeId, session?.accessGeneration, 'exact-action', modalRequest?.id],
+    queryFn: ({ signal }) => getTimeOffRequestPage({ employeeId: session!.employeeId, requestId: modalRequest!.id, limit: 1, signal }),
+    enabled: Boolean(session && modalRequest),
+    retry: false,
+  })
+  const verifiedModalRequest = modalQuery.data?.items[0]?.id === modalRequest?.id ? modalQuery.data?.items[0] : modalRequest
+  const previousAccount = useRef<string | null>(null)
+
+  useEffect(() => {
+    const account = accountScope
+    const previous = previousAccount.current
+    previousAccount.current = account
+    if (previous === null || previous === account) return
+    setTimeOffReviewId(null)
+    setCancelRequest(null)
+    setWithdrawRequest(null)
+    setTimeOffOpen(false)
+    setActionMessage(null)
+  }, [accountScope])
 
   useEffect(() => {
     if (privileged && linkedCallOffId && !announcement) {
@@ -1025,22 +1070,22 @@ export function RequestsPage() {
   }, [searchParams])
 
   useEffect(() => {
-    if (activeTab !== 'time-off' || !linkedRequestId || !requestQuery.data) return
-    const linkedRequest = requestQuery.data.timeOff.find((request) => request.id === linkedRequestId)
+    if (activeTab !== 'time-off' || !linkedRequestId || !session) return
     if (!linkedRequest) return
 
     document.getElementById(`request-${linkedRequestId}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
 
-    if (privileged && linkedRequest.status === 'pending' && linkedRequest.employee_id !== requestQuery.data.employeeId && !timeOffReviewId) {
+    if (privileged && linkedRequest.status === 'pending' && linkedRequest.employee_id !== session.employeeId && !timeOffReviewId) {
+      setSelectionAccount(`${session.employeeId}:${session.accessGeneration}`)
       setTimeOffReviewId(linkedRequestId)
       return
     }
-    if (privileged && linkedRequest.status === 'pending' && linkedRequest.employee_id === requestQuery.data.employeeId) {
+    if (privileged && linkedRequest.status === 'pending' && linkedRequest.employee_id === session.employeeId) {
       if (!actionMessage) {
         setActionMessage('Your request is waiting for a different authorized reviewer. You can withdraw it while it is pending.')
       }
     }
-  }, [actionMessage, activeTab, linkedRequestId, privileged, requestQuery.data, timeOffReviewId])
+  }, [actionMessage, activeTab, linkedRequestId, linkedRequest, privileged, session, timeOffReviewId])
 
   useEffect(() => {
     if (!linkedRequestId || !requestQuery.data || activeTab !== 'shift-requests') return
@@ -1064,6 +1109,7 @@ export function RequestsPage() {
   }
 
   function openTimeOffRequest() {
+    setSelectionAccount(accountScope)
     setTimeOffOpen(true)
     updateSearchParams((next) => {
       next.set('tab', 'time-off')
@@ -1079,6 +1125,7 @@ export function RequestsPage() {
   }
 
   function openTimeOffReview(requestId: string) {
+    setSelectionAccount(accountScope)
     setTimeOffReviewId(requestId)
     updateSearchParams((next) => {
       next.set('tab', 'time-off')
@@ -1092,45 +1139,50 @@ export function RequestsPage() {
     updateSearchParams((next) => next.delete('request'))
   }
 
-  function openWithdrawRequest(requestId: string) {
+  function openWithdrawRequest(request: TimeOffRequest) {
+    setSelectionAccount(accountScope)
     mutation.reset()
-    setWithdrawRequestId(requestId)
+    setWithdrawRequest(request)
   }
 
   function closeWithdrawRequest() {
     if (mutation.isPending) return
     mutation.reset()
-    setWithdrawRequestId(null)
+    setWithdrawRequest(null)
   }
 
   function finishWithdrawRequest() {
     setActionMessage('Your time-off request was withdrawn and remains in your history.')
-    setWithdrawRequestId(null)
+    setWithdrawRequest(null)
+    setTimeOffRefreshKey((value) => value + 1)
   }
 
-  function openCancelRequest(requestId: string) {
+  function openCancelRequest(request: TimeOffRequest) {
+    setSelectionAccount(accountScope)
     mutation.reset()
     setEndLeaveNow(false)
-    setCancelRequestId(requestId)
+    setCancelRequest(request)
   }
 
-  function openEndLeaveNow(requestId: string) {
+  function openEndLeaveNow(request: TimeOffRequest) {
+    setSelectionAccount(accountScope)
     mutation.reset()
     setEndLeaveNow(true)
-    setCancelRequestId(requestId)
+    setCancelRequest(request)
   }
 
   function closeCancelRequest() {
     if (mutation.isPending) return
     mutation.reset()
-    setCancelRequestId(null)
+    setCancelRequest(null)
   }
 
   function finishCancelRequest() {
     setActionMessage(endLeaveNow
       ? 'Leave ended now and its earlier approved portion was retained. The employee can be considered for scheduling from the recorded end time; no shift was assigned automatically.'
       : 'Approved time off was canceled and its history was retained. The employee can be considered for scheduling again; no shift was assigned automatically.')
-    setCancelRequestId(null)
+    setCancelRequest(null)
+    setTimeOffRefreshKey((value) => value + 1)
   }
 
   function closeCoverageWorkflow() {
@@ -1174,14 +1226,14 @@ export function RequestsPage() {
             <li>Durable alert and announcement delivery queues</li>
           </ul>
         </DataStatePanel>
-      ) : requestQuery.isPending ? (
+      ) : (activeTab === 'time-off' ? sessionQuery.isPending : requestQuery.isPending) ? (
         <DataStatePanel icon={ClipboardCheck} title="Loading Time Off">
           <p>Getting your requests, current statuses, and any work waiting for review.</p>
         </DataStatePanel>
-      ) : requestQuery.isError ? (
+      ) : (activeTab === 'time-off' ? sessionQuery.isError : requestQuery.isError) ? (
         <DataStatePanel icon={ShieldAlert} title="Time Off could not be loaded" tone="error">
           <p>Your request records are temporarily unavailable. Nothing was changed. Try again in a moment.</p>
-          <button className="secondary-button" onClick={() => void requestQuery.refetch()} type="button">Try again</button>
+          <button className="secondary-button" onClick={() => void (activeTab === 'time-off' ? sessionQuery.refetch() : requestQuery.refetch())} type="button">Try again</button>
         </DataStatePanel>
       ) : (
         <>
@@ -1189,15 +1241,20 @@ export function RequestsPage() {
           {actionMessage ? <div className="form-feedback form-feedback--success" role="status">{actionMessage}</div> : null}
           <RequestWorkspaceTabs
             activeTab={activeTab}
-            callOffCount={requestQuery.data.callOffs.filter((report) => !report.resolved_at).length}
+            callOffCount={requestQuery.data?.callOffs.filter((report) => !report.resolved_at).length ?? null}
             onChange={changeTab}
-            shiftRequestCount={requestQuery.data.shiftRequests.filter((request) => request.status === 'pending').length}
-            timeOffCount={requestQuery.data.timeOff.filter((request) => request.status === 'pending').length}
+            shiftRequestCount={requestQuery.data?.shiftRequests.filter((request) => request.status === 'pending').length ?? null}
+            timeOffCount={null}
           />
-          {activeTab === 'time-off' ? (
+          {activeTab === 'time-off' && session ? (
+            <>
+            {linkedQuery.isError ? <div className="inline-alert" role="alert">The linked request could not be loaded. Your saved requests have not changed. <button className="secondary-button" onClick={() => void linkedQuery.refetch()} type="button">Try linked request again</button></div> : null}
+            {linkedRequestId && linkedQuery.isSuccess && !linkedRequest ? <p role="status">The linked request is unavailable for this account.</p> : null}
             <TimeOffWorkspace
-              historyLimit={requestQuery.data.timeOffHistory?.managerHistoryLimit ?? null}
-              historyTruncated={requestQuery.data.timeOffHistory?.truncated ?? false}
+              key={`${session.employeeId}:${session.accessGeneration}`}
+              accessGeneration={session.accessGeneration}
+              refreshKey={timeOffRefreshKey}
+              linkedRequest={linkedRequest}
               highlightedRequestId={linkedRequestId}
               manager={privileged}
               mutation={mutation}
@@ -1206,18 +1263,17 @@ export function RequestsPage() {
               onWithdraw={openWithdrawRequest}
               onCancel={openCancelRequest}
               onEndNow={openEndLeaveNow}
-              requests={requestQuery.data.timeOff}
-              viewerEmployeeId={requestQuery.data.employeeId}
-              viewerTimeZone={viewerTimeZone}
+              viewerEmployeeId={session.employeeId}
             />
-          ) : activeTab === 'shift-requests' ? (
+            </>
+          ) : activeTab === 'shift-requests' && requestQuery.data ? (
             <ShiftRequestsWorkspace
               highlightedRequestId={linkedRequestId}
               manager={privileged}
               onDecision={setDecision}
               requests={requestQuery.data.shiftRequests}
             />
-          ) : (
+          ) : requestQuery.data ? (
             <CallOffWorkspace
               assignments={guardAssignments}
               callOffs={requestQuery.data.callOffs}
@@ -1225,23 +1281,23 @@ export function RequestsPage() {
               onConfirm={setPendingCallOff}
               onReviewCoverage={openCoverageWorkflow}
             />
-          )}
+          ) : null}
         </>
       )}
 
       {pendingCallOff ? <CallOffConfirmation mutation={mutation} onClose={() => setPendingCallOff(null)} pending={pendingCallOff} /> : null}
-      {timeOffOpen ? (
+      {timeOffOpen && (selectionAccount === accountScope || searchParams.get('new') === 'time-off') ? (
         <TimeOffRequestModal
           employeeTimeZone={viewerTimeZone}
           onClose={closeTimeOffRequest}
-          onSubmitted={() => setActionMessage('Time-off request submitted for review.')}
+          onSubmitted={() => { setActionMessage('Time-off request submitted for review.'); setTimeOffRefreshKey((value) => value + 1) }}
           requestHistoryPath="/time-off?tab=time-off"
         />
       ) : null}
-      {timeOffReviewId ? (
+      {timeOffReviewId && selectionAccount === accountScope ? (
         <TimeOffReviewDialog
           onClose={closeTimeOffReview}
-          onDecided={setActionMessage}
+          onDecided={(message) => { setActionMessage(message); setTimeOffRefreshKey((value) => value + 1) }}
           requestId={timeOffReviewId}
         />
       ) : null}
@@ -1253,15 +1309,16 @@ export function RequestsPage() {
           state={decision}
         />
       ) : null}
-      {withdrawRequest ? (
+      {withdrawRequest && verifiedModalRequest && selectionAccount === accountScope ? (
         <WithdrawTimeOffDialog
           mutation={mutation}
           onClose={closeWithdrawRequest}
           onWithdrawn={finishWithdrawRequest}
-          request={withdrawRequest}
+          request={verifiedModalRequest}
         />
       ) : null}
-      {cancelRequest ? <CancelTimeOffDialog endNow={endLeaveNow} mutation={mutation} onClose={closeCancelRequest} onCanceled={finishCancelRequest} request={cancelRequest} /> : null}
+      {cancelRequest && verifiedModalRequest && selectionAccount === accountScope ? <CancelTimeOffDialog endNow={endLeaveNow} mutation={mutation} onClose={closeCancelRequest} onCanceled={finishCancelRequest} request={verifiedModalRequest}
+        statusVerified={modalQuery.isSuccess && modalQuery.data.items.length === 1} statusPending={modalQuery.isFetching} onRefresh={() => void modalQuery.refetch()} /> : null}
       {announcement ? <CoverageWorkflowDialog onClose={closeCoverageWorkflow} onSaved={setActionMessage} report={announcement} /> : null}
     </div>
   )

@@ -4,12 +4,15 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RequestsPage } from './RequestsPage'
+import type { TimeOffRequest } from '../data/requests'
 
 const dataMocks = vi.hoisted(() => ({
   cancelApprovedTimeOff: vi.fn(),
   endApprovedTimeOffNow: vi.fn(),
   getCallOffCoverageWorkspace: vi.fn(),
   getRequestCenter: vi.fn(),
+  getTimeOffRequestPage: vi.fn(),
+  getSessionContextWithSignal: vi.fn(),
   getTimeOffRequestContext: vi.fn(),
   getTimeOffReviewContext: vi.fn(),
   resolveCallOffCoverage: vi.fn(),
@@ -17,6 +20,7 @@ const dataMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/supabase', () => ({ isSupabaseConfigured: true }))
+vi.mock('../data/auth', () => ({ getSessionContextWithSignal: dataMocks.getSessionContextWithSignal }))
 vi.mock('../data/requests', async (loadOriginal) => {
   const original = await loadOriginal<typeof import('../data/requests')>()
   return {
@@ -25,6 +29,7 @@ vi.mock('../data/requests', async (loadOriginal) => {
     endApprovedTimeOffNow: dataMocks.endApprovedTimeOffNow,
     getCallOffCoverageWorkspace: dataMocks.getCallOffCoverageWorkspace,
     getRequestCenter: dataMocks.getRequestCenter,
+    getTimeOffRequestPage: dataMocks.getTimeOffRequestPage,
     getTimeOffRequestContext: dataMocks.getTimeOffRequestContext,
     getTimeOffReviewContext: dataMocks.getTimeOffReviewContext,
     resolveCallOffCoverage: dataMocks.resolveCallOffCoverage,
@@ -188,6 +193,27 @@ describe('Requests absence coverage workflow', () => {
     HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) { this.open = true })
     HTMLDialogElement.prototype.close = vi.fn(function close(this: HTMLDialogElement) { this.open = false })
     dataMocks.getRequestCenter.mockResolvedValue(requestCenter())
+    dataMocks.getSessionContextWithSignal.mockImplementation(async () => {
+      const data = await dataMocks.getRequestCenter()
+      return { employeeId: data.employeeId, accessGeneration: 1, timeZone: data.employeeTimeZone,
+        permissions: data.permissions.canManage ? ['requests.manage'] : [] }
+    })
+    dataMocks.getTimeOffRequestPage.mockImplementation(async (input) => {
+      const data = await dataMocks.getRequestCenter()
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: data.employeeTimeZone ?? 'America/Denver', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+      const displayStatus = (row: TimeOffRequest) => row.earlyReturn ? 'ended_early' : row.status
+      const upcoming = (row: TimeOffRequest) => !row.earlyReturn && row.ends_on >= today && ['pending', 'approved'].includes(row.status)
+      const closed = (row: TimeOffRequest) => ['declined', 'withdrawn', 'canceled', 'ended_early'].includes(displayStatus(row))
+      const rows: TimeOffRequest[] = data.timeOff.filter((row: TimeOffRequest) => !input.requestId || row.id === input.requestId)
+      const count = (predicate: (row: TimeOffRequest) => boolean) => rows.filter(predicate).length
+      const items = rows.filter((row: TimeOffRequest) => (!input.status || input.status === 'all' || displayStatus(row) === input.status)
+        && (!input.bucket || input.bucket === 'all' || (input.bucket === 'pending' ? row.status === 'pending' : input.bucket === 'history' ? row.status !== 'pending' : input.bucket === 'upcoming' ? upcoming(row) : !upcoming(row))))
+      return { employeeId: data.employeeId, employeeTimeZone: data.employeeTimeZone, permissions: data.permissions, items,
+        counts: { all: rows.length, pending: count((row) => row.status === 'pending'), approved: count((row) => displayStatus(row) === 'approved'),
+          declined: 0, withdrawn: 0, canceled: 0, endedEarly: 0, closed: count(closed), pastOrClosed: count((row) => row.ends_on < today || closed(row)), upcoming: count(upcoming), history: count((row) => !upcoming(row)) },
+        page: { limit: input.limit ?? 20, total: items.length, currentCursor: {}, nextCursor: null, hasMore: false, asOf: '2026-11-12T00:00:00.000000Z' },
+        filters: { search: '', status: input.status ?? 'all', bucket: input.bucket ?? 'all', requestId: input.requestId ?? null } }
+    })
     dataMocks.getTimeOffRequestContext.mockResolvedValue({
       employee: {
         id: managerEmployeeId,
@@ -244,7 +270,7 @@ describe('Requests absence coverage workflow', () => {
     expect(await screen.findByRole('heading', { name: 'Pending Time Off review' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Decision history' })).toBeVisible()
     expect(screen.getByRole('button', { name: /New time-off request/i })).toBeVisible()
-    expect(screen.getAllByText('1 published shift')).toHaveLength(3)
+    expect(await screen.findAllByText('1 published shift')).toHaveLength(3)
     expect(screen.getByText(/Your request is waiting for a different authorized reviewer/)).toBeVisible()
     expect(screen.getAllByRole('button', { name: 'Review request' })).toHaveLength(1)
     expect(screen.getByText('Coverage is confirmed.')).toBeVisible()
@@ -357,7 +383,7 @@ describe('Requests absence coverage workflow', () => {
     renderPage('/time-off')
     const history = (await screen.findByRole('heading', { name: 'Past and closed requests' })).closest('section')!
     const upcoming = screen.getByRole('heading', { name: 'Upcoming requests' }).closest('section')!
-    expect(within(history).getByText('Ended early')).toBeVisible()
+    expect(await within(history).findByText('Ended early')).toBeVisible()
     expect(within(upcoming).queryByText('Ended early')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'End leave now' })).not.toBeInTheDocument()
   })
@@ -576,7 +602,7 @@ describe('Requests absence coverage workflow', () => {
       const upcomingSection = screen.getByRole('heading', { name: 'Upcoming requests' }).closest('section')
       expect(historySection).not.toBeNull()
       expect(upcomingSection).not.toBeNull()
-      expect(within(historySection!).getByText('Eastern boundary request.')).toBeVisible()
+      expect(await within(historySection!).findByText('Eastern boundary request.')).toBeVisible()
       expect(within(upcomingSection!).queryByText('Eastern boundary request.')).not.toBeInTheDocument()
     } finally {
       vi.useRealTimers()
