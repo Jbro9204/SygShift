@@ -71,7 +71,8 @@ const makeupQueueSchema = z.object({
 })
 
 const patrolLocationSchema = z.object({
-  addressLine1: z.string().nullable(), city: z.string().nullable(), postId: z.string().uuid(), postName: z.string(),
+  addressLine1: z.string().nullable(), city: z.string().nullable(), postId: z.string().uuid().nullable(), postName: z.string().nullable(),
+  clientId: z.string().uuid().nullable().default(null), clientName: z.string().nullable().default(null),
   postalCode: z.string().nullable(), region: z.string().nullable(), requiresArmed: z.boolean(), siteCode: z.string().nullable(),
   siteId: z.string().uuid(), siteName: z.string(), timeZone: z.string(),
 })
@@ -124,6 +125,7 @@ export type PatrolScheduleCandidate = z.infer<typeof scheduleCandidateSchema>
 export type PatrolReleaseReadiness = z.infer<typeof patrolReadinessSchema>
 
 export interface PatrolRouteInput {
+  idempotencyKey: string; expectedVersionId: string | null
   changeReason: string; code: string; effectiveFrom: string | null; effectiveThrough: string | null; id: string | null
   name: string; requiresArmed: boolean; status: 'draft' | 'active' | 'paused' | 'archived'; timeZone: string
   stops: Array<{
@@ -137,6 +139,15 @@ export interface PatrolRouteInput {
       sequenceRequired: boolean; status: 'active' | 'paused'; windowEnd: string | null; windowStart: string | null
     }>
   }>
+}
+
+export class PatrolRouteSaveError extends Error {
+  readonly kind: 'conflict' | 'rejected' | 'uncertain'
+  constructor(message: string, kind: 'conflict' | 'rejected' | 'uncertain') {
+    super(message)
+    this.name = 'PatrolRouteSaveError'
+    this.kind = kind
+  }
 }
 
 export interface SavePatrolHitInput {
@@ -176,9 +187,27 @@ export async function getPatrolReleaseReadiness(): Promise<PatrolReleaseReadines
 }
 
 export async function savePatrolRoute(route: PatrolRouteInput): Promise<string> {
-  const { data, error } = await getSupabaseClient().rpc('save_patrol_route', { target_route: route })
-  if (error) throw messageFromError(error, 'The patrol route could not be saved.')
-  return z.string().uuid().parse(data)
+  if (!z.string().uuid().safeParse(route.idempotencyKey).success
+    || (route.id !== null && !z.string().uuid().safeParse(route.expectedVersionId).success)
+    || (route.id === null && route.expectedVersionId !== null)) {
+    throw new PatrolRouteSaveError('Refresh the route editor before saving. A verified route version and save request are required.', 'rejected')
+  }
+  try {
+    const { data, error } = await getSupabaseClient().rpc('save_patrol_route', { target_route: route })
+    if (error) {
+      if (error.code === 'PT409') throw new PatrolRouteSaveError('This route changed or this save request no longer matches. Load the latest route and review it before saving again.', 'conflict')
+      if (['22023', '42501', '23505', '23514'].includes(error.code ?? '')) {
+        throw new PatrolRouteSaveError(error.message || 'The patrol route could not be saved.', 'rejected')
+      }
+      throw new PatrolRouteSaveError('The save outcome could not be confirmed. Retry this same save request before making more changes.', 'uncertain')
+    }
+    const result = z.string().uuid().safeParse(data)
+    if (!result.success) throw new PatrolRouteSaveError('The save response could not be verified. Retry this same save request before making more changes.', 'uncertain')
+    return result.data
+  } catch (error) {
+    if (error instanceof PatrolRouteSaveError) throw error
+    throw new PatrolRouteSaveError('The save outcome could not be confirmed. Retry this same save request before making more changes.', 'uncertain')
+  }
 }
 
 export async function linkPatrolRouteShift(routeId: string, shiftId: string, employeeId: string): Promise<string> {

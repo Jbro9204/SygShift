@@ -29290,6 +29290,21 @@ button.patrol-overview-row:focus-visible {
   padding: 20px;
 }
 
+.patrol-form.patrol-route-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.patrol-stop-readiness {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .patrol-form--wide {
   grid-column: 1 / -1;
 }

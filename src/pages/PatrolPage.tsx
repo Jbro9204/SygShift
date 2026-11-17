@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, BadgeCheck, Camera, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck,
@@ -10,7 +10,7 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import {
   assignPatrolMakeup, formatPatrolDateTime, getPatrolReleaseReadiness, getPatrolWorkspace, linkPatrolRouteShift,
-  openPatrolEvidence, savePatrolHit, savePatrolRoute, uploadPatrolEvidence,
+  openPatrolEvidence, PatrolRouteSaveError, savePatrolHit, savePatrolRoute, uploadPatrolEvidence,
   type PatrolAssignment, type PatrolMakeupObligation, type PatrolObligation, type PatrolRoute, type PatrolRouteInput,
   type PatrolWorkspace,
 } from '../data/patrol'
@@ -39,6 +39,7 @@ function percentComplete(assignment: PatrolAssignment): number {
 
 function emptyRoute(): PatrolRouteInput {
   return {
+    idempotencyKey: crypto.randomUUID(), expectedVersionId: null,
     changeReason: 'Initial route configuration', code: '', effectiveFrom: null, effectiveThrough: null,
     id: null, name: '', requiresArmed: false, status: 'draft', timeZone: 'America/Denver',
     stops: [{
@@ -53,6 +54,7 @@ function emptyRoute(): PatrolRouteInput {
 
 function routeToInput(route: PatrolRoute): PatrolRouteInput {
   return {
+    idempotencyKey: crypto.randomUUID(), expectedVersionId: route.versionId,
     changeReason: '', code: route.code, effectiveFrom: route.effectiveFrom, effectiveThrough: route.effectiveThrough,
     id: route.id, name: route.name, requiresArmed: route.requiresArmed, status: route.status, timeZone: route.timeZone,
     stops: route.stops.map((stop) => ({
@@ -180,20 +182,136 @@ function HitDialog({ assignment, obligation, onClose }: {
   </ModalDialog>
 }
 
-function RouteEditor({ locations, onClose, route }: { locations: PatrolWorkspace['locations'], onClose: () => void, route: PatrolRoute | null }) {
+function routeStopIssues(stop: PatrolRouteInput['stops'][number], locations: PatrolWorkspace['locations']): string[] {
+  const property = locations.find((location) => location.siteId === stop.siteId)
+  const issues: string[] = []
+  if (!property) issues.push('Link an active property.')
+  else if (!property.clientId) issues.push('The property needs an active client connection.')
+  if (stop.postId && !locations.some((location) => location.siteId === stop.siteId && location.postId === stop.postId)) issues.push('Choose a current post for this property or clear the post.')
+  if (!stop.requirements.some((requirement) => requirement.status === 'active' && requirement.label.trim()
+    && Number.isInteger(requirement.dayOfWeek) && requirement.dayOfWeek >= 0 && requirement.dayOfWeek <= 6
+    && Number.isInteger(requirement.requiredHits) && requirement.requiredHits >= 1 && requirement.requiredHits <= 50)) issues.push('Add an active weekly hit requirement.')
+  return issues
+}
+
+function routeConfiguration(value: PatrolRouteInput): string {
+  const nullableText = new Set(['addressLine1', 'city', 'region', 'postalCode', 'instructions', 'evidenceInstructions'])
+  const normalize = (item: unknown, key = ''): unknown => {
+    if (typeof item === 'string') {
+      const text = item.trim()
+      if (nullableText.has(key)) return text || null
+      if (key === 'label') return text || 'Night patrol'
+      if (key === 'windowStart' || key === 'windowEnd') {
+        const time = /^(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?$/.exec(text)
+        if (time) return `${time[1]}:${time[2]}:${time[3] ?? '00'}${time[4]?.replace(/0+$/, '') ? `.${time[4].replace(/0+$/, '')}` : ''}`
+      }
+      return text
+    }
+    if (Array.isArray(item)) {
+      const normalized = item.map((entry) => normalize(entry))
+      if (key === 'requirements') {
+        return (normalized as Array<{ dayOfWeek: number, label: string }>).sort((left, right) => left.dayOfWeek - right.dayOfWeek
+          || left.label.localeCompare(right.label) || JSON.stringify(left).localeCompare(JSON.stringify(right)))
+      }
+      return normalized
+    }
+    if (item && typeof item === 'object') return Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, normalize(entry, key)]))
+    return item
+  }
+  const { idempotencyKey: _key, expectedVersionId: _version, ...configuration } = value
+  void _key
+  void _version
+  return JSON.stringify(normalize(configuration))
+}
+
+function RouteEditor({ locations, onClose, onSaved, route }: { locations: PatrolWorkspace['locations'], onClose: () => void, onSaved: () => void, route: PatrolRoute | null }) {
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState<PatrolRouteInput>(() => route ? routeToInput(route) : emptyRoute())
-  const mutation = useMutation({
-    mutationFn: () => savePatrolRoute(draft),
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['patrol-workspace'] }); onClose() },
-  })
+  const [stage, setStage] = useState<'editing' | 'saving' | 'uncertain' | 'refreshing' | 'refresh-needed' | 'conflict'>('editing')
+  const [feedback, setFeedback] = useState('')
+  const pendingSave = useRef<{ input: PatrolRouteInput, routeId: string | null } | null>(null)
+  const running = useRef(false)
+  const mutation = useMutation({ mutationFn: savePatrolRoute })
+  const busy = stage === 'saving' || stage === 'refreshing'
+  const locked = stage !== 'editing'
+  const canClose = !busy && stage !== 'uncertain' && stage !== 'refresh-needed'
+  const properties = [...new Map(locations.map((location) => [location.siteId, location])).values()]
+  const activationIssues = draft.stops.flatMap((stop, index) => routeStopIssues(stop, locations).map((issue) => `Stop ${index + 1}: ${issue}`))
+  const refreshWorkspace = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['patrol-workspace'], refetchType: 'none' })
+    return queryClient.fetchQuery({ queryKey: ['patrol-workspace'], queryFn: getPatrolWorkspace, staleTime: 0 })
+  }
+  const verifySaved = async () => {
+    const pending = pendingSave.current
+    if (!pending?.routeId) return
+    setStage('refreshing')
+    try {
+      const latest = await refreshWorkspace()
+      const saved = latest.routes.find((item) => item.id === pending.routeId)
+      if (!saved || saved.versionId === pending.input.expectedVersionId
+        || routeConfiguration({ ...routeToInput(saved), changeReason: saved.changeReason, id: pending.input.id }) !== routeConfiguration(pending.input)) {
+        throw new Error('The saved version is not the current workspace version.')
+      }
+      onSaved()
+      onClose()
+    } catch {
+      setStage('refresh-needed')
+      setFeedback('The server accepted this save, but the saved route could not be confirmed in the current workspace. Refresh the saved route; do not submit another version.')
+    }
+  }
+  const save = async () => {
+    if (running.current || (stage !== 'editing' && stage !== 'uncertain')) return
+    if (stage === 'editing' && draft.status === 'active' && (activationIssues.length || !draft.stops.length)) return
+    running.current = true
+    pendingSave.current ??= { input: structuredClone(draft), routeId: null }
+    setStage('saving')
+    setFeedback('Saving this exact route version. Existing assignments are not changed.')
+    try {
+      pendingSave.current.routeId = await mutation.mutateAsync(pendingSave.current.input)
+      await verifySaved()
+    } catch (error) {
+      const kind = error instanceof PatrolRouteSaveError ? error.kind : 'uncertain'
+      setFeedback(error instanceof Error ? error.message : 'The save outcome could not be confirmed. Retry the same save request.')
+      if (kind === 'rejected') {
+        pendingSave.current = null
+        setDraft((current) => ({ ...current, idempotencyKey: crypto.randomUUID() }))
+        setStage('editing')
+      } else setStage(kind === 'conflict' ? 'conflict' : 'uncertain')
+    } finally {
+      running.current = false
+    }
+  }
+  const loadLatest = async () => {
+    if (running.current) return
+    running.current = true
+    const acceptedSave = stage === 'refresh-needed'
+    const targetId = pendingSave.current?.routeId ?? draft.id
+    setStage('refreshing')
+    try {
+      const latest = await refreshWorkspace()
+      const current = targetId ? latest.routes.find((item) => item.id === targetId) : null
+      if (targetId && !current) throw new Error('This route is not present in the refreshed workspace. The save has not been reconciled; retry the read or contact Operations.')
+      setDraft(current ? routeToInput(current) : { ...draft, idempotencyKey: crypto.randomUUID() })
+      pendingSave.current = null
+      setFeedback(acceptedSave
+        ? 'The earlier save was accepted. The latest route is now loaded for review and may include later changes. Review every stop and enter a new change reason before saving again.'
+        : 'Latest route loaded. Review every stop and enter the change reason before saving.')
+      setStage('editing')
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'The latest route could not be loaded.')
+      setStage(acceptedSave ? 'refresh-needed' : 'conflict')
+    } finally {
+      running.current = false
+    }
+  }
   const updateStop = (index: number, changes: Partial<PatrolRouteInput['stops'][number]>) => setDraft((current) => ({ ...current, stops: current.stops.map((stop, stopIndex) => stopIndex === index ? { ...stop, ...changes } : stop) }))
   const addStop = () => setDraft((current) => ({ ...current, stops: [...current.stops, emptyRoute().stops[0]] }))
   const addRequirement = (stopIndex: number) => updateStop(stopIndex, { requirements: [...draft.stops[stopIndex].requirements, { dayOfWeek: 1, label: 'Night patrol', minimumSpacingMinutes: null, requiredHits: 1, sequenceRequired: false, status: 'active', windowEnd: null, windowStart: null }] })
   const updateRequirement = (stopIndex: number, requirementIndex: number, changes: Partial<PatrolRouteInput['stops'][number]['requirements'][number]>) => updateStop(stopIndex, { requirements: draft.stops[stopIndex].requirements.map((requirement, index) => index === requirementIndex ? { ...requirement, ...changes } : requirement) })
 
-  return <ModalDialog busy={mutation.isPending} busyLabel="Saving a new audited route version..." className="patrol-route-dialog" description="Saving creates a new route version. Existing assignments and historical patrol records remain unchanged." onClose={onClose} title={route ? `Edit ${route.name}` : 'Build patrol route'}>
-    <form className="patrol-form" onSubmit={(event) => { event.preventDefault(); mutation.mutate() }}>
+  return <ModalDialog busy={busy} busyLabel="Saving a new audited route version..." className="patrol-route-dialog" description="Saving creates a new route version. Existing assignments and historical patrol records remain unchanged." dismissible={canClose} onClose={onClose} title={draft.id ? `Edit ${route?.name ?? draft.name}` : 'Build patrol route'}>
+    <form className="patrol-form" onSubmit={(event) => { event.preventDefault(); void save() }}>
+      <fieldset className="patrol-form patrol-route-fields patrol-form--wide" disabled={locked}>
       <label><span>Route name</span><input onChange={(event) => setDraft({ ...draft, name: event.target.value })} required value={draft.name} /></label>
       <label><span>Route code</span><input onChange={(event) => setDraft({ ...draft, code: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} pattern="[a-z0-9][a-z0-9-]{1,62}" required value={draft.code} /></label>
       <label><span>Route status</span><select onChange={(event) => setDraft({ ...draft, status: event.target.value as PatrolRouteInput['status'] })} value={draft.status}><option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option><option value="archived">Archived</option></select></label>
@@ -206,16 +324,19 @@ function RouteEditor({ locations, onClose, route }: { locations: PatrolWorkspace
       <section className="patrol-route-stops patrol-form--wide">
         <div className="patrol-section-heading"><div><p className="eyebrow">Stops & requirements</p><h3>{draft.stops.length} route stop{draft.stops.length === 1 ? '' : 's'}</h3></div><button className="secondary-button" onClick={addStop} type="button"><Plus aria-hidden="true" size={17} />Add stop</button></div>
         {draft.stops.map((stop, stopIndex) => <details className="patrol-stop-editor" key={stop.stableKey}>
-          <summary><span>Stop {stopIndex + 1}</span><strong>{stop.locationLabel || 'New patrol stop'}</strong></summary>
+          <summary><span>Stop {stopIndex + 1}</span><strong>{stop.locationLabel || 'New patrol stop'}<small className="patrol-stop-readiness">{routeStopIssues(stop, locations).length ? 'Setup needed' : 'Ready to activate'}</small></strong></summary>
+          <p className="patrol-empty-inline">{routeStopIssues(stop, locations).length ? `Setup needed: ${routeStopIssues(stop, locations).join(' ')}` : 'Property linked · weekly requirements ready'}</p>
           <div className="patrol-stop-editor-body"><header>{draft.stops.length > 1 ? <button className="text-button text-button--danger" onClick={() => setDraft({ ...draft, stops: draft.stops.filter((_, index) => index !== stopIndex) })} type="button">Remove this stop</button> : <span />}</header>
           <div className="patrol-stop-grid">
-            <label className="patrol-stop-location-link"><span>Existing Site / Post (optional)</span><select onChange={(event) => {
-              const location = locations.find((item) => item.postId === event.target.value)
+            <label className="patrol-stop-location-link"><span>Property</span><select onChange={(event) => {
+              const location = properties.find((item) => item.siteId === event.target.value)
               updateStop(stopIndex, location ? {
-                addressLine1: location.addressLine1, city: location.city, locationLabel: `${location.siteName} · ${location.postName}`,
-                postId: location.postId, postalCode: location.postalCode, region: location.region, siteId: location.siteId,
+                addressLine1: location.addressLine1, city: location.city, locationLabel: location.siteName,
+                postId: null, postalCode: location.postalCode, region: location.region, siteId: location.siteId,
               } : { postId: null, siteId: null })
-            }} value={stop.postId ?? ''}><option value="">Not linked / enter manually</option>{locations.map((location) => <option key={location.postId} value={location.postId}>{location.siteName} · {location.postName}</option>)}</select></label>
+            }} value={stop.siteId ?? ''}><option value="">Not linked / draft only</option>{stop.siteId && !properties.some((item) => item.siteId === stop.siteId) ? <option value={stop.siteId}>Previously linked property — unavailable</option> : null}{properties.map((location) => <option key={location.siteId} value={location.siteId}>{location.siteName}{location.siteCode ? ` (${location.siteCode})` : ''}</option>)}</select></label>
+            <label><span>Post (optional)</span><select disabled={!stop.siteId} onChange={(event) => updateStop(stopIndex, { postId: event.target.value || null })} value={stop.postId ?? ''}><option value="">Entire property / no specific post</option>{stop.postId && !locations.some((item) => item.siteId === stop.siteId && item.postId === stop.postId) ? <option value={stop.postId}>Previously linked post — unavailable</option> : null}{locations.filter((item) => item.siteId === stop.siteId && item.postId).map((location) => <option key={location.postId} value={location.postId ?? ''}>{location.postName}</option>)}</select></label>
+            <p className="patrol-empty-inline">{stop.siteId ? `Linked client: ${properties.find((item) => item.siteId === stop.siteId)?.clientName ?? 'Connection unavailable'}` : 'Link the property to route reports to its client.'}</p>
             <label><span>Location name</span><input onChange={(event) => updateStop(stopIndex, { locationLabel: event.target.value })} required value={stop.locationLabel} /></label>
             <label><span>Address (optional)</span><input onChange={(event) => updateStop(stopIndex, { addressLine1: event.target.value || null })} placeholder="Add later if unknown" value={stop.addressLine1 ?? ''} /></label>
             <label><span>City</span><input onChange={(event) => updateStop(stopIndex, { city: event.target.value || null })} value={stop.city ?? ''} /></label>
@@ -237,8 +358,17 @@ function RouteEditor({ locations, onClose, route }: { locations: PatrolWorkspace
           </div><details className="patrol-requirement-advanced"><summary>Optional time window, spacing, and sequence</summary><div><label><span>Start time</span><input onChange={(event) => updateRequirement(stopIndex, requirementIndex, { windowStart: event.target.value || null })} type="time" value={requirement.windowStart ?? ''} /></label><label><span>End time</span><input onChange={(event) => updateRequirement(stopIndex, requirementIndex, { windowEnd: event.target.value || null })} type="time" value={requirement.windowEnd ?? ''} /></label><label><span>Minimum spacing (minutes)</span><input max={720} min={1} onChange={(event) => updateRequirement(stopIndex, requirementIndex, { minimumSpacingMinutes: event.target.value === '' ? null : Number(event.target.value) })} type="number" value={requirement.minimumSpacingMinutes ?? ''} /></label><label className="patrol-check"><input checked={requirement.sequenceRequired} onChange={(event) => updateRequirement(stopIndex, requirementIndex, { sequenceRequired: event.target.checked })} type="checkbox" /><span>Require route sequence</span></label></div></details></article>)}</div>}
         </div></details>)}
       </section>
-      {mutation.isError ? <div className="inline-alert patrol-form--wide" role="alert">{mutation.error.message}</div> : null}
-      <div className="modal-actions patrol-form--wide"><button className="primary-action" disabled={mutation.isPending} type="submit"><BadgeCheck aria-hidden="true" size={18} />Save route version</button><button className="secondary-button" disabled={mutation.isPending} onClick={onClose} type="button">Cancel</button></div>
+      </fieldset>
+      {draft.status === 'active' && activationIssues.length ? <div className="inline-alert patrol-form--wide" role="status"><p>Complete route setup before activating. Incomplete routes can be saved as Draft.</p><ul>{activationIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div> : null}
+      {feedback ? <div className="inline-alert patrol-form--wide" role={stage === 'saving' || stage === 'refreshing' || stage === 'editing' ? 'status' : 'alert'}>{feedback}</div> : null}
+      <div className="modal-actions patrol-form--wide">
+        {stage === 'editing' ? <button className="primary-action" disabled={draft.status === 'active' && (activationIssues.length > 0 || draft.stops.length === 0)} type="submit"><BadgeCheck aria-hidden="true" size={18} />Save route version</button> : null}
+        {stage === 'uncertain' ? <button className="primary-action" onClick={() => void save()} type="button">Retry same save</button> : null}
+        {stage === 'refresh-needed' ? <><button className="primary-action" onClick={() => { if (!running.current) { running.current = true; void verifySaved().finally(() => { running.current = false }) } }} type="button">Refresh saved route</button><button className="secondary-button" onClick={() => void loadLatest()} type="button">Review latest route</button></> : null}
+        {stage === 'conflict' ? <button className="primary-action" onClick={() => void loadLatest()} type="button">Load latest route for review</button> : null}
+        <button className="secondary-button" disabled={!canClose} onClick={onClose} type="button">{stage === 'editing' ? 'Cancel' : 'Close editor'}</button>
+      </div>
+      {stage === 'uncertain' || stage === 'refresh-needed' ? <p className="patrol-empty-inline patrol-form--wide">Keep this editor open until the save is confirmed. The same request is retained here so retrying cannot create an extra version.</p> : null}
     </form>
   </ModalDialog>
 }
@@ -258,7 +388,9 @@ export function PatrolPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<(typeof pageSizes)[number]>(10)
   const [hitTarget, setHitTarget] = useState<{ assignment: PatrolAssignment, obligation: PatrolObligation | PatrolMakeupObligation | null } | null>(null)
-  const [routeTarget, setRouteTarget] = useState<PatrolRoute | null | undefined>(undefined)
+  const [routeTarget, setRouteTargetValue] = useState<PatrolRoute | null | undefined>(undefined)
+  const [routeOwnerId, setRouteOwnerId] = useState<string | null>(null)
+  const [routeNotice, setRouteNotice] = useState('')
   const [linkRouteId, setLinkRouteId] = useState('')
   const [linkCandidate, setLinkCandidate] = useState('')
   const [operationStatus, setOperationStatus] = useState<PatrolOperationFilter>('all')
@@ -267,6 +399,10 @@ export function PatrolPage() {
   const [makeupReason, setMakeupReason] = useState('Missed patrol hit assigned for documented makeup completion.')
 
   const workspaceQuery = useQuery({ queryKey: ['patrol-workspace'], queryFn: getPatrolWorkspace, enabled: isSupabaseConfigured })
+  const setRouteTarget = (target: PatrolRoute | null | undefined) => {
+    setRouteOwnerId(workspaceQuery.data?.actor.employeeId ?? null)
+    setRouteTargetValue(target)
+  }
   const readinessQuery = useQuery({ queryKey: ['patrol-release-readiness'], queryFn: getPatrolReleaseReadiness, enabled: workspaceQuery.data?.actor.canManageRoutes === true })
   const linkMutation = useMutation({
     mutationFn: async () => {
@@ -304,7 +440,7 @@ export function PatrolPage() {
 
   if (!isSupabaseConfigured) return <div className="page page--patrol"><DataStatePanel icon={DatabaseZap} title="Patrol needs the secure connection" tone="setup"><p>Patrol becomes available after the protected data connection is restored.</p></DataStatePanel></div>
   if (workspaceQuery.isPending) return <div className="page page--patrol"><DataStatePanel icon={MapPinned} title="Loading Patrol operations"><p>Checking route versions, assigned shifts, hit requirements, and protected evidence.</p></DataStatePanel></div>
-  if (workspaceQuery.isError) return <div className="page page--patrol"><DataStatePanel icon={ShieldAlert} title="Patrol unavailable" tone="error"><p>{workspaceQuery.error.message}</p></DataStatePanel></div>
+  if (workspaceQuery.isError && !workspace) return <div className="page page--patrol"><DataStatePanel icon={ShieldAlert} title="Patrol unavailable" tone="error"><p>{workspaceQuery.error.message}</p></DataStatePanel></div>
   if (!workspace) return null
 
   const makeupSourceAssignment = workspace.assignments.find((assignment) => assignment.id === workspace.makeupQueue.find((item) => item.obligationId === makeupTarget)?.assignmentId)
@@ -317,6 +453,10 @@ export function PatrolPage() {
   const completed = allObligations.filter((item) => item.status === 'completed').length
   const missed = allObligations.filter((item) => item.status === 'missed').length
   const activeAssignments = workspace.assignments.filter((assignment) => assignment.status === 'active').length
+  const selectedLinkCandidate = findPatrolScheduleCandidate(workspace.scheduleCandidates, linkCandidate)
+  const selectedLinkRoute = workspace.routes.find((route) => route.id === linkRouteId)
+  const existingCandidateAssignments = selectedLinkCandidate ? workspace.assignments.filter((assignment) => assignment.shiftId === selectedLinkCandidate.shiftId && assignment.employeeId === selectedLinkCandidate.employeeId) : []
+  const needsRouteReconciliation = existingCandidateAssignments.some((assignment) => assignment.routeId === selectedLinkRoute?.id && assignment.routeVersionId !== selectedLinkRoute.versionId)
 
   const changeTab = (next: PatrolTab) => {
     setPage(1)
@@ -325,6 +465,8 @@ export function PatrolPage() {
     navigate(next === 'overview' ? '/patrol' : `/patrol/${next}`, { replace: true })
   }
   return <div className="page page--patrol patrol-workspace">
+    {routeNotice ? <div className="inline-alert" role="status">{routeNotice}</div> : null}
+    {workspaceQuery.isError ? <div className="inline-alert" role="alert">The workspace could not refresh. Previously loaded information remains visible; a saved change is not confirmed until refresh succeeds.</div> : null}
     <section className="page-intro patrol-intro">
       <div><p className="eyebrow">Operations</p><h1>Patrol Command Center</h1><p className="page-summary">Run assigned patrols, document every hit, manage versioned routes, and report from one protected workspace.</p></div>
       <div className="access-note"><Shield aria-hidden="true" size={19} /><span>Protected Patrol workspace<br /><small>Schedule-linked · audited · private evidence</small></span></div>
@@ -378,7 +520,9 @@ export function PatrolPage() {
 
     {tab === 'operations' && workspace.actor.canViewOperations ? <>
       {workspace.actor.canManageAssignments ? <section className="operations-panel patrol-link-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Schedule integration</p><h2>Connect route to published shift</h2><p>Patrol assignments reuse the employee and times already approved in Schedule.</p></div></div>
-        <form className="patrol-link-form" onSubmit={(event) => { event.preventDefault(); linkMutation.mutate() }}><label><span>Active route</span><select onChange={(event) => { setLinkRouteId(event.target.value); linkMutation.reset() }} required value={linkRouteId}><option value="">Choose route</option>{workspace.routes.filter((route) => route.status === 'active').map((route) => <option key={route.id} value={route.id}>{route.name}</option>)}</select></label><label><span>Published assigned shift</span><select onChange={(event) => { setLinkCandidate(event.target.value); linkMutation.reset() }} required value={linkCandidate}><option value="">Choose shift and employee</option>{workspace.scheduleCandidates.map((candidate) => { const value = patrolScheduleCandidateValue(candidate); return <option key={value} value={value}>{candidate.employeeName} · {candidate.siteName ?? candidate.postName ?? 'Scheduled shift'} · {formatPatrolDateTime(candidate.startsAt, candidate.timeZone)}</option> })}</select></label><button className="primary-action" disabled={linkMutation.isPending || !linkRouteId || !linkCandidate} type="submit">{linkMutation.isPending ? 'Connecting...' : 'Connect patrol'}</button></form>
+        <form className="patrol-link-form" onSubmit={(event) => { event.preventDefault(); if (!needsRouteReconciliation) linkMutation.mutate() }}><label><span>Active route</span><select onChange={(event) => { setLinkRouteId(event.target.value); linkMutation.reset() }} required value={linkRouteId}><option value="">Choose route</option>{workspace.routes.filter((route) => route.status === 'active').map((route) => <option key={route.id} value={route.id}>{route.name}</option>)}</select></label><label><span>Published assigned shift</span><select onChange={(event) => { setLinkCandidate(event.target.value); linkMutation.reset() }} required value={linkCandidate}><option value="">Choose shift and employee</option>{workspace.scheduleCandidates.map((candidate) => { const value = patrolScheduleCandidateValue(candidate); return <option key={value} value={value}>{candidate.employeeName} · {candidate.siteName ?? candidate.postName ?? 'Scheduled shift'} · {formatPatrolDateTime(candidate.startsAt, candidate.timeZone)}</option> })}</select></label><button className="primary-action" disabled={linkMutation.isPending || !linkRouteId || !linkCandidate || needsRouteReconciliation} type="submit">{linkMutation.isPending ? 'Connecting...' : 'Connect patrol'}</button></form>
+        {existingCandidateAssignments.length ? <div className="inline-alert" role="status"><p>Existing patrol links for this employee and shift:</p><ul>{existingCandidateAssignments.map((assignment) => <li key={assignment.id}>{assignment.routeName} · {statusLabel(assignment.status)} · Version reference: {assignment.routeVersionId}</li>)}</ul><p>Saving a new route version does not replace these links or combine their properties.</p></div> : null}
+        {needsRouteReconciliation ? <div className="inline-alert" role="alert">This shift retains an earlier version of the selected route. Operations must reconcile the existing assignment before connecting the newer version. Existing patrol history is preserved.</div> : null}
         {linkMutation.isError ? <div className="inline-alert" role="alert">{linkMutation.error.message}</div> : null}{linkMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Patrol requirements were generated from the active route version.</div> : null}
       </section> : null}
       <section className="operations-panel patrol-operations-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Live operations</p><h2>Patrol assignments</h2><p>Statuses reflect the schedule window and required-hit completion—not simply the absence of a missed hit.</p></div></div>{(visibleItems as PatrolAssignment[]).length === 0 ? <p className="patrol-empty-inline">No patrol assignments match the current search and status filters.</p> : (visibleItems as PatrolAssignment[]).map((assignment) => { const operationState = getPatrolOperationState(assignment, operationNow); return <div className="patrol-operation-row" key={assignment.id}><div><strong>{assignment.employeeName}</strong><span>{assignment.routeName} · {formatPatrolDateTime(assignment.startsAt, assignment.timeZone)}</span></div><div><strong>{assignment.obligations.filter((item) => item.status === 'completed').length}/{assignment.obligations.length}</strong><span>required hits</span></div><span className={`patrol-status patrol-status--${patrolOperationTones[operationState]}`}>{patrolOperationLabels[operationState]}</span></div> })}<Pagination page={page} pageSize={pageSize} setPage={setPage} total={operationsAssignments.length} /></section>
@@ -390,7 +534,7 @@ export function PatrolPage() {
     {tab === 'recovery' && workspace.actor.canManageAssignments ? <VacancyPatrolRecoveryWorkspace /> : null}
 
     {hitTarget ? <HitDialog assignment={hitTarget.assignment} obligation={hitTarget.obligation} onClose={() => setHitTarget(null)} /> : null}
-    {routeTarget !== undefined ? <RouteEditor locations={workspace.locations} onClose={() => setRouteTarget(undefined)} route={routeTarget} /> : null}
+    {routeTarget !== undefined && routeOwnerId === workspace.actor.employeeId && workspace.actor.canManageRoutes ? <RouteEditor locations={workspace.locations} onClose={() => setRouteTarget(undefined)} onSaved={() => setRouteNotice('Route version saved and verified. Existing assignments and historical patrol records were not changed.')} route={routeTarget} /> : null}
     {makeupTarget ? <ModalDialog busy={makeupMutation.isPending} description="Makeup work remains separate from the original missed requirement and does not rewrite compliance history." onClose={() => setMakeupTarget(null)} title="Assign makeup patrol hit"><form className="patrol-form" onSubmit={(event: FormEvent) => { event.preventDefault(); makeupMutation.mutate() }}><label className="patrol-form--wide"><span>Current or upcoming assignment on the same route</span><select onChange={(event) => setMakeupAssignment(event.target.value)} required value={makeupAssignment}><option value="">Choose assignment</option>{makeupEligibleAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{assignment.employeeName} · {assignment.routeName} · {assignment.serviceDate}</option>)}</select><small>{makeupEligibleAssignments.length ? 'The guard will see a Complete Makeup action in My Patrol.' : 'Connect this route to a current or upcoming assigned shift before assigning makeup work.'}</small></label><label className="patrol-form--wide"><span>Reason</span><textarea minLength={5} onChange={(event) => setMakeupReason(event.target.value)} required rows={3} value={makeupReason} /></label>{makeupMutation.isError ? <div className="inline-alert patrol-form--wide" role="alert">{makeupMutation.error.message}</div> : null}<div className="modal-actions patrol-form--wide"><button className="primary-action" disabled={makeupMutation.isPending || makeupEligibleAssignments.length === 0} type="submit">Assign makeup</button><button className="secondary-button" onClick={() => setMakeupTarget(null)} type="button">Cancel</button></div></form></ModalDialog> : null}
   </div>
 }

@@ -17,7 +17,7 @@
     "test:watch": "node tools/run-vitest.mjs",
     "test:e2e": "playwright test",
     "check:toolchain": "node tools/validate-toolchain.mjs",
-    "check": "pnpm check:toolchain && pnpm typecheck && pnpm lint && pnpm test && pnpm test:history-native && pnpm release:test && pnpm build",
+    "check": "pnpm check:toolchain && pnpm typecheck && pnpm lint && pnpm test && pnpm test:history-native && pnpm test:patrol-route-native && pnpm release:test && pnpm build",
     "test:e2e:time-clock": "node tools/run-time-clock-release-test.mjs",
     "release:verify": "pnpm check && pnpm test:e2e:time-clock && pnpm build",
     "setup:git-hooks": "git config core.hooksPath .githooks",
@@ -62,6 +62,7 @@
     "database:capture:reporting": "node tools/capture-reporting-repair-baseline.mjs",
     "database:capture:history": "node tools/capture-history-repair-baseline.mjs",
     "test:history-native": "node --test tools/capture-history-repair-baseline.test.mjs && node tools/time-off-history-postgres-regression.mjs",
+    "test:patrol-route-native": "node tools/patrol-route-builder-postgres-regression.mjs",
     "database:retry:verify": "node tools/verify-postgres-retry-repair.mjs",
     "bootstrap:admin": "node tools/bootstrap-admin.mjs"
   },

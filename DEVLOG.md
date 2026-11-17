@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 11/17/2026 - Patrol route connection integrity (local candidate)
+
+- Add property-first route setup, optional matched posts, active-client validation, and visible incomplete configuration before activation.
+- Protect versioned route saves with exact request receipts, expected-version checks, explicit result/readback states, and no automatic mutation retry.
+- Recheck current published assignments and prevent a later version of the same route from silently combining with retained earlier work.
+- Preserve all live routes, schedules, punches, payroll, report records, permissions, and historical assignments. No production activation is included; see `docs/changelogs/CHANGELOG_2026-11-17_PATROL_ROUTE_BUILDER.md`.
+
 ## 11/12/2026 - Complete Time Off history and verified context
 
 - Replaced the Time Off page's capped client-side history/search with a bounded authenticated keyset reader, exact server counts and independent request-ID lookup. Other request tabs and all mutations remain unchanged.

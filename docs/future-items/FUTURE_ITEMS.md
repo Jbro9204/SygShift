@@ -771,6 +771,18 @@ Required work:
 
 ## Workforce Organization & Scheduling
 
+### Patrol Route and Report Connection Repair
+
+- Priority: **High**
+- Target window: Same-day local completion requested 11/17/2026; production release separately authorized
+- Status: Local implementation and regression verification complete; production release, confirmed property mapping, and field acceptance remain open
+- Added: 11/17/2026
+
+Preserve one canonical route builder with explicit property/client links, optional matched posts, active weekday requirements, versioned saves, exact retry receipts, and current published assignment checks. Keep Sygilant Guard reporting limited to the resulting assigned obligations, preserving the approved template and client boundaries. No live mapping is inferred from a property name.
+
+Completion requires both application gates, isolated database and rendered verification, authorized production migration/deployment, Operations-confirmed route links, and Guard-to-supervisor-to-client acceptance. See `CHANGELOG_2026-11-17_PATROL_ROUTE_BUILDER.md` and the separate Sygilant revised-workflow record.
+
+
 ### Recurring SygTasks Work
 
 - Priority: **Released**
