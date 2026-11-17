@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import net from 'node:net'
 import { isolatedPostgresRuntime, startIsolatedPostgres, stopIsolatedPostgres } from './isolated-postgres-startup.mjs'
 
 assert.equal(process.versions.node, '24.19.0')
+const arguments_ = process.argv.slice(2)
+assert(arguments_.length === 0 || (arguments_.length === 2 && arguments_[0] === '--release-rehearsal' && isAbsolute(arguments_[1])), 'Use only --release-rehearsal <absolute Sygilant root>')
 const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^PG|^(?:DATABASE_URL|SUPABASE_)/iu.test(key)))
 const { bin, extension } = isolatedPostgresRuntime({ platform: process.platform, environment, override: process.env.PATROL_TEST_POSTGRES_BIN })
 const directory = mkdtempSync(join(tmpdir(), 'sygshift-route-builder-'))
@@ -75,6 +77,12 @@ ${extract(read('supabase/migrations/20260902214839_patrol_route_update_persisten
 ${extract(read('supabase/migrations/20260929143310_patrol_assignment_variable_ambiguity_repair.sql'),'public.link_patrol_route_shift')}
 ${extract(enterprise,'public.get_patrol_workspace')}
 ${read('supabase/migrations/20260928021235_vacancy_patrol_service_recovery.sql').match(/do \$patch_patrol_workspace\$[\s\S]*?\$patch_patrol_workspace\$;/u)[0]}
+revoke all on function public.get_patrol_workspace() from public,anon;
+revoke all on function public.save_patrol_route(jsonb) from public,anon;
+revoke all on function public.link_patrol_route_shift(uuid,uuid,uuid) from public,anon;
+grant execute on function public.get_patrol_workspace() to authenticated;
+grant execute on function public.save_patrol_route(jsonb) to authenticated;
+grant execute on function public.link_patrol_route_shift(uuid,uuid,uuid) to authenticated;
 insert into public.employees values('${manager}','Synthetic','Manager','active'),('${guard}','Synthetic','Guard','active'),('${assignmentManager}','Synthetic','Assignment manager','active');
 insert into private.fixture_accounts values('${manager}',true,true,false),('${guard}',false,true,false),('${assignmentManager}',false,true,true);
 insert into public.clients values('${client}','Active test client','active'),('${inactiveClient}','Inactive test client','paused');
@@ -98,6 +106,41 @@ try {
   run('initdb',['-D',data,'-U','postgres','--auth-local=trust','--auth-host=trust','--encoding=UTF8','--locale=C'])
   startIsolatedPostgres({data,directory,port,run,utc:true});started=true
   sql(setup)
+  if (arguments_.length) {
+    const { renderPatrolRelease } = await import('./patrol-release-sql.mjs')
+    const supplementalTables = ['auth.users','auth.identities','auth.mfa_factors','auth.sessions',
+      'public.profiles','public.employee_access_roles','public.role_permissions','public.permission_catalog',
+      'private.payroll_export_batches','private.payroll_export_rows','private.payroll_rules','private.payroll_batch_assignments',
+      'public.sygilant_reports','public.sygilant_report_versions','public.sygilant_report_evidence',
+      'public.sygilant_document_templates','public.sygilant_document_template_versions','public.sygilant_document_template_decisions',
+      'public.sygilant_audit_events']
+    sql(`create schema supabase_migrations;
+      create table supabase_migrations.schema_migrations(version text primary key,name text,statements text[]);
+      insert into supabase_migrations.schema_migrations select lpad(value::text,14,'0'),'synthetic_'||value,array['select '||value] from generate_series(1,463) value;
+      ${supplementalTables.map(table => `create table ${table}(id uuid primary key default gen_random_uuid(),created_at timestamptz not null default now());insert into ${table} default values;`).join('\n')}`)
+    const before = sql("select jsonb_build_object('writer',md5(pg_get_functiondef('public.save_patrol_route(jsonb)'::regprocedure)),'ledger',(select md5(jsonb_agg(to_jsonb(m) order by version)::text) from supabase_migrations.schema_migrations m))")
+    const ledgerMd5 = sql('select md5(jsonb_agg(to_jsonb(m) order by version)::text) from supabase_migrations.schema_migrations m')
+    const rendered = await renderPatrolRelease({ file: resolve('supabase/migrations/20261117182334_patrol_route_builder_integrity.sql'), hubRoot: arguments_[1], mode: 'rehearsal', ledgerMd5 })
+    const execution = spawnSync(join(bin,'psql'+extension),connection,{input:rendered.sql,encoding:'utf8',env:environment,windowsHide:true,timeout:45_000})
+    if (execution.status !== 0) {
+      const diagnosticSql = rendered.sql.replace('do $patrol_postflight$', `select jsonb_build_object('catalogDiff', (select jsonb_agg(jsonb_build_object('key',item.key,'before',item.value,'after',pg_temp.patrol_release_snapshot()->'catalog'->item.key)) from jsonb_each((select snapshot->'catalog' from patrol_release_before)) item where item.value is distinct from pg_temp.patrol_release_snapshot()->'catalog'->item.key));\ndo $patrol_postflight$`)
+      const diagnostic = spawnSync(join(bin,'psql'+extension),connection,{input:diagnosticSql,encoding:'utf8',env:environment,windowsHide:true,timeout:45_000})
+      assert.fail(`${execution.stderr}\nSynthetic diagnostic: ${diagnostic.stdout}`)
+    }
+    const proof = JSON.parse(execution.stdout.trim())
+    check(proof.proof.protectedCohortsAndCatalogEqual,true,'Generated release conservation checks pass natively')
+    check(proof.ledgerRows.length,464,'Generated rehearsal records exactly one transient migration')
+    check(sql("select to_regclass('private.patrol_route_save_receipts') is null"),'t','Generated release rolled back receipt relation')
+    check(sql("select to_regprocedure('private.save_patrol_route_version_body_v1(jsonb)') is null"),'t','Generated release rolled back private writer')
+    check(sql("select jsonb_build_object('writer',md5(pg_get_functiondef('public.save_patrol_route(jsonb)'::regprocedure)),'ledger',(select md5(jsonb_agg(to_jsonb(m) order by version)::text) from supabase_migrations.schema_migrations m))"),before,'Generated release rolled back exact writer and ledger')
+    const altered = rendered.sql.replace('do $patrol_postflight$', `update public.employees set first_name='Unexpected' where id='${manager}';\ndo $patrol_postflight$`)
+    const rejectedChange = spawnSync(join(bin,'psql'+extension),connection,{input:altered,encoding:'utf8',env:environment,windowsHide:true,timeout:45_000})
+    check(rejectedChange.status!==0&&rejectedChange.stderr.includes('Protected record cohorts, counts, security catalog or prior migration history changed'),true,'Generated conservation check rejects a changed employee')
+    check(sql(`select first_name from public.employees where id='${manager}'`),'Synthetic','Rejected generated rehearsal restores employee')
+    const stale = await renderPatrolRelease({ file: resolve('supabase/migrations/20261117182334_patrol_route_builder_integrity.sql'), hubRoot: arguments_[1], mode: 'rehearsal', ledgerMd5: '0'.repeat(32) })
+    const rejectedLedger = spawnSync(join(bin,'psql'+extension),connection,{input:stale.sql,encoding:'utf8',env:environment,windowsHide:true,timeout:45_000})
+    check(rejectedLedger.status!==0&&rejectedLedger.stderr.includes('The migration ledger changed since preflight'),true,'Generated release refuses a stale ledger fingerprint')
+  }
   const migration=read('supabase/migrations/20261117182334_patrol_route_builder_integrity.sql')
   const originalSave=extract(read('supabase/migrations/20260902214839_patrol_route_update_persistence.sql'),'public.save_patrol_route')
   sql(originalSave.replace('begin\n','begin\n  -- Unexpected installed writer change.\n'))
@@ -207,5 +250,5 @@ try {
   check(competing.filter((result)=>result.status==='fulfilled').length,1,'Only one competing edit succeeds')
   check(competing.filter((result)=>result.status==='rejected'&&result.reason.message.includes('Load the latest version')).length,1,'Competing stale edit requires reload')
   check(sql(`select count(*) from public.patrol_route_versions where route_id='${concurrentRouteId}'`),'2','No lost-update version is inserted')
-  console.log(JSON.stringify({passed:true,checks,syntheticOnly:true,productionConnections:0,rollbackVerified:true,concurrentRetryVerified:true,protectedRecordsUnchanged:true,artifacts:directory}))
+  console.log(JSON.stringify({passed:true,checks,syntheticOnly:true,productionConnections:0,rollbackVerified:true,concurrentRetryVerified:true,protectedRecordsUnchanged:true,releaseRehearsalVerified:arguments_.length>0,artifacts:directory}))
 } catch(error){priorError=error;throw error} finally {stopIsolatedPostgres({data,run,started,priorError})}

@@ -1,11 +1,13 @@
 # SygShift Development Log
 
-## 11/17/2026 - Patrol route connection integrity (local candidate)
+## 11/17/2026 - Patrol route connection integrity (release preparation)
 
 - Add property-first route setup, optional matched posts, active-client validation, and visible incomplete configuration before activation.
 - Protect versioned route saves with exact request receipts, expected-version checks, explicit result/readback states, and no automatic mutation retry.
 - Recheck current published assignments and prevent a later version of the same route from silently combining with retained earlier work.
-- Preserve all live routes, schedules, punches, payroll, report records, permissions, and historical assignments. No production activation is included; see `docs/changelogs/CHANGELOG_2026-11-17_PATROL_ROUTE_BUILDER.md`.
+- Preserve all live routes, schedules, punches, payroll, report records, permissions, and historical assignments. The owner now authorizes coordinated release; main push, new route migration and application deployment remain pending at this checkpoint. No guessed MG mapping or assignment changes are included.
+- Add exact 463/464/465-entry release phases and immutable source/ledger admission, preserving the 462-entry predecessor. Expected state from a rollback rehearsal is labeled separately from observed production and must be matched by the fresh release gate.
+- Verify the generated SygShift rollback batch with 74 native checks. Protected data checks cover full counts and a bounded 128-row cohort per table, not all content; security/catalog and prior-ledger checks remain strict. Register baseline/artifact tests in the release gate, and retain signed-in acceptance as pending despite the approved anonymous-boundary fallback. See `docs/changelogs/CHANGELOG_2026-11-17_PATROL_ROUTE_BUILDER.md`.
 
 ## 11/12/2026 - Complete Time Off history and verified context
 
