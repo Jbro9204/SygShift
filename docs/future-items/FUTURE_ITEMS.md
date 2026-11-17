@@ -774,13 +774,13 @@ Required work:
 ### Patrol Route and Report Connection Repair
 
 - Priority: **High**
-- Target window: Same-day local completion requested 11/17/2026; production release separately authorized
-- Status: Local implementation and regression verification complete; production release, confirmed property mapping, and field acceptance remain open
+- Target window: Software released 11/17/2026; next controlled Operations and field acceptance
+- Status: Both software migrations and SygShift source `20582b7378c07b15283892fe63ead80d6548b035` are deployed and health-verified; Operations-confirmed property mapping and real-device Guard/Operations/client acceptance remain open
 - Added: 11/17/2026
 
 Preserve one canonical route builder with explicit property/client links, optional matched posts, active weekday requirements, versioned saves, exact retry receipts, and current published assignment checks. Keep Sygilant Guard reporting limited to the resulting assigned obligations, preserving the approved template and client boundaries. No live mapping is inferred from a property name.
 
-Completion requires both application gates, isolated database and rendered verification, authorized production migration/deployment, Operations-confirmed route links, and Guard-to-supervisor-to-client acceptance. See `CHANGELOG_2026-11-17_PATROL_ROUTE_BUILDER.md` and the separate Sygilant revised-workflow record.
+SygShift local/hosted application gates, isolated database/rendered checks and authorized migration/deployment are complete. The separate Sygilant application release is tracked in its own record. This item remains open for Operations-confirmed MG route/property links and real-device Guard-to-supervisor-to-client acceptance. No live mapping was guessed, and anonymous health/boundary probes are not signed-in acceptance. See `CHANGELOG_2026-11-17_PATROL_ROUTE_BUILDER.md` and the separate Sygilant revised-workflow record.
 
 
 ### Recurring SygTasks Work

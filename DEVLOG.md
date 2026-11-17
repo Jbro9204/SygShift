@@ -1,13 +1,15 @@
 # SygShift Development Log
 
-## 11/17/2026 - Patrol route connection integrity (release preparation)
+## 11/17/2026 - Patrol route connection integrity (deployed; field acceptance open)
 
 - Add property-first route setup, optional matched posts, active-client validation, and visible incomplete configuration before activation.
 - Protect versioned route saves with exact request receipts, expected-version checks, explicit result/readback states, and no automatic mutation retry.
 - Recheck current published assignments and prevent a later version of the same route from silently combining with retained earlier work.
-- Preserve all live routes, schedules, punches, payroll, report records, permissions, and historical assignments. The owner now authorizes coordinated release; main push, new route migration and application deployment remain pending at this checkpoint. No guessed MG mapping or assignment changes are included.
+- Preserve all live routes, schedules, punches, payroll, report records, permissions, and historical assignments. Both coordinated software migrations are applied and verified at 465 ledger entries; no guessed MG mapping or assignment changes were included.
 - Add exact 463/464/465-entry release phases and immutable source/ledger admission, preserving the 462-entry predecessor. Expected state from a rollback rehearsal is labeled separately from observed production and must be matched by the fresh release gate.
 - Verify the generated SygShift rollback batch with 74 native checks. Protected data checks cover full counts and a bounded 128-row cohort per table, not all content; security/catalog and prior-ledger checks remain strict. Register baseline/artifact tests in the release gate, and retain signed-in acceptance as pending despite the approved anonymous-boundary fallback. See `docs/changelogs/CHANGELOG_2026-11-17_PATROL_ROUTE_BUILDER.md`.
+- Release source `20582b7378c07b15283892fe63ead80d6548b035` passed exact-candidate and GitHub push workflow `44155873858`, then deployed as Worker `0819cdf2-eb09-49fc-9539-5a33c457242e` with no rollback. Root/login/health/readiness returned 200; all 12 readiness checks passed, failures remained zero and the natural runtime advanced on that source at `2026-11-17T19:27:54.523Z`.
+- Preserve the separately captured actual 465-entry baseline, SHA-256 `ab9f7bea266da232cb5c0b323c79448fc00c29ed2f990777f284e13f35ea3f6d`. The approved anonymous fallback was used; no candidate Version URL or post-release authenticated UI acceptance is claimed. MG mappings remain with Operations, followed by real-device Guard/Operations/client verification.
 
 ## 11/12/2026 - Complete Time Off history and verified context
 

@@ -1,9 +1,10 @@
 # Patrol route connection integrity — 11/17/2026
 
-Status: production release is now authorized; release preparation and exact-candidate
-verification are in progress. The new route migration, main push and application
-deployment remain pending at this checkpoint. No live MG property/route mappings,
-employee assignments, credentials, hours or payroll are being changed.
+Status: the route migration and SygShift application are deployed and verified at
+source `20582b7378c07b15283892fe63ead80d6548b035`. Operations-confirmed MG
+property/route mappings and real-device Guard/Operations/client acceptance remain
+open. No live mapping, assignment, credential, hours or payroll repair was inferred
+or performed as part of this deployment.
 
 Base: `1e9750a41e98c7fe38e18d6b7a58280ac0d3371b` (`origin/main` at start).
 
@@ -63,7 +64,9 @@ confirmation through the authorized workflow.
   test file remains conditionally skipped because that separate corpus is not
   installed. TypeScript, lint, native history/security/route checks, release
   regressions, Worker/client production builds, and static-asset validation
-  passed. No new test is skipped or gate waived.
+  passed. The 40 new portable baseline/artifact tests passed without skips.
+  Four existing platform-specific release-tool checks skip on Windows; the
+  required hosted Linux quality workflow also passed for the exact deployed SHA.
 - Mandatory clock-in preservation: 42/42 desktop/mobile workflow tests passed
   against this changed checkout, followed by a fresh production build.
 - The separate Sygilant report candidate verifies the exact route-obligation
@@ -86,11 +89,12 @@ confirmation through the authorized workflow.
 
 ## Release and rollback boundary
 
-The owner has authorized the two coordinated repairs for release, but not guessed
-MG property/route mappings. Operations must still identify the actual properties.
-Before release, verify the exact installed predecessor functions and ledger, run
-the complete candidate gates and rehearse the forward migration. Record the
-production result separately; authorization is not evidence of deployment.
+Both coordinated database migrations and the SygShift application repair are
+released. The separate Sygilant application promotion is tracked in its own
+release record. Guessed MG property/route mappings are not authorized. Operations
+must identify the actual properties before anyone changes those live links.
+The exact predecessor, ledger, candidate, rehearsal and deployment results are
+recorded below.
 
 Release preparation adds the following controls:
 
@@ -114,10 +118,10 @@ Release preparation adds the following controls:
   and ledger, refusal of a deliberate employee change, and stale-ledger refusal.
   This uses isolated synthetic records and does not prove live employee acceptance.
 - The two new self-contained baseline/artifact test suites are in the mandatory
-  release-tool gate. Complete main-candidate/hosted checks still must pass after
-  these release-preparation changes.
-- The documented anonymous-boundary release fallback is approved when no
-  configured read-only release canary is available. It does not replace the
+  release-tool gate. Complete main-candidate and hosted checks passed for the
+  deployed source.
+- The approved anonymous-boundary release fallback was used because a configured
+  read-only release canary was unavailable. It does not replace the
   pending signed-in Guard/Operations workflow check or permit changing access.
 
 An older browser must refresh before using the new save contract. Concurrent
@@ -134,7 +138,7 @@ repair; do not restore the unsafe unguarded writer or discard saved versions.
   was absent. Protected record counts/cohorts and unrelated security catalogs
   matched within each transaction.
 - The corrected Sygilant migration `20261117181328` was then applied and verified
-  at 464 entries; the route repair remains unapplied at this checkpoint.
+  at 464 entries; the route repair was still unapplied at that staging checkpoint.
 - Rehearsing the route repair on that installed predecessor produced the
   expected 465-entry ledger, then rolled back to 464. The committed expected
   release baseline has SHA-256
@@ -144,5 +148,38 @@ repair; do not restore the unsafe unguarded writer or discard saved versions.
   only the recorded November 13 recovery migration and the two reviewed patrol
   sources are admitted. No bulk migration replay or live mapping edit is used.
 - The production security advisor returned no error-level findings before
-  activation. Final main-candidate, hosted quality and Worker rollout results
-  remain to be recorded after release; this section does not claim deployment.
+  activation. This staging evidence is distinct from the final deployment below.
+
+## Production release and remaining acceptance
+
+- Exact source `20582b7378c07b15283892fe63ead80d6548b035` passed the local
+  exact-main candidate gate and GitHub push workflow `44155873858`, including
+  the required hosted quality/security checks.
+- Both coordinated migrations are applied and verified: Sygilant
+  `20261117181328` and SygShift `20261117182334`. The observed production ledger
+  contains 465 entries. The separate actual-state baseline
+  `docs/reliability/migration-ownership-2026-11-17-patrol-after-both-v2.json`
+  has SHA-256
+  `ab9f7bea266da232cb5c0b323c79448fc00c29ed2f990777f284e13f35ea3f6d`.
+  The expected rehearsal manifest is retained unchanged and is not relabeled as
+  observed production.
+- The guarded SygShift release promoted Worker
+  `0819cdf2-eb09-49fc-9539-5a33c457242e` on that source, with two reconciliation
+  reads, 16 production probes and two upstream probes. No rollback was required.
+  Wrangler supplied no candidate Version URL; candidate-only URL verification is
+  unavailable, not claimed passed.
+- Independent production root, login, health and readiness requests returned
+  HTTP 200. Readiness showed all 12 checks true and zero consecutive failures.
+  The natural full-success watermark advanced to `2026-11-17T19:27:54.523Z` on
+  the deployed source. The live `index-C_719yHL` entry matched the fresh production
+  build and contained no fixture marker.
+- The prior Worker checkpoint is `b8a5955c-320a-404f-909b-1276a63042f4`, source
+  `1e9750a41e98c7fe38e18d6b7a58280ac0d3371b`. Retain all migration, route-version
+  and receipt evidence if application recovery is needed. An older browser or
+  older application needs the compatible save contract; never undo the database
+  protections or erase history to restore an unsafe writer.
+- No post-release signed-in UI acceptance is claimed. The browser checkpoint
+  could not confirm its destination URL. Operations must confirm the real MG
+  route/property mappings, then complete Guard selection/evidence/draft,
+  supervisor review and client-release checks on the actual devices. Successful
+  deployment and health probes do not close those employee cases by themselves.
