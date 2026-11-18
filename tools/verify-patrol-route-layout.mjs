@@ -51,6 +51,40 @@ try {
     results.push({ width, theme, passed: true, geometry, siteOnlySaveVerified: true })
     await context.close()
   }
+  for (const width of [390, 1440]) for (const theme of ['light', 'dark']) for (const tab of ['routes', 'operations']) {
+    const context = await browser.newContext({ viewport: { width, height: 1000 } })
+    const page = await context.newPage()
+    const errors = [], external = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.route('**/*', route => {
+      const url = new URL(route.request().url())
+      if (url.origin === origin) return route.continue()
+      external.push(url.origin)
+      return route.abort()
+    })
+    await page.goto(`${origin}/tests/fixtures/patrol-route-ui.html?theme=${theme}&scenario=readiness&tab=${tab}`)
+    await page.getByText('LOCAL DEMO — SAMPLE DATA ONLY', { exact: true }).waitFor()
+    if (tab === 'operations') {
+      await page.getByRole('combobox', { name: 'Active route', exact: true }).selectOption('10000000-0000-4000-8000-000000000030')
+      await page.getByRole('combobox', { name: 'Published assigned shift', exact: true }).selectOption({ label: 'Sample Guard · Sample schedule location · 2026-11-18T03:00:00.000Z' })
+      await page.getByText('No patrol route is connected to this employee and shift.', { exact: true }).waitFor()
+      await page.getByText(/A link on an earlier published schedule revision does not connect this revision/).waitFor()
+    }
+    const notice = page.getByRole('status').filter({ has: page.getByText('Sample route: property setup incomplete', { exact: true }) })
+    await notice.waitFor()
+    await notice.getByText('Stop 1 — Unlinked sample property: Link an active property.', { exact: true }).waitFor()
+    await notice.getByText('Stop 1 — Unlinked sample property: Add an active weekly hit requirement.', { exact: true }).waitFor()
+    await notice.scrollIntoViewIfNeeded()
+    const geometry = await notice.evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth, left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right, viewport: innerWidth }))
+    assert(geometry.scroll <= geometry.width + 1 && geometry.left >= -1 && geometry.right <= geometry.viewport + 1)
+    assert.equal(await page.locator('body').getAttribute('data-fixture-mutation-count'), '0')
+    assert.equal(await page.locator('body').getAttribute('data-saved-route'), null)
+    await page.screenshot({ path: resolve(output, `readiness-${tab}-${width}-${theme}.png`), fullPage: true })
+    assert.deepEqual(errors, [])
+    assert.deepEqual(external, [])
+    results.push({ width, theme, tab, scenario: 'readiness', passed: true, geometry, mutationCount: 0 })
+    await context.close()
+  }
   await writeFile(resolve(output, 'results.json'), JSON.stringify({ browser: browser.version(), results }, null, 2))
   console.log(JSON.stringify({ cases: results.length, passed: true, output }))
 } finally { await browser.close() }

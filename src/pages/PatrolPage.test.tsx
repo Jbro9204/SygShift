@@ -64,6 +64,29 @@ describe('Patrol route editor', () => {
     HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
     HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
   })
+  it('names incomplete property links before opening an active route without making changes', async () => {
+    const value = routeWorkspace()
+    value.routes[0].stops = [persistedRoute({ ...emptyRouteInput(), stops: [{ ...emptyRouteInput().stops[0], locationLabel: 'Unlinked stop' }] }, value.routes[0].id).stops[0]]
+    renderRoutes(value)
+    expect(await screen.findByText('Sample Route: property setup incomplete')).toBeInTheDocument()
+    expect(screen.getByText('Stop 1 — Unlinked stop: Link an active property.')).toBeInTheDocument()
+    expect(screen.getByText('Stop 1 — Unlinked stop: Add an active weekly hit requirement.')).toBeInTheDocument()
+    expect(screen.getByText(/An Active label alone does not verify property setup/)).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(dataMocks.savePatrolRoute).not.toHaveBeenCalled()
+    expect(dataMocks.linkPatrolRouteShift).not.toHaveBeenCalled()
+  })
+
+  it('does not flag a linked property without a post when its weekly requirements are valid', async () => {
+    const value = routeWorkspace()
+    const input = emptyRouteInput()
+    input.stops[0] = { ...input.stops[0], siteId: propertyId, requirements: [{ dayOfWeek: 1, label: 'Night patrol', minimumSpacingMinutes: null, requiredHits: 1, sequenceRequired: false, status: 'active', windowEnd: null, windowStart: null }] }
+    value.routes[0].stops = persistedRoute(input, value.routes[0].id).stops
+    renderRoutes(value)
+    await screen.findByRole('button', { name: 'Edit route' })
+    expect(screen.queryByText(/property setup incomplete/)).not.toBeInTheDocument()
+    expect(dataMocks.savePatrolRoute).not.toHaveBeenCalled()
+  })
   it('selects a property without a post and blocks activation until an active requirement exists', async () => {
     const user = userEvent.setup()
     renderRoutes()
@@ -344,6 +367,18 @@ function workspace(canManage = true): PatrolWorkspace {
   } as PatrolWorkspace
 }
 
+function emptyRouteInput(): PatrolRouteInput {
+  return {
+    id: null, idempotencyKey: crypto.randomUUID(), expectedVersionId: null,
+    code: 'sample', name: 'Sample Route', changeReason: 'Test fixture', status: 'active', requiresArmed: false,
+    effectiveFrom: null, effectiveThrough: null, timeZone: 'America/Denver',
+    stops: [{ addressLine1: null, allowPhotos: true, allowVideos: true, city: null, evidenceInstructions: null,
+      geofenceRadiusMeters: null, incidentVideoLimitSeconds: 900, instructions: null, latitude: null,
+      locationLabel: 'Sample stop', longitude: null, postalCode: null, postId: null, region: null,
+      requireEvidence: false, siteId: null, stableKey: crypto.randomUUID(), standardVideoLimitSeconds: 180, requirements: [] }],
+  }
+}
+
 function renderOperations() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/patrol/operations']}><Routes><Route path="/patrol/:patrolTab" element={<PatrolPage />} /></Routes></MemoryRouter></QueryClientProvider>)
@@ -392,6 +427,36 @@ describe('Patrol Operations page', () => {
     expect(screen.getByText(/Version reference:/)).toHaveTextContent(value.assignments[0].routeVersionId)
     expect(screen.getByText(/Operations must reconcile/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Connect patrol' })).toBeDisabled()
+    expect(dataMocks.linkPatrolRouteShift).not.toHaveBeenCalled()
+  })
+
+  it('identifies an unconnected exact employee and shift without inventing a patrol assignment', async () => {
+    const value = workspace(true)
+    const candidate = value.scheduleCandidates[0]
+    value.assignments[0] = { ...value.assignments[0], employeeId: value.scheduleCandidates[1].employeeId, shiftId: candidate.shiftId }
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    const user = userEvent.setup()
+    renderOperations()
+    await user.selectOptions(await screen.findByLabelText('Published assigned shift'), screen.getByRole('option', { name: /Employee A/ }))
+    expect(screen.getByText('No patrol route is connected to this employee and shift.')).toBeInTheDocument()
+    expect(screen.getByText(/Employee A has a published schedule assignment/)).toBeInTheDocument()
+    expect(screen.getByText(/A link on an earlier published schedule revision does not connect this revision/)).toBeInTheDocument()
+    expect(dataMocks.linkPatrolRouteShift).not.toHaveBeenCalled()
+    await user.selectOptions(screen.getByLabelText('Published assigned shift'), screen.getByRole('option', { name: /Employee B/ }))
+    expect(screen.queryByText('No patrol route is connected to this employee and shift.')).not.toBeInTheDocument()
+    expect(dataMocks.linkPatrolRouteShift).not.toHaveBeenCalled()
+  })
+
+  it('does not mistake a restricted location catalog for missing property links', async () => {
+    const value = workspace(true)
+    value.actor.canManageRoutes = false
+    value.locations = []
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    const user = userEvent.setup()
+    renderOperations()
+    await user.selectOptions(await screen.findByLabelText('Active route'), screen.getByRole('option', { name: 'Sample Route' }))
+    expect(screen.queryByText(/property setup incomplete/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit route' })).not.toBeInTheDocument()
     expect(dataMocks.linkPatrolRouteShift).not.toHaveBeenCalled()
   })
 

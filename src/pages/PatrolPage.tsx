@@ -194,6 +194,17 @@ function routeStopIssues(stop: PatrolRouteInput['stops'][number], locations: Pat
   return issues
 }
 
+function RouteSetupNotice({ route, locations }: { route: PatrolRoute, locations: PatrolWorkspace['locations'] }) {
+  const issues = route.stops.flatMap((stop, index) => routeStopIssues(stop, locations)
+    .map((issue) => ({ key: `${stop.id}:${issue}`, text: `Stop ${index + 1} — ${stop.locationLabel || 'Unnamed stop'}: ${issue}` })))
+  if (route.stops.length && !issues.length) return null
+  return <div className="inline-alert" role="status">
+    <strong>{route.name}: property setup incomplete</strong>
+    {route.stops.length ? <ul>{issues.map((issue) => <li key={issue.key}>{issue.text}</li>)}</ul> : <p>Add at least one property and its weekly hit requirements.</p>}
+    <p>Review these links in Routes &amp; Requirements before connecting the route. An Active label alone does not verify property setup or give a guard access.</p>
+  </div>
+}
+
 function routeConfiguration(value: PatrolRouteInput): string {
   const nullableText = new Set(['addressLine1', 'city', 'region', 'postalCode', 'instructions', 'evidenceInstructions'])
   const normalize = (item: unknown, key = ''): unknown => {
@@ -506,6 +517,8 @@ export function PatrolPage() {
       {tab === 'routes' ? <button className="primary-action" onClick={() => setRouteTarget(null)} type="button"><Plus aria-hidden="true" size={18} />Build route</button> : null}
     </section> : null}
 
+    {tab === 'routes' && workspace.actor.canManageRoutes ? (visibleItems as PatrolRoute[]).map((route) => <RouteSetupNotice key={route.id} locations={workspace.locations} route={route} />) : null}
+
     {tab === 'my-patrol' ? <section className="patrol-assignment-list">
       {visibleItems.length === 0 ? <DataStatePanel icon={MapPinned} title="No assigned patrols"><p>Published shifts become workable here after management connects the appropriate patrol route.</p></DataStatePanel> : (visibleItems as PatrolAssignment[]).map((assignment) => <article className="operations-panel patrol-assignment-card" key={assignment.id}>
         <header><div><p className="eyebrow">{assignment.requiresArmed ? 'Armed patrol' : 'Unarmed patrol'}</p><h2>{assignment.routeName}</h2><span>{formatPatrolDateTime(assignment.startsAt, assignment.timeZone)} – {formatPatrolDateTime(assignment.endsAt, assignment.timeZone)}</span></div><div className="patrol-progress"><strong>{percentComplete(assignment)}%</strong><span>complete</span></div></header>
@@ -521,6 +534,8 @@ export function PatrolPage() {
     {tab === 'operations' && workspace.actor.canViewOperations ? <>
       {workspace.actor.canManageAssignments ? <section className="operations-panel patrol-link-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Schedule integration</p><h2>Connect route to published shift</h2><p>Patrol assignments reuse the employee and times already approved in Schedule.</p></div></div>
         <form className="patrol-link-form" onSubmit={(event) => { event.preventDefault(); if (!needsRouteReconciliation) linkMutation.mutate() }}><label><span>Active route</span><select onChange={(event) => { setLinkRouteId(event.target.value); linkMutation.reset() }} required value={linkRouteId}><option value="">Choose route</option>{workspace.routes.filter((route) => route.status === 'active').map((route) => <option key={route.id} value={route.id}>{route.name}</option>)}</select></label><label><span>Published assigned shift</span><select onChange={(event) => { setLinkCandidate(event.target.value); linkMutation.reset() }} required value={linkCandidate}><option value="">Choose shift and employee</option>{workspace.scheduleCandidates.map((candidate) => { const value = patrolScheduleCandidateValue(candidate); return <option key={value} value={value}>{candidate.employeeName} · {candidate.siteName ?? candidate.postName ?? 'Scheduled shift'} · {formatPatrolDateTime(candidate.startsAt, candidate.timeZone)}</option> })}</select></label><button className="primary-action" disabled={linkMutation.isPending || !linkRouteId || !linkCandidate || needsRouteReconciliation} type="submit">{linkMutation.isPending ? 'Connecting...' : 'Connect patrol'}</button></form>
+        {selectedLinkRoute && workspace.actor.canManageRoutes ? <RouteSetupNotice locations={workspace.locations} route={selectedLinkRoute} /> : null}
+        {selectedLinkCandidate && !existingCandidateAssignments.length ? <div className="inline-alert" role="status"><strong>No patrol route is connected to this employee and shift.</strong><p>{selectedLinkCandidate.employeeName} has a published schedule assignment, but that alone does not supply a patrol property list. Confirm the appropriate route, then connect it to this exact employee and shift. A link on an earlier published schedule revision does not connect this revision. Do not grant broader site access to work around a missing route.</p></div> : null}
         {existingCandidateAssignments.length ? <div className="inline-alert" role="status"><p>Existing patrol links for this employee and shift:</p><ul>{existingCandidateAssignments.map((assignment) => <li key={assignment.id}>{assignment.routeName} · {statusLabel(assignment.status)} · Version reference: {assignment.routeVersionId}</li>)}</ul><p>Saving a new route version does not replace these links or combine their properties.</p></div> : null}
         {needsRouteReconciliation ? <div className="inline-alert" role="alert">This shift retains an earlier version of the selected route. Operations must reconcile the existing assignment before connecting the newer version. Existing patrol history is preserved.</div> : null}
         {linkMutation.isError ? <div className="inline-alert" role="alert">{linkMutation.error.message}</div> : null}{linkMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Patrol requirements were generated from the active route version.</div> : null}
