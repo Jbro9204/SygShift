@@ -1,5 +1,11 @@
 # SygShift Development Log
 
+## 11/18/2026 - Retained patrol draft database ownership closeout
+
+- Captured the verified 470-entry shared ledger after Sygilant's retained version-two patrol compatibility activation. Exactly one reviewed Sygilant source and six statements were added; all 469 prior entries, source fingerprints, ownership decisions and historical reconciliation debt remain unchanged.
+- The coordinated operator verified unchanged security metadata and recognition of all 25 existing editable version-two patrol snapshots without changing those reports. Sygilant application CI and field acceptance remain separate; no SygShift application, Worker or database mutation is part of this metadata closeout.
+- Added an independently checked append-only baseline and matching Desktop changelog. The normal isolated main-candidate source/42-case clock/build gate and exact-SHA GitHub gate remain required. See `docs/changelogs/CHANGELOG_2026-11-18_PATROL_V2_DISPOSITION_DATABASE_OWNERSHIP.md`.
+
 ## 11/18/2026 - Patrol disposition database ownership closeout
 
 - Recorded the exact Sygilant-owned patrol-disposition migration after the coordinated operator verified activation and the observed 469-entry shared ledger. The capture preserves all 468 earlier entries, owning sources and statement fingerprints.
