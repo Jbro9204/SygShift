@@ -1,5 +1,11 @@
 # SygShift Development Log
 
+## 11/18/2026 - Patrol disposition database ownership closeout
+
+- Recorded the exact Sygilant-owned patrol-disposition migration after the coordinated operator verified activation and the observed 469-entry shared ledger. The capture preserves all 468 earlier entries, owning sources and statement fingerprints.
+- Added a separate reviewed baseline with one new Sygilant source and 12 ordered statements. Existing reconciliation debt and all previous evidence remain unchanged; no replay or relaxed release exception is authorized.
+- Metadata only: no SygShift application, login, schedule, clock, payroll, database mutation or Worker deployment. Local source checks passed 2,657 unit tests and native checks; all 42 desktop/mobile clock cases passed after an isolated full rerun of a diagnosed browser module-load failure, followed by a fresh production build. Exact-main/GitHub gates and Sygilant application acceptance remain separately required. See `docs/changelogs/CHANGELOG_2026-11-18_PATROL_DISPOSITION_DATABASE_OWNERSHIP.md` for the initial failure evidence and limits.
+
 ## 11/18/2026 - All-client patrol schedule continuity
 
 - Added exact, immutable schedule-revision links for unchanged patrol work across all clients, including employee-only publication and intermediate revisions. Original assignments, obligations, reports and evidence remain authoritative.
