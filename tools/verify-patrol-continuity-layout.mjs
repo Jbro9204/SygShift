@@ -8,6 +8,9 @@ const output = resolve('.work/patrol-continuity-layout')
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch()
 const results = []
+let activePage = null
+let activeCase = ''
+let activeErrors = []
 async function geometryFor(locator) {
   const geometry = await locator.evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth,
     left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right, viewport: innerWidth }))
@@ -18,7 +21,13 @@ try {
   for (const width of [390, 1440]) for (const theme of ['light', 'dark']) for (const scenario of ['continuity', 'continuity-closed', 'guard-review']) {
     const context = await browser.newContext({ viewport: { width, height: 1000 } })
     const page = await context.newPage()
+    page.setDefaultTimeout(10_000)
+    page.setDefaultNavigationTimeout(10_000)
     const errors = [], external = []
+    activePage = page
+    activeCase = `${scenario}-${width}-${theme}`
+    activeErrors = errors
+    console.log(JSON.stringify({ case: activeCase, stage: 'starting' }))
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/*', route => {
       const url = new URL(route.request().url())
@@ -34,7 +43,7 @@ try {
       await page.getByRole('button', { name: 'Record extra hit', exact: true }).click()
       await page.getByText(/The schedule changed. Operations must review this patrol connection/).waitFor()
       assert.equal(await page.getByRole('dialog').count(), 0)
-      await page.getByRole('button', { name: 'Complete', exact: true }).click()
+      await page.getByRole('button', { name: 'Complete hit', exact: true }).click()
       assert.equal(await page.getByRole('dialog').count(), 0)
       assert.equal(await page.getByText('Retained completed property', { exact: true }).count(), 1)
       assert.equal(await page.getByRole('button', { name: 'Review connection', exact: true }).count(), 0)
@@ -52,10 +61,11 @@ try {
       if (scenario === 'continuity') assert.equal(await dialog.getByRole('combobox', { name: /^Scheduled employee/ }).inputValue(), '10000000-0000-4000-8000-000000000060')
       else assert.equal(await dialog.getByRole('combobox', { name: /^Scheduled employee/ }).count(), 0)
       const reason = 'Reviewed the exact future shift and retained patrol history.'
-      await dialog.getByLabel('Review reason', { exact: true }).fill(reason)
+      const reasonField = dialog.getByRole('textbox', { name: /^Review reason/ })
+      await reasonField.fill(reason)
       await submit.click()
       await dialog.getByRole('alert').getByText('The review could not be confirmed. No saved work was changed.', { exact: true }).waitFor()
-      assert.equal(await dialog.getByLabel('Review reason', { exact: true }).inputValue(), reason)
+      assert.equal(await reasonField.inputValue(), reason)
       assert.equal(await page.locator('body').getAttribute('data-fixture-reconcile-count'), '1')
       assert.equal(await page.getByText(/Patrol reconnected to the reviewed current assignment/).count(), 0)
       const geometry = await geometryFor(dialog)
@@ -64,7 +74,7 @@ try {
       await submit.click()
       await dialog.getByRole('button', { name: 'Confirming...', exact: true }).waitFor()
       assert.equal(await dialog.getByRole('button', { name: 'Confirming...', exact: true }).isDisabled(), true)
-      assert.equal(await dialog.getByLabel('Review reason', { exact: true }).isDisabled(), true)
+      assert.equal(await reasonField.isDisabled(), true)
       assert.equal(await dialog.getByRole('button', { name: 'Cancel', exact: true }).isDisabled(), true)
       await page.evaluate(() => window.dispatchEvent(new Event('fixture-confirm-save')))
       await dialog.waitFor({ state: 'hidden' })
@@ -84,8 +94,17 @@ try {
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
     assert.equal(await page.locator('body').getAttribute('data-saved-route'), null)
+    console.log(JSON.stringify({ case: activeCase, stage: 'passed' }))
     await context.close()
+    activePage = null
   }
   await writeFile(resolve(output, 'results.json'), JSON.stringify({ browser: browser.version(), results }, null, 2))
   console.log(JSON.stringify({ passed: true, cases: results.length, output }))
+} catch (error) {
+  if (activePage && !activePage.isClosed()) {
+    await activePage.screenshot({ path: resolve(output, `${activeCase}-failed.png`), fullPage: true }).catch(() => {})
+    await writeFile(resolve(output, `${activeCase}-failed.html`), await activePage.content()).catch(() => {})
+  }
+  console.error(JSON.stringify({ case: activeCase, errors: activeErrors, failure: String(error) }))
+  throw error
 } finally { await browser.close() }
