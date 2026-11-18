@@ -1,0 +1,152 @@
+{
+  "formatVersion": 1,
+  "purpose": "Exact staged all-client patrol continuity repair; no permission, payroll, identity, site mapping or existing report changes during migration activation.",
+  "priorBaseline": "migration-ownership-2026-11-17-patrol-after-both-v2.json",
+  "priorBaselineSha256": "ab9f7bea266da232cb5c0b323c79448fc00c29ed2f990777f284e13f35ea3f6d",
+  "priorAppliedCount": 465,
+  "targets": [
+    {
+      "file": "20261118133316_patrol_schedule_continuity.sql",
+      "version": "20261118133316",
+      "name": "patrol_schedule_continuity",
+      "owner": "SygShift",
+      "stage": "foundation",
+      "sourceHash": "5737329e4df618529de01671aa6385a01132bcdc3e4bedf130a175a7a6f32a67",
+      "ledgerHash": "70a171a34a416b2f16ceef8d6b570a36dc17e70c8c48da883be106927a55479d",
+      "statementCount": 43,
+      "statementArrayHash": "873bae5d62b0dd043e38e52ee4ddf440dacff6ca65531b07d239ccd35860c748",
+      "changed": [],
+      "added": [
+        {
+          "signature": "private.patrol_schedule_continuity_immutable_v1()",
+          "roles": []
+        },
+        {
+          "signature": "private.patrol_schedule_targets_v1(uuid,uuid)",
+          "roles": []
+        },
+        {
+          "signature": "private.patrol_same_schedule_occurrence_v1(uuid,uuid)",
+          "roles": []
+        },
+        {
+          "signature": "private.patrol_assignment_shift_is_authorized_v1(uuid,uuid,uuid)",
+          "roles": [
+            "service_role"
+          ]
+        },
+        {
+          "signature": "private.patrol_effective_shift_id_v1(uuid)",
+          "roles": [
+            "service_role"
+          ]
+        },
+        {
+          "signature": "private.patrol_predecessor_shift_ids_v1(uuid,uuid)",
+          "roles": ["service_role"]
+        },
+        {
+          "signature": "private.patrol_retained_shift_is_authorized_v1(uuid,uuid,uuid)",
+          "roles": ["service_role"]
+        },
+        {
+          "signature": "private.patrol_assignment_needs_schedule_review_v1(uuid)",
+          "roles": []
+        },
+        {
+          "signature": "public.service_get_patrol_reporting_bindings_v1(uuid,uuid[])",
+          "roles": [
+            "service_role"
+          ]
+        },
+        {
+          "signature": "private.patrol_schedule_continuity_issues_v1()",
+          "roles": []
+        }
+      ],
+      "relations": [
+        "private.patrol_schedule_continuity",
+        "private.patrol_schedule_resolution_receipts"
+      ],
+      "triggers": [
+        "private.patrol_schedule_continuity.patrol_schedule_continuity_immutable",
+        "private.patrol_schedule_resolution_receipts.patrol_schedule_resolution_receipts_immutable"
+      ]
+    },
+    {
+      "file": "20261118133431_sygilant_patrol_revision_binding_consumers.sql",
+      "version": "20261118133431",
+      "name": "sygilant_patrol_revision_binding_consumers",
+      "owner": "Sygilant",
+      "stage": "consumers",
+      "sourceHash": "1894f103d9c77fe97e1cac20088aa334d4a33ff13658513fbda1cce43695f6ec",
+      "ledgerHash": "78316eb09ae42ecb6042a757e0627e49b080bc4dbf82424672692ad586932c55",
+      "statementCount": 10,
+      "statementArrayHash": "20667051b30127bd1d0bf8a553c47fdd9af95531e9cc855a0eb875cdbb1f82bb",
+      "changed": [
+        "private.sygilant_authorize_patrol_report_site_v1(uuid,uuid,uuid,uuid,uuid,uuid,boolean)",
+        "private.sygilant_current_end_of_shift_patrol_summary(uuid,uuid,uuid,uuid,jsonb)"
+      ],
+      "added": [
+        {
+          "signature": "private.sygilant_has_current_patrol_continuity_v1(uuid,uuid)",
+          "roles": [
+            "service_role"
+          ]
+        }
+      ],
+      "relations": [],
+      "triggers": []
+    },
+    {
+      "file": "20261118134218_activate_patrol_schedule_continuity.sql",
+      "version": "20261118134218",
+      "name": "activate_patrol_schedule_continuity",
+      "owner": "SygShift",
+      "stage": "activate-after-compatible-Sygilant-release",
+      "sourceHash": "3be730b88a0bbe49586e2de3d50dec044f50c3eed7de6d342992895f33be8bc3",
+      "ledgerHash": "9cc95723a1449a1fd56d32a49f23c3e2ec3e40104302c1ba42d8da44108db587",
+      "statementCount": 26,
+      "statementArrayHash": "fcc8a0e502710891f281ee77c17d0eff3f4b9b43f518894abef14dcce4f87ae0",
+      "changed": [
+        "private.copy_schedule_shift_block(uuid,uuid,uuid,uuid,uuid)",
+        "private.normalize_schedule_duplicate_shift_blocks(uuid)",
+        "public.get_patrol_workspace()",
+        "public.link_patrol_route_shift(uuid,uuid,uuid)",
+        "public.save_patrol_hit(uuid,uuid,uuid,uuid,uuid,text,text,text,text,text,numeric,numeric,numeric,timestamptz,uuid,boolean)"
+      ],
+      "added": [
+        {
+          "signature": "private.copy_schedule_shift_block_before_patrol_continuity_v1(uuid,uuid,uuid,uuid,uuid)",
+          "roles": []
+        },
+        {
+          "signature": "private.get_patrol_workspace_before_continuity_v1()",
+          "roles": []
+        },
+        {
+          "signature": "private.link_patrol_route_shift_before_continuity_v1(uuid,uuid,uuid)",
+          "roles": []
+        },
+        {
+          "signature": "private.save_patrol_hit_before_continuity_v1(uuid,uuid,uuid,uuid,uuid,text,text,text,text,text,numeric,numeric,numeric,timestamptz,uuid,boolean)",
+          "roles": []
+        },
+        {
+          "signature": "private.reconcile_patrol_schedule_publication_v1()",
+          "roles": []
+        },
+        {
+          "signature": "public.reconcile_patrol_schedule_connection_v1(uuid,uuid,text)",
+          "roles": [
+            "authenticated"
+          ]
+        }
+      ],
+      "relations": [],
+      "triggers": [
+        "public.schedules.schedules_reconcile_patrol_continuity"
+      ]
+    }
+  ]
+}

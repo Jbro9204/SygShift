@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 11/18/2026 - All-client patrol schedule continuity
+
+- Added exact, immutable schedule-revision links for unchanged patrol work across all clients, including employee-only publication and intermediate revisions. Original assignments, obligations, reports and evidence remain authoritative.
+- Changed or unverified work receives an explicit Operations review with current permission checks, safe future-only reconciliation, clear failures and idempotent receipts. No route is inferred from a client name or automatically granted to a guard.
+- Final isolated native checks passed 302 lifecycle/rehearsal cases plus 11 ledger-lock concurrency cases. Full application/browser and staged production release verification remain pending; see `docs/changelogs/CHANGELOG_2026-11-18_PATROL_SCHEDULE_CONTINUITY.md`.
+- No live property mapping, schedule, punch, payroll, identity or permission record was edited during implementation.
+
 ## 11/17/2026 - Patrol route connection integrity (deployed; field acceptance open)
 
 - Add property-first route setup, optional matched posts, active-client validation, and visible incomplete configuration before activation.

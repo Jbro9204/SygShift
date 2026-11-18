@@ -9,7 +9,7 @@ import '../../src/styles/form-controls.css'
 
 const parameters = new URLSearchParams(location.search)
 const theme = parameters.get('theme') === 'light' ? 'light' : 'dark'
-const tab = parameters.get('tab') === 'operations' ? 'operations' : 'routes'
+const tab = parameters.get('tab') === 'my-patrol' ? 'my-patrol' : parameters.get('tab') === 'operations' ? 'operations' : 'routes'
 document.documentElement.dataset.theme = theme
 document.documentElement.style.colorScheme = theme
 const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })

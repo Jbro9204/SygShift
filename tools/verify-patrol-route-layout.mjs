@@ -68,7 +68,7 @@ try {
       await page.getByRole('combobox', { name: 'Active route', exact: true }).selectOption('10000000-0000-4000-8000-000000000030')
       await page.getByRole('combobox', { name: 'Published assigned shift', exact: true }).selectOption({ label: 'Sample Guard · Sample schedule location · 2026-11-18T03:00:00.000Z' })
       await page.getByText('No patrol route is connected to this employee and shift.', { exact: true }).waitFor()
-      await page.getByText(/A link on an earlier published schedule revision does not connect this revision/).waitFor()
+      await page.getByText(/Unchanged schedule revisions retain verified connections/).waitFor()
     }
     const notice = page.getByRole('status').filter({ has: page.getByText('Sample route: property setup incomplete', { exact: true }) })
     await notice.waitFor()

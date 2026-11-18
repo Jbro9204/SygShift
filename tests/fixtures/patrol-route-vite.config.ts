@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 // Render actual route-management components against synthetic memory only.
 export default defineConfig({
-  plugins: [react()], envDir: false,
+  plugins: [react()], envDir: false, cacheDir: '.work/vite-patrol-route-fixture',
   resolve: { alias: [
     { find: /.*\/data\/patrol$/, replacement: fileURLToPath(new URL('./patrol-route-data.ts', import.meta.url)) },
     { find: /.*\/lib\/supabase$/, replacement: fileURLToPath(new URL('./patrol-route-data.ts', import.meta.url)) },

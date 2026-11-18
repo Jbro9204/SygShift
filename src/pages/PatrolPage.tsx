@@ -10,7 +10,7 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import {
   assignPatrolMakeup, formatPatrolDateTime, getPatrolReleaseReadiness, getPatrolWorkspace, linkPatrolRouteShift,
-  openPatrolEvidence, PatrolRouteSaveError, savePatrolHit, savePatrolRoute, uploadPatrolEvidence,
+  openPatrolEvidence, PatrolRouteSaveError, reconcilePatrolScheduleConnection, savePatrolHit, savePatrolRoute, uploadPatrolEvidence,
   type PatrolAssignment, type PatrolMakeupObligation, type PatrolObligation, type PatrolRoute, type PatrolRouteInput,
   type PatrolWorkspace,
 } from '../data/patrol'
@@ -30,6 +30,19 @@ const pageSizes = [5, 10, 20] as const
 
 function statusLabel(status: string): string {
   return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function continuityReason(reason: NonNullable<PatrolWorkspace['continuityIssues']>[number]['reason']): string {
+  const reasons = {
+    unchanged: 'Verify the current patrol connection before continuing.',
+    shift_changed: 'The shift time or location changed. Confirm the route still applies before connecting it.',
+    employee_changed: 'The assigned employee changed. Confirm who should receive this patrol route.',
+    shift_removed: 'The earlier shift was removed. Its patrol history is retained; no replacement is assumed.',
+    lineage_missing: 'The new schedule revision has no verified connection to this earlier shift. Confirm the current assignment before making a replacement.',
+    prior_review: 'An earlier revision still needs review. Confirm the current assignment and route.',
+    ambiguous_lineage: 'More than one earlier connection could apply. Review them instead of combining patrol work.',
+  }
+  return reasons[reason]
 }
 
 function percentComplete(assignment: PatrolAssignment): number {
@@ -398,12 +411,23 @@ export function PatrolPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<(typeof pageSizes)[number]>(10)
-  const [hitTarget, setHitTarget] = useState<{ assignment: PatrolAssignment, obligation: PatrolObligation | PatrolMakeupObligation | null } | null>(null)
+  const [hitTarget, setHitTargetValue] = useState<{ assignment: PatrolAssignment, obligation: PatrolObligation | PatrolMakeupObligation | null } | null>(null)
   const [routeTarget, setRouteTargetValue] = useState<PatrolRoute | null | undefined>(undefined)
   const [routeOwnerId, setRouteOwnerId] = useState<string | null>(null)
   const [routeNotice, setRouteNotice] = useState('')
+  const setHitTarget = (target: typeof hitTarget) => {
+    if (target?.assignment.continuityStatus === 'review_required') {
+      setRouteNotice('The schedule changed. Operations must review this patrol connection before new hits are recorded. Existing work remains saved.')
+      return
+    }
+    setHitTargetValue(target)
+  }
   const [linkRouteId, setLinkRouteId] = useState('')
   const [linkCandidate, setLinkCandidate] = useState('')
+  const [continuityTarget, setContinuityTarget] = useState<NonNullable<PatrolWorkspace['continuityIssues']>[number] | null>(null)
+  const [continuityOwnerId, setContinuityOwnerId] = useState<string | null>(null)
+  const [continuityEmployeeId, setContinuityEmployeeId] = useState('')
+  const [continuityReviewReason, setContinuityReviewReason] = useState('')
   const [operationStatus, setOperationStatus] = useState<PatrolOperationFilter>('all')
   const [makeupAssignment, setMakeupAssignment] = useState('')
   const [makeupTarget, setMakeupTarget] = useState<string | null>(null)
@@ -422,6 +446,17 @@ export function PatrolPage() {
       return linkPatrolRouteShift(linkRouteId, candidate.shiftId, candidate.employeeId)
     },
     onSuccess: async () => { setLinkCandidate(''); await queryClient.invalidateQueries({ queryKey: ['patrol-workspace'] }) },
+  })
+  const continuityMutation = useMutation({
+    mutationFn: async () => {
+      if (!continuityTarget || continuityOwnerId !== workspaceQuery.data?.actor.employeeId) throw new Error('Reopen this review from the current account.')
+      return reconcilePatrolScheduleConnection(continuityTarget.id, continuityTarget.targetShiftId ? continuityEmployeeId : null, continuityReviewReason)
+    },
+    onSuccess: async (result) => {
+      setContinuityTarget(null)
+      setRouteNotice(result.status === 'closed' ? 'Unworked patrol closed. Its original assignment and audit history remain retained.' : 'Patrol reconnected to the reviewed current assignment. Original records remain retained.')
+      await queryClient.invalidateQueries({ queryKey: ['patrol-workspace'] })
+    },
   })
   const makeupMutation = useMutation({
     mutationFn: () => assignPatrolMakeup(makeupTarget ?? '', makeupAssignment, makeupReason),
@@ -519,6 +554,7 @@ export function PatrolPage() {
 
     {tab === 'routes' && workspace.actor.canManageRoutes ? (visibleItems as PatrolRoute[]).map((route) => <RouteSetupNotice key={route.id} locations={workspace.locations} route={route} />) : null}
 
+    {tab === 'my-patrol' && ownAssignments.some((assignment) => assignment.continuityStatus === 'review_required') ? <div className="inline-alert" role="status"><strong>Patrol schedule changes need review</strong><p>Existing work stays visible. Operations must confirm these changed connections before new hits are recorded:</p><ul>{ownAssignments.filter((assignment) => assignment.continuityStatus === 'review_required').map((assignment) => <li key={assignment.id}>{assignment.routeName} · {formatPatrolDateTime(assignment.startsAt, assignment.timeZone)}</li>)}</ul></div> : null}
     {tab === 'my-patrol' ? <section className="patrol-assignment-list">
       {visibleItems.length === 0 ? <DataStatePanel icon={MapPinned} title="No assigned patrols"><p>Published shifts become workable here after management connects the appropriate patrol route.</p></DataStatePanel> : (visibleItems as PatrolAssignment[]).map((assignment) => <article className="operations-panel patrol-assignment-card" key={assignment.id}>
         <header><div><p className="eyebrow">{assignment.requiresArmed ? 'Armed patrol' : 'Unarmed patrol'}</p><h2>{assignment.routeName}</h2><span>{formatPatrolDateTime(assignment.startsAt, assignment.timeZone)} – {formatPatrolDateTime(assignment.endsAt, assignment.timeZone)}</span></div><div className="patrol-progress"><strong>{percentComplete(assignment)}%</strong><span>complete</span></div></header>
@@ -532,10 +568,22 @@ export function PatrolPage() {
     </section> : null}
 
     {tab === 'operations' && workspace.actor.canViewOperations ? <>
+      {(workspace.continuityIssues?.length || workspace.continuityIssuesTruncated) ? <section className="operations-panel" aria-label="Patrol connections needing review">
+        <div className="patrol-section-heading"><div><h2>Patrol connections needing review</h2><p>Unchanged schedule revisions keep their verified patrol connection. Review changed assignments below; existing reports and completed patrol work remain preserved.</p></div></div>
+        {workspace.continuityIssues?.map((issue) => {
+          const candidate = workspace.scheduleCandidates.find((item) => item.shiftId === issue.targetShiftId && item.employeeId === issue.employeeId)
+          const route = workspace.routes.find((item) => item.id === issue.routeId)
+          return <article className="inline-alert" key={issue.id}>
+            <strong>{issue.employeeName} · {issue.routeName}</strong><p>{continuityReason(issue.reason)}</p>
+            {workspace.actor.canManageAssignments && (!issue.targetShiftId || (workspace.scheduleCandidates.some((item) => item.shiftId === issue.targetShiftId) && route?.status === 'active')) ? <button className="secondary-button" type="button" onClick={() => { setContinuityOwnerId(workspace.actor.employeeId); setContinuityTarget(issue); setContinuityEmployeeId(candidate?.employeeId ?? ''); setContinuityReviewReason(''); continuityMutation.reset() }}>Review connection</button> : <p>Confirm the current employee, published shift and route setup before making a new connection.</p>}
+          </article>
+        })}
+        {workspace.continuityIssuesTruncated ? <p role="status">More connections need review. Resolve the listed items and refresh to see the next group.</p> : null}
+      </section> : null}
       {workspace.actor.canManageAssignments ? <section className="operations-panel patrol-link-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Schedule integration</p><h2>Connect route to published shift</h2><p>Patrol assignments reuse the employee and times already approved in Schedule.</p></div></div>
         <form className="patrol-link-form" onSubmit={(event) => { event.preventDefault(); if (!needsRouteReconciliation) linkMutation.mutate() }}><label><span>Active route</span><select onChange={(event) => { setLinkRouteId(event.target.value); linkMutation.reset() }} required value={linkRouteId}><option value="">Choose route</option>{workspace.routes.filter((route) => route.status === 'active').map((route) => <option key={route.id} value={route.id}>{route.name}</option>)}</select></label><label><span>Published assigned shift</span><select onChange={(event) => { setLinkCandidate(event.target.value); linkMutation.reset() }} required value={linkCandidate}><option value="">Choose shift and employee</option>{workspace.scheduleCandidates.map((candidate) => { const value = patrolScheduleCandidateValue(candidate); return <option key={value} value={value}>{candidate.employeeName} · {candidate.siteName ?? candidate.postName ?? 'Scheduled shift'} · {formatPatrolDateTime(candidate.startsAt, candidate.timeZone)}</option> })}</select></label><button className="primary-action" disabled={linkMutation.isPending || !linkRouteId || !linkCandidate || needsRouteReconciliation} type="submit">{linkMutation.isPending ? 'Connecting...' : 'Connect patrol'}</button></form>
         {selectedLinkRoute && workspace.actor.canManageRoutes ? <RouteSetupNotice locations={workspace.locations} route={selectedLinkRoute} /> : null}
-        {selectedLinkCandidate && !existingCandidateAssignments.length ? <div className="inline-alert" role="status"><strong>No patrol route is connected to this employee and shift.</strong><p>{selectedLinkCandidate.employeeName} has a published schedule assignment, but that alone does not supply a patrol property list. Confirm the appropriate route, then connect it to this exact employee and shift. A link on an earlier published schedule revision does not connect this revision. Do not grant broader site access to work around a missing route.</p></div> : null}
+        {selectedLinkCandidate && !existingCandidateAssignments.length ? <div className="inline-alert" role="status"><strong>No patrol route is connected to this employee and shift.</strong><p>{selectedLinkCandidate.employeeName} has a published schedule assignment, but that alone does not supply a patrol property list. Confirm the appropriate route, then connect it to this exact employee and shift. Unchanged schedule revisions retain verified connections; changed or unverified assignments need review. Do not grant broader site access to work around a missing route.</p></div> : null}
         {existingCandidateAssignments.length ? <div className="inline-alert" role="status"><p>Existing patrol links for this employee and shift:</p><ul>{existingCandidateAssignments.map((assignment) => <li key={assignment.id}>{assignment.routeName} · {statusLabel(assignment.status)} · Version reference: {assignment.routeVersionId}</li>)}</ul><p>Saving a new route version does not replace these links or combine their properties.</p></div> : null}
         {needsRouteReconciliation ? <div className="inline-alert" role="alert">This shift retains an earlier version of the selected route. Operations must reconcile the existing assignment before connecting the newer version. Existing patrol history is preserved.</div> : null}
         {linkMutation.isError ? <div className="inline-alert" role="alert">{linkMutation.error.message}</div> : null}{linkMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Patrol requirements were generated from the active route version.</div> : null}
@@ -549,6 +597,15 @@ export function PatrolPage() {
     {tab === 'recovery' && workspace.actor.canManageAssignments ? <VacancyPatrolRecoveryWorkspace /> : null}
 
     {hitTarget ? <HitDialog assignment={hitTarget.assignment} obligation={hitTarget.obligation} onClose={() => setHitTarget(null)} /> : null}
+    {continuityTarget && continuityOwnerId === workspace.actor.employeeId && workspace.actor.canManageAssignments ? <ModalDialog busy={continuityMutation.isPending} busyLabel="Reconciling the patrol connection..." description="Only future, unused patrol work can be replaced or closed here. Existing reports, evidence, time records and completed work are protected." onClose={() => { if (!continuityMutation.isPending) setContinuityTarget(null) }} title="Review patrol schedule change">
+      <form className="patrol-form" onSubmit={(event) => { event.preventDefault(); continuityMutation.mutate() }}>
+        <p>{continuityTarget.routeName} · {continuityTarget.employeeName}</p><p>{continuityReason(continuityTarget.reason)}</p>
+        {continuityTarget.targetShiftId ? <label><span>Scheduled employee</span><select required disabled={continuityMutation.isPending} value={continuityEmployeeId} onChange={(event) => setContinuityEmployeeId(event.target.value)}><option value="">Choose the scheduled employee</option>{workspace.scheduleCandidates.filter((candidate) => candidate.shiftId === continuityTarget.targetShiftId).map((candidate) => <option key={candidate.employeeId} value={candidate.employeeId}>{candidate.employeeName} · {formatPatrolDateTime(candidate.startsAt, candidate.timeZone)}</option>)}</select></label> : <p>No replacement shift will be created. Only the unused future patrol will be closed.</p>}
+        <label className="patrol-form--wide"><span>Review reason</span><textarea required minLength={8} maxLength={1000} disabled={continuityMutation.isPending} value={continuityReviewReason} onChange={(event) => setContinuityReviewReason(event.target.value)} /></label>
+        {continuityMutation.isError ? <div className="inline-alert" role="alert">{continuityMutation.error.message}</div> : null}
+        <div className="modal-actions"><button className="primary-action" type="submit" disabled={continuityMutation.isPending || continuityReviewReason.trim().length < 8 || Boolean(continuityTarget.targetShiftId && !continuityEmployeeId)}>{continuityMutation.isPending ? 'Confirming...' : continuityTarget.targetShiftId ? 'Confirm patrol reconnection' : 'Close unworked patrol'}</button><button className="secondary-button" type="button" disabled={continuityMutation.isPending} onClick={() => setContinuityTarget(null)}>Cancel</button></div>
+      </form>
+    </ModalDialog> : null}
     {routeTarget !== undefined && routeOwnerId === workspace.actor.employeeId && workspace.actor.canManageRoutes ? <RouteEditor locations={workspace.locations} onClose={() => setRouteTarget(undefined)} onSaved={() => setRouteNotice('Route version saved and verified. Existing assignments and historical patrol records were not changed.')} route={routeTarget} /> : null}
     {makeupTarget ? <ModalDialog busy={makeupMutation.isPending} description="Makeup work remains separate from the original missed requirement and does not rewrite compliance history." onClose={() => setMakeupTarget(null)} title="Assign makeup patrol hit"><form className="patrol-form" onSubmit={(event: FormEvent) => { event.preventDefault(); makeupMutation.mutate() }}><label className="patrol-form--wide"><span>Current or upcoming assignment on the same route</span><select onChange={(event) => setMakeupAssignment(event.target.value)} required value={makeupAssignment}><option value="">Choose assignment</option>{makeupEligibleAssignments.map((assignment) => <option key={assignment.id} value={assignment.id}>{assignment.employeeName} · {assignment.routeName} · {assignment.serviceDate}</option>)}</select><small>{makeupEligibleAssignments.length ? 'The guard will see a Complete Makeup action in My Patrol.' : 'Connect this route to a current or upcoming assigned shift before assigning makeup work.'}</small></label><label className="patrol-form--wide"><span>Reason</span><textarea minLength={5} onChange={(event) => setMakeupReason(event.target.value)} required rows={3} value={makeupReason} /></label>{makeupMutation.isError ? <div className="inline-alert patrol-form--wide" role="alert">{makeupMutation.error.message}</div> : null}<div className="modal-actions patrol-form--wide"><button className="primary-action" disabled={makeupMutation.isPending || makeupEligibleAssignments.length === 0} type="submit">Assign makeup</button><button className="secondary-button" onClick={() => setMakeupTarget(null)} type="button">Cancel</button></div></form></ModalDialog> : null}
   </div>

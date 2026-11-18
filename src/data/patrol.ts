@@ -58,6 +58,7 @@ const assignmentSchema = z.object({
   id: z.string().uuid(), makeupObligations: z.array(makeupObligationSchema).default([]), obligations: z.array(obligationSchema), requiresArmed: z.boolean(),
   routeId: z.string().uuid(), routeName: z.string(), routeVersionId: z.string().uuid(), serviceDate: z.string(),
   shiftId: z.string().uuid(), startsAt: z.string(), status: z.enum(['active', 'completed']), timeZone: z.string(),
+  continuityStatus: z.enum(['ready', 'review_required']).optional(),
 })
 
 const scheduleCandidateSchema = z.object({
@@ -84,6 +85,13 @@ const workspaceSchema = z.object({
   }),
   assignments: z.array(assignmentSchema), locations: z.array(patrolLocationSchema), makeupQueue: z.array(makeupQueueSchema),
   routes: z.array(routeSchema), scheduleCandidates: z.array(scheduleCandidateSchema),
+  continuityIssues: z.array(z.object({
+    id: z.string().uuid(), assignmentId: z.string().uuid(), sourceShiftId: z.string().uuid(),
+    targetShiftId: z.string().uuid().nullable(), scheduleId: z.string().uuid(), employeeId: z.string().uuid(),
+    employeeName: z.string(), routeId: z.string().uuid(), routeName: z.string(),
+    reason: z.enum(['unchanged', 'shift_changed', 'employee_changed', 'shift_removed', 'lineage_missing', 'prior_review', 'ambiguous_lineage']), createdAt: z.string(),
+  })).max(100).optional(),
+  continuityIssuesTruncated: z.boolean().optional(),
 })
 
 const reportRowSchema = z.object({
@@ -178,6 +186,17 @@ export async function getPatrolWorkspace(): Promise<PatrolWorkspace> {
       makeupObligations: makeupWork.filter((item) => item.assignmentId === assignment.id),
     })),
   }
+}
+
+export async function reconcilePatrolScheduleConnection(continuityId: string, employeeId: string | null, reason: string) {
+  const input = z.object({ continuityId: z.string().uuid(), employeeId: z.string().uuid().nullable(), reason: z.string().trim().min(8).max(1000) }).parse({ continuityId, employeeId, reason })
+  const { data, error } = await getSupabaseClient().rpc('reconcile_patrol_schedule_connection_v1', {
+    target_continuity_id: input.continuityId, target_employee_id: input.employeeId, target_reason: input.reason,
+  })
+  if (error) throw messageFromError(error, 'The patrol connection could not be reconciled. Keep this review open and retry the same action.')
+  const result = z.object({ assignmentId: z.string().uuid().nullable(), status: z.enum(['reconnected', 'closed']) }).safeParse(data)
+  if (!result.success) throw new Error('The patrol result could not be confirmed. Keep this review open and retry the same action; do not create another connection.')
+  return result.data
 }
 
 export async function getPatrolReleaseReadiness(): Promise<PatrolReleaseReadiness> {

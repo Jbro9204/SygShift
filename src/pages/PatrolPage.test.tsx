@@ -10,6 +10,7 @@ const dataMocks = vi.hoisted(() => ({
   assignPatrolMakeup: vi.fn(),
   getPatrolWorkspace: vi.fn(),
   linkPatrolRouteShift: vi.fn(),
+  reconcilePatrolScheduleConnection: vi.fn(),
   savePatrolRoute: vi.fn(),
 }))
 
@@ -24,6 +25,7 @@ vi.mock('../data/patrol', async (loadOriginal) => {
     assignPatrolMakeup: dataMocks.assignPatrolMakeup,
     getPatrolWorkspace: dataMocks.getPatrolWorkspace,
     linkPatrolRouteShift: dataMocks.linkPatrolRouteShift,
+    reconcilePatrolScheduleConnection: dataMocks.reconcilePatrolScheduleConnection,
     savePatrolRoute: dataMocks.savePatrolRoute,
     getPatrolReleaseReadiness: vi.fn().mockResolvedValue({ checks: [], routes: [], summary: {}, readyForBroadRelease: false }),
   }
@@ -390,6 +392,102 @@ function renderRecovery(canManage = true) {
   return render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/patrol/recovery']}><Routes><Route path="/patrol/:patrolTab" element={<PatrolPage />} /></Routes></MemoryRouter></QueryClientProvider>)
 }
 
+describe('Patrol schedule connection review', () => {
+  function reviewWorkspace(removed = false) {
+    const value = workspace(true)
+    const candidate = value.scheduleCandidates[0]
+    value.continuityIssues = [{
+      id: crypto.randomUUID(), assignmentId: crypto.randomUUID(), sourceShiftId: crypto.randomUUID(),
+      targetShiftId: removed ? null : candidate.shiftId, scheduleId: crypto.randomUUID(),
+      employeeId: candidate.employeeId, employeeName: candidate.employeeName, routeId: value.routes[0].id,
+      routeName: value.routes[0].name, reason: removed ? 'shift_removed' : 'shift_changed', createdAt: '2026-11-18T13:00:00Z',
+    }]
+    return value
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    dataMocks.reconcilePatrolScheduleConnection.mockReset()
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
+  })
+
+  it('reviews and explicitly confirms the exact current employee without automatically linking on open', async () => {
+    const value = reviewWorkspace()
+    const issue = value.continuityIssues![0]
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    dataMocks.reconcilePatrolScheduleConnection.mockImplementation(async () => {
+      dataMocks.getPatrolWorkspace.mockResolvedValue({ ...value, continuityIssues: [] })
+      return { status: 'reconnected', assignmentId: crypto.randomUUID() }
+    })
+    const user = userEvent.setup()
+    renderOperations()
+    await user.click(await screen.findByRole('button', { name: 'Review connection' }))
+    expect(dataMocks.reconcilePatrolScheduleConnection).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Scheduled employee')).toHaveValue(issue.employeeId)
+    await user.type(screen.getByLabelText('Review reason'), 'Confirmed the changed shift and route.')
+    await user.click(screen.getByRole('button', { name: 'Confirm patrol reconnection' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(dataMocks.reconcilePatrolScheduleConnection).toHaveBeenCalledExactlyOnceWith(issue.id, issue.employeeId, 'Confirmed the changed shift and route.')
+    expect(dataMocks.linkPatrolRouteShift).not.toHaveBeenCalled()
+  })
+
+  it('retains the review reason after rejection and does not falsely show success', async () => {
+    const value = reviewWorkspace()
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    dataMocks.reconcilePatrolScheduleConnection.mockRejectedValue(new Error('Existing report protects this patrol work.'))
+    const user = userEvent.setup()
+    renderOperations()
+    await user.click(await screen.findByRole('button', { name: 'Review connection' }))
+    await user.type(screen.getByLabelText('Review reason'), 'Review the revised shift.')
+    await user.click(screen.getByRole('button', { name: 'Confirm patrol reconnection' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Existing report protects this patrol work.')
+    expect(screen.getByLabelText('Review reason')).toHaveValue('Review the revised shift.')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryByText(/Patrol reconnected to the reviewed/)).not.toBeInTheDocument()
+  })
+
+  it('requires explicit confirmation to close unused removed work without choosing a replacement', async () => {
+    const value = reviewWorkspace(true)
+    const issue = value.continuityIssues![0]
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    dataMocks.reconcilePatrolScheduleConnection.mockResolvedValue({ status: 'closed', assignmentId: null })
+    const user = userEvent.setup()
+    renderOperations()
+    await user.click(await screen.findByRole('button', { name: 'Review connection' }))
+    expect(screen.queryByLabelText('Scheduled employee')).not.toBeInTheDocument()
+    expect(screen.getByText(/No replacement shift will be created/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Review reason'), 'The future shift was removed.')
+    await user.click(screen.getByRole('button', { name: 'Close unworked patrol' }))
+    await waitFor(() => expect(dataMocks.reconcilePatrolScheduleConnection).toHaveBeenCalledExactlyOnceWith(issue.id, null, 'The future shift was removed.'))
+  })
+
+  it('keeps review-only Operations users out of the reconciliation action', async () => {
+    const value = reviewWorkspace()
+    value.actor.canManageAssignments = false
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    renderOperations()
+    await screen.findByRole('heading', { name: 'Patrol connections needing review' })
+    expect(screen.queryByRole('button', { name: 'Review connection' })).not.toBeInTheDocument()
+    expect(dataMocks.reconcilePatrolScheduleConnection).not.toHaveBeenCalled()
+  })
+
+  it('keeps changed patrol history visible but does not open a new-hit form before review', async () => {
+    const value = workspace(false)
+    value.assignments[0].employeeId = value.actor.employeeId
+    value.assignments[0].continuityStatus = 'review_required'
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/patrol/my-patrol']}><Routes><Route path="/patrol/:patrolTab" element={<PatrolPage />} /></Routes></MemoryRouter></QueryClientProvider>)
+    const user = userEvent.setup()
+    await screen.findByText('Patrol schedule changes need review')
+    expect(screen.getByText('Sample stop')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Record extra hit' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText(/The schedule changed. Operations must review this patrol connection/)).toBeInTheDocument()
+  })
+})
+
 describe('Patrol Operations page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -440,7 +538,7 @@ describe('Patrol Operations page', () => {
     await user.selectOptions(await screen.findByLabelText('Published assigned shift'), screen.getByRole('option', { name: /Employee A/ }))
     expect(screen.getByText('No patrol route is connected to this employee and shift.')).toBeInTheDocument()
     expect(screen.getByText(/Employee A has a published schedule assignment/)).toBeInTheDocument()
-    expect(screen.getByText(/A link on an earlier published schedule revision does not connect this revision/)).toBeInTheDocument()
+    expect(screen.getByText(/Unchanged schedule revisions retain verified connections/)).toBeInTheDocument()
     expect(dataMocks.linkPatrolRouteShift).not.toHaveBeenCalled()
     await user.selectOptions(screen.getByLabelText('Published assigned shift'), screen.getByRole('option', { name: /Employee B/ }))
     expect(screen.queryByText('No patrol route is connected to this employee and shift.')).not.toBeInTheDocument()

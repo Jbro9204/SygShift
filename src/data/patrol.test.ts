@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getPatrolWorkspace, PatrolRouteSaveError, savePatrolRoute, type PatrolRouteInput } from './patrol'
+import { getPatrolWorkspace, PatrolRouteSaveError, reconcilePatrolScheduleConnection, savePatrolRoute, type PatrolRouteInput } from './patrol'
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: () => ({ rpc }) }))
@@ -55,5 +55,17 @@ describe('patrol route data contracts', () => {
   it('classifies a transport exception as uncertain', async () => {
     rpc.mockRejectedValue(new TypeError('Network failed'))
     await expect(savePatrolRoute(input())).rejects.toMatchObject({ kind: 'uncertain' })
+  })
+
+  it('uses the exact continuity receipt and employee for a reviewed connection', async () => {
+    const continuityId = crypto.randomUUID(), employeeId = crypto.randomUUID(), assignmentId = crypto.randomUUID()
+    rpc.mockResolvedValue({ error: null, data: { status: 'reconnected', assignmentId } })
+    await expect(reconcilePatrolScheduleConnection(continuityId, employeeId, 'Reviewed the current assignment.')).resolves.toEqual({ status: 'reconnected', assignmentId })
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('reconcile_patrol_schedule_connection_v1', { target_continuity_id: continuityId, target_employee_id: employeeId, target_reason: 'Reviewed the current assignment.' })
+  })
+
+  it('does not report success for an unconfirmed reconciliation response', async () => {
+    rpc.mockResolvedValue({ error: null, data: { accepted: true } })
+    await expect(reconcilePatrolScheduleConnection(crypto.randomUUID(), null, 'Reviewed removed shift.')).rejects.toThrow('result could not be confirmed')
   })
 })
