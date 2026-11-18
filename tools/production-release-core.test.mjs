@@ -8,6 +8,7 @@ import {
   identifyUploadedVersion,
   parseCurrentDeployment,
   parseSourceCommitFromVersion,
+  parseUploadedVersionReceipt,
   probeCandidateWorker,
   releaseOutcomes,
   runProductionRelease,
@@ -144,11 +145,12 @@ function commandHarness() {
       return { stderr: '', stdout: JSON.stringify({ versions: [{ percentage: 100, version_id: currentVersionId }] }) }
     }
     if (joined.includes('versions view')) {
+      const requestedVersionId = arguments_[arguments_.indexOf('view') + 1]
       return {
         stderr: '',
         stdout: JSON.stringify({
-          annotations: { 'workers/tag': `source-${priorSourceCommit}` },
-          id: priorVersionId,
+          annotations: { 'workers/tag': `source-${requestedVersionId === candidateVersionId ? releaseCommit : priorSourceCommit}` },
+          id: requestedVersionId,
         }),
       }
     }
@@ -408,6 +410,25 @@ test('identifies one uploaded version and extracts a safe Version URL', () => {
   assert.equal(extractVersionUrl('Preview: https://release-sygshift.example.workers.dev/'), 'https://release-sygshift.example.workers.dev')
 })
 
+test('parses only one anchored, valid Worker upload receipt', () => {
+  assert.equal(parseUploadedVersionReceipt(`Uploaded sygshift\r\nWorker Version ID: ${candidateVersionId}\r\n`), candidateVersionId)
+  assert.equal(parseUploadedVersionReceipt(`  Worker Version ID: ${candidateVersionId}  `), candidateVersionId)
+  assert.equal(parseUploadedVersionReceipt(`Current Version ID: ${candidateVersionId}\nPreview Worker Version ID: ${candidateVersionId}`), null)
+  assert.throws(() => parseUploadedVersionReceipt('Worker Version ID: invalid'), /one valid Worker upload receipt/)
+  assert.throws(() => parseUploadedVersionReceipt(`Worker Version ID: ${candidateVersionId} extra`), /one valid Worker upload receipt/)
+  assert.throws(() => parseUploadedVersionReceipt(`Worker Version ID: ${candidateVersionId}\nWorker Version ID: ${candidateVersionId}`), /one valid Worker upload receipt/)
+  assert.throws(() => parseUploadedVersionReceipt(`Worker Version ID: ${candidateVersionId}\nWorker Version ID: ${concurrentVersionId}`), /one valid Worker upload receipt/)
+})
+
+test('accepts a receipt for a missing list entry only without old or conflicting versions', () => {
+  assert.equal(identifyUploadedVersion([priorVersionId], [priorVersionId], candidateVersionId), candidateVersionId)
+  assert.equal(identifyUploadedVersion([priorVersionId], [priorVersionId, candidateVersionId], candidateVersionId), candidateVersionId)
+  assert.throws(() => identifyUploadedVersion([priorVersionId], [priorVersionId], priorVersionId), /conflicts/)
+  assert.throws(() => identifyUploadedVersion([priorVersionId], [priorVersionId, concurrentVersionId], candidateVersionId), /conflicts/)
+  assert.throws(() => identifyUploadedVersion([priorVersionId], [priorVersionId, candidateVersionId, concurrentVersionId], candidateVersionId), /conflicts/)
+  assert.throws(() => identifyUploadedVersion([priorVersionId], [priorVersionId], 'invalid'), /conflicts/)
+})
+
 test('rejects invalid post-promotion verification windows before probing production', async () => {
   await assert.rejects(runProductionRelease(releaseOptions({ maximumProbeAttempts: 1 })), /at least two probe attempts/)
   await assert.rejects(runProductionRelease(releaseOptions({
@@ -644,6 +665,83 @@ test('uploads then explicitly promotes the identified candidate after a healthy 
   assert.ok(playwrightIndex >= 0 && finalBuildIndex > playwrightIndex)
   assert.ok(!commands.some((command) => command.includes('wrangler deploy ')))
 })
+
+function candidateIdentificationHarness({
+  afterIds = [priorVersionId, candidateVersionId],
+  receipt = `Worker Version ID: ${candidateVersionId}`,
+  metadataId = candidateVersionId,
+  metadataSource = releaseCommit,
+  metadataError = false,
+} = {}) {
+  const harness = commandHarness()
+  let listCount = 0
+  const run = async (arguments_, options) => {
+    const result = await harness.run(arguments_, options)
+    const joined = arguments_.join(' ')
+    if (joined.includes('versions list') && ++listCount > 1) {
+      return { stderr: '', stdout: JSON.stringify(afterIds.map((id) => ({ id }))) }
+    }
+    if (joined.includes('versions upload') && !arguments_.includes('--dry-run')) {
+      return { stderr: '', stdout: `Uploaded candidate\n${receipt}` }
+    }
+    if (joined.includes('versions view') && !arguments_.includes(priorVersionId)) {
+      if (metadataError) throw new Error('Candidate metadata is unavailable.')
+      return {
+        stderr: '',
+        stdout: JSON.stringify({ id: metadataId, annotations: { 'workers/tag': `source-${metadataSource}` } }),
+      }
+    }
+    return result
+  }
+  return { ...harness, run }
+}
+
+for (const [name, options] of [
+  ['a current version list and upload receipt', {}],
+  ['a stale version list and upload receipt', { afterIds: [priorVersionId] }],
+  ['a unique version list without an upload receipt', { receipt: '' }],
+]) {
+  test(`verifies exact candidate metadata before promotion with ${name}`, async () => {
+    const harness = candidateIdentificationHarness(options)
+    const result = await runProductionRelease(releaseOptions(), {
+      fetch: healthyFetch(), run: harness.run, sleep: async () => undefined,
+    })
+    assert.equal(result.outcome, releaseOutcomes.released)
+    assert.equal(result.candidateVersionId, candidateVersionId)
+    const commands = harness.calls.map((arguments_) => arguments_.join(' '))
+    const metadataIndex = commands.findIndex((command) => command.includes(`versions view ${candidateVersionId} --json`))
+    const promotionIndex = commands.findIndex((command) => command.includes(`versions deploy ${candidateVersionId}@100%`))
+    assert.ok(metadataIndex >= 0 && promotionIndex > metadataIndex)
+    assert.equal(commands.filter((command) => command.includes('versions upload')).length, 1)
+    assert.ok(!commands.some((command) => command.includes('wrangler rollback')))
+  })
+}
+
+for (const [name, options, error] of [
+  ['a missing receipt with a stale list', { receipt: '', afterIds: [priorVersionId] }, /unambiguously/],
+  ['an unanchored receipt with a stale list', { receipt: `Preview Worker Version ID: ${candidateVersionId}`, afterIds: [priorVersionId] }, /unambiguously/],
+  ['an invalid receipt', { receipt: 'Worker Version ID: invalid' }, /one valid Worker upload receipt/],
+  ['a duplicate receipt', { receipt: `Worker Version ID: ${candidateVersionId}\nWorker Version ID: ${candidateVersionId}` }, /one valid Worker upload receipt/],
+  ['a prior-version receipt', { receipt: `Worker Version ID: ${priorVersionId}`, afterIds: [priorVersionId] }, /conflicts/],
+  ['a different concurrent new version', { afterIds: [priorVersionId, concurrentVersionId] }, /conflicts/],
+  ['multiple new versions', { afterIds: [priorVersionId, candidateVersionId, concurrentVersionId] }, /conflicts/],
+  ['a stale-list candidate with the wrong source', { afterIds: [priorVersionId], metadataSource: priorSourceCommit }, /does not match the verified release source/],
+  ['a current-list candidate with the wrong source', { metadataSource: priorSourceCommit }, /does not match the verified release source/],
+  ['a unique-list candidate without a receipt and wrong source', { receipt: '', metadataSource: priorSourceCommit }, /does not match the verified release source/],
+  ['candidate metadata for another version', { afterIds: [priorVersionId], metadataId: concurrentVersionId }, /did not match the requested version/],
+  ['unavailable exact candidate metadata', { afterIds: [priorVersionId], metadataError: true }, /Candidate metadata is unavailable/],
+]) {
+  test(`never promotes or retries upload after ${name}`, async () => {
+    const harness = candidateIdentificationHarness(options)
+    await assert.rejects(runProductionRelease(releaseOptions(), {
+      fetch: healthyFetch(), run: harness.run, sleep: async () => undefined,
+    }), error)
+    const commands = harness.calls.map((arguments_) => arguments_.join(' '))
+    assert.equal(commands.filter((command) => command.includes('versions upload')).length, 1)
+    assert.ok(!commands.some((command) => command.includes('versions deploy')))
+    assert.ok(!commands.some((command) => command.includes('wrangler rollback')))
+  })
+}
 
 test('rejects a failed candidate Version URL before promotion', async () => {
   const harness = commandHarness()

@@ -471,9 +471,28 @@ export function parseSourceCommitFromVersion(stdout, expectedVersionId) {
   return match[1].toLowerCase()
 }
 
-export function identifyUploadedVersion(beforeIds, afterIds) {
+export function parseUploadedVersionReceipt(output) {
+  const lines = output.split(/\r?\n/).filter((line) => /^[\t ]*Worker Version ID:/.test(line))
+  if (lines.length === 0) return null
+  const match = lines.length === 1 && lines[0].match(/^[\t ]*Worker Version ID:[\t ]*([^\s]+)[\t ]*$/)
+  if (!match || !uuidPattern.test(match[1])) {
+    throw new Error('Wrangler did not return one valid Worker upload receipt.')
+  }
+  return match[1]
+}
+
+export function identifyUploadedVersion(beforeIds, afterIds, receiptVersionId = null) {
   const before = new Set(beforeIds)
   const added = afterIds.filter((id) => !before.has(id))
+  if (receiptVersionId !== null) {
+    if (!uuidPattern.test(receiptVersionId) || before.has(receiptVersionId)
+      || added.some((id) => id !== receiptVersionId) || added.length > 1) {
+      throw new Error('The Worker upload receipt conflicts with the available version history.')
+    }
+    // Wrangler's version list can briefly lag a successful upload. The caller
+    // must verify this exact receipt's metadata before accepting the candidate.
+    return receiptVersionId
+  }
   if (added.length !== 1) throw new Error('The uploaded Worker version could not be identified unambiguously.')
   return added[0]
 }
@@ -1177,8 +1196,17 @@ export async function runProductionRelease(inputOptions, injected = {}) {
     ['exec', 'wrangler', 'versions', 'list', '--json', '--name', options.workerName],
     commandOptions,
   )
-  const candidateVersionId = identifyUploadedVersion(beforeIds, parseVersionIds(versionsAfter.stdout))
-  const versionUrl = extractVersionUrl(`${upload.stdout}\n${upload.stderr}`)
+  const uploadOutput = `${upload.stdout}\n${upload.stderr}`
+  const receiptVersionId = parseUploadedVersionReceipt(uploadOutput)
+  const candidateVersionId = identifyUploadedVersion(beforeIds, parseVersionIds(versionsAfter.stdout), receiptVersionId)
+  const candidateMetadata = await dependencies.run(
+    ['exec', 'wrangler', 'versions', 'view', candidateVersionId, '--json', '--name', options.workerName],
+    commandOptions,
+  )
+  if (parseSourceCommitFromVersion(candidateMetadata.stdout, candidateVersionId) !== sourceCommit.toLowerCase()) {
+    throw new Error('The uploaded Worker version does not match the verified release source commit.')
+  }
+  const versionUrl = extractVersionUrl(uploadOutput)
   let candidatePreview = {
     available: false,
     checked: false,
