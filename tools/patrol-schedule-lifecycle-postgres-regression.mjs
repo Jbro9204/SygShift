@@ -48,6 +48,7 @@ const setup = `
 create schema private; create schema auth; create schema extensions;
 create extension pgcrypto with schema extensions;
 create role anon; create role authenticated; create role service_role;
+alter default privileges in schema public grant execute on functions to service_role;
 create type public.schedule_status as enum ('draft','published','superseded','archived');
 create table public.employees(id uuid primary key, first_name text, last_name text, status text, time_zone text);
 create function private.current_employee_id() returns uuid language sql stable as $$select nullif(current_setting('fixture.actor',true),'')::uuid$$;
@@ -224,6 +225,7 @@ try {
   run('initdb', ['-D', data, '-U', 'postgres', '--auth-local=trust', '--auth-host=trust', '--encoding=UTF8', '--locale=C'])
   startIsolatedPostgres({ data, directory, port, run, utc: true }); started = true
   sql(setup)
+  check(sql("select has_function_privilege('service_role','public.has_valid_credential(uuid,text,date)','execute')"), 't', 'Fixture reproduces the public-schema default service-role function grant')
   sql(read('supabase/migrations/20261117182334_patrol_route_builder_integrity.sql'))
   const foundation = read('supabase/migrations/20261118133316_patrol_schedule_continuity.sql')
   const activation = read('supabase/migrations/20261118134218_activate_patrol_schedule_continuity.sql')
@@ -259,6 +261,8 @@ try {
   for (const role of ['anon', 'authenticated']) {
     check(sql(`select has_function_privilege('${role}','public.service_get_patrol_reporting_bindings_v1(uuid,uuid[])','execute')`), 'f', 'Only the service boundary may read reporting bindings')
   }
+  check(sql("select has_function_privilege('service_role','public.reconcile_patrol_schedule_connection_v1(uuid,uuid,text)','execute')"), 'f', 'New reconciliation mutation explicitly rejects inherited service-role execution')
+  check(sql("select has_function_privilege('authenticated','public.reconcile_patrol_schedule_connection_v1(uuid,uuid,text)','execute')"), 't', 'Authenticated reviewers retain the authorized reconciliation boundary')
   for (const signature of ['private.patrol_assignment_shift_is_authorized_v1(uuid,uuid,uuid)', 'private.patrol_effective_shift_id_v1(uuid)', 'private.patrol_predecessor_shift_ids_v1(uuid,uuid)', 'private.patrol_retained_shift_is_authorized_v1(uuid,uuid,uuid)']) {
     check(sql(`select has_function_privilege('service_role','${signature}','execute')`), 't', 'Shared SQL consumers retain the explicit service-only helper grant')
     for (const role of ['anon', 'authenticated']) check(sql(`select has_function_privilege('${role}','${signature}','execute')`), 'f', 'Clients cannot call private shared authorizers')

@@ -51,7 +51,7 @@ export async function captureContinuityBaseline({ sygilantRoot, phase, rehearsal
   const previousText = readFileSync(join(root, 'docs/reliability', plan.priorBaseline), 'utf8')
   assert.equal(hash(previousText), plan.priorBaselineSha256, 'Immutable predecessor changed')
   const previous = JSON.parse(previousText)
-  const output = join(root, `docs/reliability/migration-ownership-2026-11-18-continuity-${rehearsalLedger ? 'expected-' : ''}${phase}-v3.json`)
+  const output = join(root, `docs/reliability/migration-ownership-2026-11-18-continuity-${rehearsalLedger ? 'expected-' : ''}${phase}-v4.json`)
   assert(!existsSync(output), 'Refusing to overwrite a captured baseline')
   const run = injected.run ?? createCommandRunner()
   const raw = rehearsalLedger ? readFileSync(rehearsalLedger, 'utf8') : (await run(['dlx','supabase@2.121.0','db','query','--linked','--project-ref','eqkdfrbwtioiqtjsyglg','select version,name,statements from supabase_migrations.schema_migrations order by version','-o','json'], { cwd: root, env: commandEnvironment(environment), timeoutMs: 45000 })).stdout

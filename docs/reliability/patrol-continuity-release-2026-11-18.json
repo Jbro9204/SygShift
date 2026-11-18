@@ -104,10 +104,10 @@
       "name": "activate_patrol_schedule_continuity",
       "owner": "SygShift",
       "stage": "activate-after-compatible-Sygilant-release",
-      "sourceHash": "3be730b88a0bbe49586e2de3d50dec044f50c3eed7de6d342992895f33be8bc3",
-      "ledgerHash": "9cc95723a1449a1fd56d32a49f23c3e2ec3e40104302c1ba42d8da44108db587",
+      "sourceHash": "130b3e5b3ce52130176cd805a5e2967ac7d59050cbc200173312c48205696e35",
+      "ledgerHash": "75b8df1d11cd282a5ca3083c81e7bfb193f25e259a311385cdca4eabaab63a48",
       "statementCount": 26,
-      "statementArrayHash": "fcc8a0e502710891f281ee77c17d0eff3f4b9b43f518894abef14dcce4f87ae0",
+      "statementArrayHash": "5a206934d57afd37321d5526b73da823b0c3277a555b0a682eff5c33ebd998c1",
       "changed": [
         "private.copy_schedule_shift_block(uuid,uuid,uuid,uuid,uuid)",
         "private.normalize_schedule_duplicate_shift_blocks(uuid)",

@@ -6,7 +6,14 @@ import { verifyContinuityBaseline } from './capture-patrol-continuity-baseline.m
 const read = name => JSON.parse(readFileSync(new URL(`../docs/reliability/${name}`, import.meta.url), 'utf8'))
 const plan = read('patrol-continuity-release-2026-11-18.json')
 const previous = read(plan.priorBaseline)
-const current = read('migration-ownership-2026-11-18-continuity-before-v3.json')
+const observed = read('migration-ownership-2026-11-18-continuity-consumers-v4.json')
+// Model the pending phase with the reviewed current sources, without relabeling
+// the separately retained, observed 467-entry production capture as a prior state.
+const current = { ...observed, entries: observed.entries.filter(entry => previous.entries.some(old => old.version === entry.version)) }
+
+test('accepts the observed consumer phase with the final pending activation source', () => {
+  assert.equal(verifyContinuityBaseline(observed, previous, plan, 'consumers').appliedCount, 467)
+})
 
 test('accepts only the exact unchanged predecessor and three reviewed pending sources', () => {
   assert.equal(verifyContinuityBaseline(current, previous, plan, 'before').appliedCount, 465)

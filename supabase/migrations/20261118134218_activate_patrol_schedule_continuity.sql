@@ -372,6 +372,6 @@ exception when lock_not_available then
   raise sqlstate 'PT409' using message='This patrol work is being updated. No work was changed; refresh the review and try again after that update finishes.';
 end;
 $$;
-revoke all on function public.reconcile_patrol_schedule_connection_v1(uuid,uuid,text) from public,anon;
+revoke all on function public.reconcile_patrol_schedule_connection_v1(uuid,uuid,text) from public,anon,service_role;
 grant execute on function public.reconcile_patrol_schedule_connection_v1(uuid,uuid,text) to authenticated;
 commit;
