@@ -1,5 +1,10 @@
 # SygShift Development Log
 
+## 11/23/2026 - Floating patrol database activation
+
+- Verified the coordinated floating patrol migrations in production. The independently observed 472-entry ledger preserves all earlier migration identities, statement fingerprints and ownership; the release granted no property access and changed no schedule or report records.
+- Added the observed release baseline and dated changelog. Sygilant must be verified live before SygShift exposes the new Operations controls. Signed-in Guard Mode acceptance is separate and remains outstanding.
+
 ## 11/21/2026 - Floating patrol property approval
 
 - Added an explicit, audited list of approved reporting properties for the exact published shift and assigned guard. Operations verifies the save by readback; fixed sites and native routes retain their own rules.
