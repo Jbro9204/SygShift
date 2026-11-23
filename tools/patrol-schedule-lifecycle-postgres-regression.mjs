@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { isolatedPostgresRuntime, startIsolatedPostgres, stopIsolatedPostgres } from './isolated-postgres-startup.mjs'
 import { continuityPreservationSql, renderPatrolContinuityRelease } from './patrol-continuity-release.mjs'
+import { testFloatingPatrolScope } from './patrol-floating-scope-postgres.mjs'
 
 // This runner never loads application configuration or contacts a hosted database.
 assert.equal(process.versions.node, '24.19.0')
@@ -57,7 +58,7 @@ create function auth.role() returns text language sql stable as $$select coalesc
 create function private.can_manage_schedule_drafts() returns boolean language sql stable as $$select private.current_employee_id()='${actor}'::uuid and current_setting('fixture.mfa',true)='true'$$;
 create function public.has_effective_permission(code text) returns boolean language sql stable as $$select private.can_manage_schedule_drafts() or (private.current_employee_id() in ('${guard}'::uuid,'${otherGuard}'::uuid) and code in ('patrol.self.view','patrol.hits.complete','patrol.hits.extra'))$$;
 create function private.employee_effective_permissions(employee_id uuid) returns text[] language sql stable as $$select case when employee_id='${actor}'::uuid then array['patrol.manage','patrol.operations.view','patrol.view','patrol.self.view'] else array['patrol.self.view'] end$$;
-create table public.clients(id uuid primary key,display_name text,status text);
+create table public.clients(id uuid primary key,display_name text,status text,archived_at timestamptz);
 create table public.sites(id uuid primary key,client_id uuid references public.clients(id),name text,code text,active boolean,time_zone text,address_line_1 text,city text,region text,postal_code text);
 create table public.posts(id uuid primary key,site_id uuid references public.sites(id),name text,active boolean,requires_armed boolean);
 create table public.events(id uuid primary key,site_id uuid references public.sites(id),time_zone text);
@@ -591,6 +592,8 @@ try {
   check(sql("select count(*) from pg_policy where polname='unreviewed_policy'"), '0', 'Rejected policy change leaves no artifact')
   assertTamperRejected("update supabase_migrations.schema_migrations set name='changed_prior';", 'Production preservation SQL rejects prior-ledger drift')
   check(sql("select name from supabase_migrations.schema_migrations where version='20000101000000'"), 'synthetic_prior', 'Rejected ledger change rolls back')
+  await testFloatingPatrolScope({ sql, read, migrationBody, check, rejected, id, context, actor, guard, otherGuard,
+    clientA, clientB, siteA, siteB, sourceShift, routeA, linkSignature: 'public.link_patrol_route_shift(uuid,uuid,uuid)', protectedSnapshot, holdTransaction, materialize, newShiftFor, publish })
   console.log(JSON.stringify({ passed: true, checks, syntheticOnly: true, productionConnections: 0, renderedReleaseRehearsal: arguments_.length > 0,
     foundationSha256: createHash('sha256').update(foundation).digest('hex'),
     activationSha256: createHash('sha256').update(activation).digest('hex'), artifacts: directory }))

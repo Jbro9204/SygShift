@@ -1,5 +1,10 @@
 # SygShift Development Log
 
+## 11/21/2026 - Floating patrol property approval
+
+- Added an explicit, audited list of approved reporting properties for the exact published shift and assigned guard. Operations verifies the save by readback; fixed sites and native routes retain their own rules.
+- Sygilant uses the selected property's canonical client, checklist and hit requirements without granting Operations access. See `docs/changelogs/CHANGELOG_2026-11-21_FLOATING_PATROL_PROPERTIES.md` for release order, verification and remaining field acceptance. No production change was made.
+
 ## 11/18/2026 - Retained patrol draft database ownership closeout
 
 - Captured the verified 470-entry shared ledger after Sygilant's retained version-two patrol compatibility activation. Exactly one reviewed Sygilant source and six statements were added; all 469 prior entries, source fingerprints, ownership decisions and historical reconciliation debt remain unchanged.

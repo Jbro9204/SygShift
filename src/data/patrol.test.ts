@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getPatrolWorkspace, PatrolRouteSaveError, reconcilePatrolScheduleConnection, savePatrolRoute, type PatrolRouteInput } from './patrol'
+import { getFloatingPatrolScope, getPatrolWorkspace, PatrolRouteSaveError, reconcilePatrolScheduleConnection, saveFloatingPatrolScope, savePatrolRoute, type PatrolRouteInput } from './patrol'
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: () => ({ rpc }) }))
@@ -67,5 +67,18 @@ describe('patrol route data contracts', () => {
   it('does not report success for an unconfirmed reconciliation response', async () => {
     rpc.mockResolvedValue({ error: null, data: { accepted: true } })
     await expect(reconcilePatrolScheduleConnection(crypto.randomUUID(), null, 'Reviewed removed shift.')).rejects.toThrow('result could not be confirmed')
+  })
+
+  it('uses the exact employee, published shift and reviewed revision for floating approvals', async () => {
+    const target = { shiftId: crypto.randomUUID(), employeeId: crypto.randomUUID() }
+    const siteIds = [crypto.randomUUID(), crypto.randomUUID()]
+    const saved = { ...target, approvedSiteIds: siteIds, siteIds, revision: 2, active: true, configured: true, eligible: true, status: 'ready' }
+    rpc.mockResolvedValue({ error: null, data: saved })
+    await expect(saveFloatingPatrolScope(target, siteIds, 1, 'Updated Dispatch properties')).resolves.toEqual(saved)
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('save_floating_patrol_scope_v1', {
+      target_shift_id: target.shiftId, target_employee_id: target.employeeId, target_site_ids: siteIds, target_expected_revision: 1, target_reason: 'Updated Dispatch properties',
+    })
+    rpc.mockResolvedValue({ error: null, data: { ...saved, employeeId: crypto.randomUUID() } })
+    await expect(getFloatingPatrolScope(target)).rejects.toThrow('does not match the selected employee and shift')
   })
 })

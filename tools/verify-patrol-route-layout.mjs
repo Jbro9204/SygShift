@@ -85,6 +85,47 @@ try {
     results.push({ width, theme, tab, scenario: 'readiness', passed: true, geometry, mutationCount: 0 })
     await context.close()
   }
+  for (const width of [390, 1440]) for (const theme of ['light', 'dark']) {
+    const context = await browser.newContext({ viewport: { width, height: 1000 } })
+    const page = await context.newPage()
+    const errors = [], external = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.route('**/*', route => {
+      const url = new URL(route.request().url())
+      if (url.origin === origin) return route.continue()
+      external.push(url.origin)
+      return route.abort()
+    })
+    await page.goto(`${origin}/tests/fixtures/patrol-route-ui.html?theme=${theme}&scenario=floating&tab=operations`)
+    await page.getByRole('button', { name: 'Set up floating patrol', exact: true }).click()
+    await page.getByRole('combobox', { name: 'Floating patrol shift and employee' }).selectOption({ label: 'Sample Guard · Sample schedule location · 2026-11-21T03:00:00.000Z' })
+    const property = page.getByRole('checkbox', { name: /Sample Court/ })
+    await property.focus()
+    await page.keyboard.press('Space')
+    assert(await property.isChecked())
+    await page.getByRole('searchbox', { name: 'Find a property' }).fill('Gardens')
+    assert.equal(await property.count(), 0)
+    await page.getByRole('checkbox', { name: /Sample Gardens/ }).check()
+    await page.getByRole('searchbox', { name: 'Find a property' }).fill('')
+    assert(await property.isChecked())
+    await page.getByLabel('Reason for changing this assignment').fill('Approved properties for overnight dispatch coverage')
+    const form = page.getByRole('group', { name: 'Properties Dispatch can send this guard to' })
+    const geometry = await form.evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth, left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right, viewport: innerWidth }))
+    assert(geometry.scroll <= geometry.width + 1 && geometry.left >= -1 && geometry.right <= geometry.viewport + 1)
+    await page.getByRole('button', { name: 'Save approved properties' }).click()
+    await page.getByText(/Verified\. Have the guard refresh/).waitFor()
+    assert.deepEqual(JSON.parse(await page.locator('body').getAttribute('data-fixture-floating-request')), {
+      shiftId: '10000000-0000-4000-8000-000000000062', employeeId: '10000000-0000-4000-8000-000000000060', revision: null,
+      siteIds: ['10000000-0000-4000-8000-000000000010', '10000000-0000-4000-8000-000000000011'],
+      reason: 'Approved properties for overnight dispatch coverage',
+    })
+    assert.equal(await page.locator('body').getAttribute('data-fixture-mutation-count'), '1')
+    await page.screenshot({ path: resolve(output, `floating-${width}-${theme}.png`) })
+    assert.deepEqual(errors, [])
+    assert.deepEqual(external, [])
+    results.push({ width, theme, scenario: 'floating', passed: true, geometry, verifiedReadback: true })
+    await context.close()
+  }
   await writeFile(resolve(output, 'results.json'), JSON.stringify({ browser: browser.version(), results }, null, 2))
   console.log(JSON.stringify({ cases: results.length, passed: true, output }))
 } finally { await browser.close() }

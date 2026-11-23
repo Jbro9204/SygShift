@@ -1,4 +1,4 @@
-import type { PatrolRouteInput, PatrolWorkspace } from '../../src/data/patrol'
+import type { FloatingPatrolScope, FloatingPatrolTarget, PatrolRouteInput, PatrolWorkspace } from '../../src/data/patrol'
 
 export const isSupabaseConfigured = true
 export class PatrolRouteSaveError extends Error {
@@ -8,6 +8,9 @@ export const postlessSite = '10000000-0000-4000-8000-000000000010'
 export const postedSite = '10000000-0000-4000-8000-000000000011'
 let saved: PatrolRouteInput | null = null
 const scenario = new URLSearchParams(location.search).get('scenario')
+const floatingScenario = scenario === 'floating'
+const connectEmployeeId = '10000000-0000-4000-8000-000000000060'
+const connectFridayShiftId = '10000000-0000-4000-8000-000000000062'
 const readinessScenario = scenario === 'readiness'
 const continuityScenario = scenario === 'continuity' || scenario === 'continuity-closed'
 const guardReviewScenario = scenario === 'guard-review'
@@ -23,6 +26,16 @@ const fixture: PatrolWorkspace = {
     { siteId: postlessSite, siteName: 'Sample Court', clientId: '10000000-0000-4000-8000-000000000050', clientName: 'Sample Client', postId: null, postName: null, siteCode: 'SC', timeZone: 'America/Denver', addressLine1: '10 Example Road', city: 'Denver', region: 'CO', postalCode: '80000', requiresArmed: false },
     { siteId: postedSite, siteName: 'Sample Gardens', clientId: '10000000-0000-4000-8000-000000000050', clientName: 'Sample Client', postId: '10000000-0000-4000-8000-000000000021', postName: 'Main post', siteCode: 'SG', timeZone: 'America/Denver', addressLine1: '20 Example Road', city: 'Denver', region: 'CO', postalCode: '80000', requiresArmed: false },
   ],
+}
+if (floatingScenario) {
+  const candidate = {
+    employeeId: connectEmployeeId, employeeName: 'Sample Guard', siteName: 'Sample schedule location',
+    postName: 'Sample post', requiresArmed: false, timeZone: 'America/Denver',
+  }
+  fixture.scheduleCandidates = [
+    { ...candidate, shiftId: '10000000-0000-4000-8000-000000000061', startsAt: '2026-11-20T03:00:00.000Z', endsAt: '2026-11-20T11:00:00.000Z' },
+    { ...candidate, shiftId: connectFridayShiftId, startsAt: '2026-11-21T03:00:00.000Z', endsAt: '2026-11-21T11:00:00.000Z' },
+  ]
 }
 if (readinessScenario) {
   fixture.routes = [{
@@ -95,6 +108,23 @@ export async function getPatrolWorkspace() {
   workspaceReadCount += 1
   document.body.dataset.fixtureWorkspaceReadCount = String(workspaceReadCount)
   return structuredClone({ ...fixture, routes: saved ? [{ ...saved, id: '10000000-0000-4000-8000-000000000030', versionId: '10000000-0000-4000-8000-000000000031', versionNumber: 1 }] : fixture.routes })
+}
+let floatingScope: FloatingPatrolScope | null = null
+export async function getFloatingPatrolScope({ shiftId, employeeId }: FloatingPatrolTarget): Promise<FloatingPatrolScope> {
+  if (!floatingScenario || shiftId !== connectFridayShiftId || employeeId !== connectEmployeeId) return forbidden()
+  return structuredClone(floatingScope ?? {
+    shiftId, employeeId, approvedSiteIds: [], siteIds: [], revision: null, active: false,
+    configured: false, eligible: true, status: 'not_configured',
+  })
+}
+export async function saveFloatingPatrolScope(target: FloatingPatrolTarget, siteIds: string[], revision: number | null, reason: string) {
+  const prior = await getFloatingPatrolScope(target)
+  if (prior.revision !== revision || siteIds.some((id) => !fixture.locations.some((site) => site.siteId === id))) return forbidden()
+  mutationCount += 1
+  document.body.dataset.fixtureMutationCount = String(mutationCount)
+  document.body.dataset.fixtureFloatingRequest = JSON.stringify({ shiftId: target.shiftId, employeeId: target.employeeId, siteIds, revision, reason })
+  floatingScope = { ...prior, approvedSiteIds: siteIds, siteIds, configured: true, revision: (revision ?? 0) + 1, active: Boolean(siteIds.length), status: siteIds.length ? 'ready' : 'blocked' }
+  return structuredClone(floatingScope)
 }
 export async function getPatrolReleaseReadiness() {
   return { generatedAt: '2026-11-17T18:00:00Z', readyForBroadRelease: false, summary: { activeSites: 2, sitesMissingClient: 0, sitesMissingAddress: 0, activeRoutes: 0, activeAssignments: 0, storedPhotos: 0, storedVideos: 0, longestVideoSeconds: null }, routes: [], checks: [] }

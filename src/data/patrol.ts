@@ -132,6 +132,46 @@ export type PatrolReport = z.infer<typeof patrolReportSchema>
 export type PatrolScheduleCandidate = z.infer<typeof scheduleCandidateSchema>
 export type PatrolReleaseReadiness = z.infer<typeof patrolReadinessSchema>
 
+const floatingPatrolTargetSchema = z.object({ shiftId: z.string().uuid(), employeeId: z.string().uuid() })
+const floatingPatrolScopeSchema = floatingPatrolTargetSchema.extend({
+  active: z.boolean(), configured: z.boolean(), eligible: z.boolean(),
+  status: z.enum(['not_configured', 'ready', 'blocked', 'review_required', 'native_route', 'ineligible', 'ended']),
+  revision: z.number().int().positive().nullable(), siteIds: z.array(z.string().uuid()),
+  approvedSiteIds: z.array(z.string().uuid()),
+})
+export type FloatingPatrolTarget = z.infer<typeof floatingPatrolTargetSchema>
+export type FloatingPatrolScope = z.infer<typeof floatingPatrolScopeSchema>
+
+function parseFloatingPatrolScope(data: unknown, target: FloatingPatrolTarget) {
+  const scope = floatingPatrolScopeSchema.parse(data)
+  if (scope.shiftId !== target.shiftId || scope.employeeId !== target.employeeId) {
+    throw new Error('The saved property list does not match the selected employee and shift.')
+  }
+  return scope
+}
+
+export async function getFloatingPatrolScope(target: FloatingPatrolTarget) {
+  const input = floatingPatrolTargetSchema.parse(target)
+  const { data, error } = await getSupabaseClient().rpc('get_floating_patrol_scope_v1', {
+    target_shift_id: input.shiftId, target_employee_id: input.employeeId,
+  })
+  if (error) throw messageFromError(error, 'The approved property list could not be loaded.')
+  return parseFloatingPatrolScope(data, input)
+}
+
+export async function saveFloatingPatrolScope(target: FloatingPatrolTarget, siteIds: string[], revision: number | null, reason: string) {
+  const input = floatingPatrolTargetSchema.extend({
+    siteIds: z.array(z.string().uuid()).max(100), revision: z.number().int().positive().nullable(),
+    reason: z.string().trim().min(8).max(500),
+  }).parse({ ...target, siteIds, revision, reason })
+  const { data, error } = await getSupabaseClient().rpc('save_floating_patrol_scope_v1', {
+    target_shift_id: input.shiftId, target_employee_id: input.employeeId, target_site_ids: input.siteIds,
+    target_expected_revision: input.revision, target_reason: input.reason,
+  })
+  if (error) throw messageFromError(error, 'The approved property list could not be saved.')
+  return parseFloatingPatrolScope(data, input)
+}
+
 export interface PatrolRouteInput {
   idempotencyKey: string; expectedVersionId: string | null
   changeReason: string; code: string; effectiveFrom: string | null; effectiveThrough: string | null; id: string | null

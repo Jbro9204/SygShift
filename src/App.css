@@ -29297,6 +29297,10 @@ button.patrol-overview-row:focus-visible {
   border: 0;
 }
 
+.patrol-floating-panel .patrol-form:not(.patrol-route-fields) {
+  padding: 16px 0 0;
+}
+
 .patrol-stop-readiness {
   display: block;
   margin-top: 3px;
@@ -29604,6 +29608,10 @@ button.patrol-overview-row:focus-visible {
 }
 
 @media (max-width: 760px) {
+  .patrol-floating-panel .patrol-section-heading {
+    flex-wrap: wrap;
+  }
+
   .patrol-tabs {
     display: grid;
     overflow-x: visible;
