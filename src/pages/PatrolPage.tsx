@@ -21,6 +21,10 @@ import {
 } from '../patrolOperations'
 import { VacancyPatrolRecoveryWorkspace } from '../patrol/VacancyPatrolRecoveryWorkspace'
 import { FloatingPatrolProperties } from '../patrol/FloatingPatrolProperties'
+import {
+  emptyPatrolMakeupQueue, formatMakeupServiceDate, matchesOlderMakeupSearch, usePatrolMakeupQueue,
+  type PatrolMakeupQueueItem,
+} from '../patrol/patrolMakeupQueue'
 
 type PatrolTab = 'overview' | 'my-patrol' | 'operations' | 'recovery' | 'routes'
 type Outcome = 'secure' | 'attention_needed' | 'incident' | 'unable_to_access' | 'other'
@@ -404,6 +408,69 @@ function Pagination({ page, pageSize, setPage, total }: { page: number, pageSize
   return <div className="reports-pagination"><button className="secondary-button" disabled={page <= 1} onClick={() => setPage(page - 1)} type="button"><ChevronLeft aria-hidden="true" size={17} />Previous</button><span>Page {page} of {totalPages}</span><button className="secondary-button" disabled={page >= totalPages} onClick={() => setPage(page + 1)} type="button">Next<ChevronRight aria-hidden="true" size={17} /></button></div>
 }
 
+function MakeupQueueRows({ items, emptyMessage, mayAssign, onAssign, status }: {
+  items: readonly PatrolMakeupQueueItem[]
+  emptyMessage: string
+  mayAssign: (item: PatrolMakeupQueueItem) => boolean
+  onAssign: (id: string) => void
+  status: string
+}) {
+  const [page, setPage] = useState(1)
+  const pageSize = 10
+  const visiblePage = Math.min(page, Math.max(1, Math.ceil(items.length / pageSize)))
+  const visibleItems = items.slice((visiblePage - 1) * pageSize, visiblePage * pageSize)
+  return <>
+    {visibleItems.map((item) => <div className="patrol-operation-row" key={item.obligationId}>
+      <div><strong>{item.locationLabel}</strong><span>{item.routeName} · {item.employeeName} · {formatMakeupServiceDate(item.serviceDate)}</span></div>
+      {mayAssign(item)
+        ? <button className="secondary-button" onClick={() => onAssign(item.obligationId)} type="button">Assign makeup</button>
+        : <span className="patrol-status patrol-status--missed">{status}</span>}
+    </div>)}
+    {items.length === 0 ? <p className="patrol-empty-inline">{emptyMessage}</p> : null}
+    <Pagination page={visiblePage} pageSize={pageSize} setPage={setPage} total={items.length} />
+  </>
+}
+
+function PatrolMakeupPanel({ recent, older, workspace, onAssign }: {
+  recent: readonly PatrolMakeupQueueItem[]
+  older: readonly PatrolMakeupQueueItem[]
+  workspace: PatrolWorkspace
+  onAssign: (id: string) => void
+}) {
+  const [olderSearch, setOlderSearch] = useState('')
+  const olderTerm = olderSearch.trim().toLowerCase()
+  const olderResults = olderTerm ? older.filter((item) => matchesOlderMakeupSearch(item, olderTerm)) : older
+  return <section className="operations-panel patrol-makeup-panel" aria-labelledby="patrol-makeup-heading">
+    <div className="patrol-section-heading">
+      <div><p className="eyebrow">Exception queue</p><h2 id="patrol-makeup-heading">Missed hits awaiting makeup</h2><p>Hits due in the last 14 days.</p></div>
+      <span className="patrol-count" aria-label={`${recent.length} recent unresolved`}>{recent.length}</span>
+    </div>
+    <MakeupQueueRows
+      items={recent}
+      emptyMessage="No recent missed patrol hits are waiting for makeup."
+      mayAssign={() => workspace.actor.canManageExceptions}
+      onAssign={onAssign}
+      status="Awaiting assignment"
+    />
+    <details className="patrol-makeup-history">
+      <summary>Older missed hits · {older.length} unresolved</summary>
+      <p className="patrol-makeup-history__note">More than 14 days past due. These hits remain missed and unresolved.</p>
+      <div className="patrol-form patrol-makeup-history__search"><label>
+        <span>Search older missed hits</span>
+        <input onChange={(event) => setOlderSearch(event.target.value)} placeholder="Property, route, guard, or date" type="search" value={olderSearch} />
+      </label></div>
+      <MakeupQueueRows
+        key={olderTerm}
+        items={olderResults}
+        emptyMessage={older.length ? 'No older missed hits match your search.' : 'No older missed hits are unresolved.'}
+        mayAssign={(item) => workspace.actor.canManageExceptions && workspace.assignments.some((assignment) => assignment.id === item.assignmentId)}
+        onAssign={onAssign}
+        status="Unresolved"
+      />
+    </details>
+  </section>
+}
+
 export function PatrolPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -468,6 +535,7 @@ export function PatrolPage() {
   })
 
   const workspace = workspaceQuery.data
+  const makeupQueue = usePatrolMakeupQueue(workspace?.actor.canViewOperations ? workspace.makeupQueue : emptyPatrolMakeupQueue)
   const tab: PatrolTab = (requestedTab === 'operations' && !workspace?.actor.canViewOperations)
     || (requestedTab === 'recovery' && !workspace?.actor.canManageAssignments)
     || (requestedTab === 'routes' && !workspace?.actor.canManageRoutes)
@@ -539,9 +607,11 @@ export function PatrolPage() {
         <article className="operations-panel patrol-priority-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Assigned work</p><h2>My active patrols</h2></div><button className="secondary-button" onClick={() => changeTab('my-patrol')} type="button">Open My Patrol</button></div>
           {ownAssignments.length === 0 ? <p className="patrol-empty-inline">No patrol route is currently connected to one of your published shifts.</p> : ownAssignments.slice(0, 5).map((assignment) => <button className="patrol-overview-row" key={assignment.id} onClick={() => changeTab('my-patrol')} type="button"><span><strong>{assignment.routeName}</strong><small>{formatPatrolDateTime(assignment.startsAt, assignment.timeZone)}</small></span><span>{percentComplete(assignment)}% complete</span></button>)}
         </article>
-        <article className="operations-panel patrol-priority-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Attention</p><h2>Missed & makeup work</h2></div>{workspace.actor.canViewOperations ? <button className="secondary-button" onClick={() => changeTab('operations')} type="button">Review queue</button> : null}</div>
-          {workspace.makeupQueue.length === 0 ? <p className="patrol-empty-inline">No missed patrol hits are waiting for management review.</p> : workspace.makeupQueue.slice(0, 5).map((item) => <div className="patrol-overview-row" key={item.obligationId}><span><strong>{item.locationLabel}</strong><small>{item.routeName} · {item.employeeName}</small></span><span className="patrol-status patrol-status--missed">Missed</span></div>)}
-        </article>
+        {workspace.actor.canViewOperations ? <article className="operations-panel patrol-priority-panel">
+          <div className="patrol-section-heading"><div><p className="eyebrow">Attention</p><h2>Missed & makeup work</h2></div><button className="secondary-button" onClick={() => changeTab('operations')} type="button">Review queue</button></div>
+          {makeupQueue.recent.length === 0 ? <p className="patrol-empty-inline">No recent missed patrol hits are waiting for management review.</p> : makeupQueue.recent.slice(0, 5).map((item) => <div className="patrol-overview-row" key={item.obligationId}><span><strong>{item.locationLabel}</strong><small>{item.routeName} · {item.employeeName}</small></span><span className="patrol-status patrol-status--missed">Missed</span></div>)}
+          <p className="patrol-makeup-history__note">Older missed hits: {makeupQueue.older.length} unresolved</p>
+        </article> : null}
       </section>
       <section className="operations-panel patrol-report-callout"><FileBarChart aria-hidden="true" size={26} /><div><p className="eyebrow">Reporting</p><h2>Patrol Activity report</h2><p>Filter required, completed, missed, extra, incident, location, and evidence records. Export uses a separately audited permission.</p></div><Link className="primary-action" to="/reports/patrolActivity">Open report</Link></section>
     </> : null}
@@ -591,7 +661,7 @@ export function PatrolPage() {
         {linkMutation.isError ? <div className="inline-alert" role="alert">{linkMutation.error.message}</div> : null}{linkMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Patrol requirements were generated from the active route version.</div> : null}
       </section> : null}
       <section className="operations-panel patrol-operations-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Live operations</p><h2>Patrol assignments</h2><p>Statuses reflect the schedule window and required-hit completion—not simply the absence of a missed hit.</p></div></div>{(visibleItems as PatrolAssignment[]).length === 0 ? <p className="patrol-empty-inline">No patrol assignments match the current search and status filters.</p> : (visibleItems as PatrolAssignment[]).map((assignment) => { const operationState = getPatrolOperationState(assignment, operationNow); return <div className="patrol-operation-row" key={assignment.id}><div><strong>{assignment.employeeName}</strong><span>{assignment.routeName} · {formatPatrolDateTime(assignment.startsAt, assignment.timeZone)}</span></div><div><strong>{assignment.obligations.filter((item) => item.status === 'completed').length}/{assignment.obligations.length}</strong><span>required hits</span></div><span className={`patrol-status patrol-status--${patrolOperationTones[operationState]}`}>{patrolOperationLabels[operationState]}</span></div> })}<Pagination page={page} pageSize={pageSize} setPage={setPage} total={operationsAssignments.length} /></section>
-      <section className="operations-panel patrol-makeup-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Exception queue</p><h2>Missed hits awaiting makeup</h2></div><span className="patrol-count">{workspace.makeupQueue.length}</span></div>{workspace.makeupQueue.slice(0, 10).map((item) => <div className="patrol-operation-row" key={item.obligationId}><div><strong>{item.locationLabel}</strong><span>{item.routeName} · {item.employeeName} · {item.serviceDate}</span></div>{workspace.actor.canManageExceptions ? <button className="secondary-button" onClick={() => { setMakeupTarget(item.obligationId); setMakeupAssignment('') }} type="button">Assign makeup</button> : <span className="patrol-status patrol-status--missed">Awaiting assignment</span>}</div>)}{workspace.makeupQueue.length === 0 ? <p className="patrol-empty-inline">The makeup queue is clear.</p> : null}</section>
+      <PatrolMakeupPanel key={`makeup-${workspace.actor.employeeId}`} recent={makeupQueue.recent} older={makeupQueue.older} workspace={workspace} onAssign={(id) => { setMakeupTarget(id); setMakeupAssignment('') }} />
     </> : null}
 
     {tab === 'routes' && workspace.actor.canManageRoutes ? <>{readinessQuery.data ? <section className={`operations-panel patrol-readiness ${readinessQuery.data.readyForBroadRelease ? 'patrol-readiness--ready' : ''}`}><div className="patrol-section-heading"><div><p className="eyebrow">Field release</p><h2>{readinessQuery.data.readyForBroadRelease ? 'Patrol release checks are ready' : 'Complete these checks before broad release'}</h2><p>This live checklist is derived from canonical clients, sites, routes, assignments, and stored field evidence.</p></div><button className="secondary-button" disabled={readinessQuery.isFetching} onClick={() => void readinessQuery.refetch()} type="button">Refresh checks</button></div><div className="patrol-readiness__checks">{readinessQuery.data.checks.map((check) => <article className={`patrol-readiness__check patrol-readiness__check--${check.state}`} key={check.code}>{check.state === 'ready' ? <CheckCircle2 aria-hidden="true" size={20} /> : <AlertTriangle aria-hidden="true" size={20} />}<div><strong>{check.label}</strong><span>{check.detail}</span><small>{check.action}</small></div></article>)}</div></section> : readinessQuery.isError ? <div className="inline-alert" role="alert">{readinessQuery.error.message}</div> : <p role="status">Loading field-release checks…</p>}<section className="operations-panel patrol-route-library"><div className="patrol-section-heading"><div><p className="eyebrow">Versioned configuration</p><h2>Routes & requirements</h2><p>Only the current version is editable. Prior versions remain attached to historical assignments.</p></div></div>{(visibleItems as PatrolRoute[]).map((route) => <article className="patrol-route-row" key={route.id}><div><strong>{route.name}</strong><span>{route.code} · Version {route.versionNumber} · {route.timeZone.replace('America/', '')}</span></div><span className={`patrol-status patrol-status--${route.status}`}>{statusLabel(route.status)}</span><div><strong>{route.stops.length}</strong><span>stops</span></div><div><strong>{route.stops.reduce((total, stop) => total + stop.requirements.filter((item) => item.status === 'active').reduce((sum, item) => sum + item.requiredHits, 0), 0)}</strong><span>weekly configured hits</span></div><button className="secondary-button" onClick={() => setRouteTarget(route)} type="button">Edit route</button></article>)}{visibleItems.length === 0 ? <p className="patrol-empty-inline">No routes match this search.</p> : null}<Pagination page={page} pageSize={pageSize} setPage={setPage} total={filteredRoutes.length} /></section></> : null}

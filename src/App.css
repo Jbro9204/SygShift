@@ -28827,6 +28827,10 @@ a.home-metric-card:focus-visible {
   margin-bottom: 16px;
 }
 
+.patrol-overview-grid > :only-child {
+  grid-column: 1 / -1;
+}
+
 .patrol-priority-panel,
 .patrol-link-panel,
 .patrol-operations-panel,
@@ -29186,6 +29190,45 @@ button.patrol-overview-row:focus-visible {
   margin-bottom: 16px;
 }
 
+.patrol-makeup-history {
+  margin-top: 16px;
+  padding-inline: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.patrol-makeup-history[open] {
+  padding-bottom: 12px;
+}
+
+.patrol-makeup-history > summary {
+  padding-block: 12px;
+  color: var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.patrol-makeup-history__note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.patrol-makeup-history .patrol-makeup-history__note {
+  margin-top: 0;
+}
+
+.patrol-form.patrol-makeup-history__search {
+  max-width: 420px;
+  grid-template-columns: minmax(0, 1fr);
+  margin-block: 12px;
+}
+
+.patrol-makeup-panel .patrol-operation-row > div {
+  overflow-wrap: anywhere;
+}
+
 .patrol-link-form {
   display: grid;
   grid-template-columns: minmax(180px, .7fr) minmax(280px, 1.5fr) auto;
@@ -29263,6 +29306,12 @@ button.patrol-overview-row:focus-visible {
   border-radius: 50%;
   font-size: 14px;
   font-weight: 900;
+}
+
+.patrol-makeup-panel .patrol-count {
+  flex: 0 0 auto;
+  padding-inline: 8px;
+  border-radius: 999px;
 }
 
 .patrol-route-row {

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PatrolRouteSaveError, type PatrolRouteInput, type PatrolWorkspace } from '../data/patrol'
 import { PatrolPage } from './PatrolPage'
 
@@ -381,9 +381,14 @@ function emptyRouteInput(): PatrolRouteInput {
   }
 }
 
-function renderOperations() {
+function renderOperations(path = '/patrol/operations', cachedWorkspace?: PatrolWorkspace) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  return render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/patrol/operations']}><Routes><Route path="/patrol/:patrolTab" element={<PatrolPage />} /></Routes></MemoryRouter></QueryClientProvider>)
+  if (cachedWorkspace) {
+    queryClient.setQueryDefaults(['patrol-workspace'], { staleTime: Infinity })
+    queryClient.setQueryData(['patrol-workspace'], cachedWorkspace)
+  }
+  const result = render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[path]}><Routes><Route path="/patrol/:patrolTab?" element={<PatrolPage />} /></Routes></MemoryRouter></QueryClientProvider>)
+  return { ...result, queryClient }
 }
 
 function renderRecovery(canManage = true) {
@@ -559,7 +564,9 @@ describe('Patrol Operations page', () => {
   })
 
   it('does not show mutation controls to an Operations viewer without management permissions', async () => {
-    dataMocks.getPatrolWorkspace.mockResolvedValue(workspace(false))
+    const value = workspace(false)
+    value.makeupQueue[0].dueEndAt = new Date(Date.now() - 60_000).toISOString()
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
     renderOperations()
 
     await screen.findByRole('heading', { name: 'Patrol assignments' })
@@ -579,5 +586,196 @@ describe('Patrol Operations page', () => {
     expect(await screen.findByRole('heading', { name: 'Patrol Command Center' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Vacancy Recovery' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Vacancy Patrol recovery' })).not.toBeInTheDocument()
+  })
+})
+
+const fourteenDays = 14 * 24 * 60 * 60 * 1000
+
+function missedHit(locationLabel: string, overrides: Partial<PatrolWorkspace['makeupQueue'][number]> = {}): PatrolWorkspace['makeupQueue'][number] {
+  return {
+    assignmentId: crypto.randomUUID(), dueEndAt: '2020-09-30T06:30:00.000Z', employeeId: crypto.randomUUID(),
+    employeeName: 'History Officer', locationLabel, obligationId: crypto.randomUUID(),
+    routeName: 'History Route', serviceDate: '2020-09-29', status: 'missed', ...overrides,
+  }
+}
+
+function olderMissedHits(count: number) {
+  const summary = screen.getByText(new RegExp('^Older missed hits\\s*[·:]?\\s*' + count + '\\s+unresolved$', 'i'))
+  const details = summary.closest('details')
+  if (!details) throw new Error('Missing older missed hits disclosure')
+  return { summary, details, history: within(details) }
+}
+
+describe('Patrol missed-hit queue aging', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('retains the exact 14-day UTC deadline and moves a hit to history while the page stays open', async () => {
+    // This rolling window crosses the fall DST transition. These offset timestamps
+    // are separated by one millisecond even though both use the old civil offset.
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    vi.setSystemTime(new Date('2026-11-08T06:00:00.000Z'))
+    const value = workspace(false)
+    value.makeupQueue = [
+      missedHit('Exact-boundary property', { dueEndAt: '2026-10-25T00:00:00.000-06:00' }),
+      missedHit('Already-older property', { dueEndAt: '2026-10-24T23:59:59.999-06:00' }),
+      missedHit('Unknown deadline property', { dueEndAt: 'invalid timestamp' }),
+    ]
+    const snapshot = structuredClone(value.makeupQueue)
+    const { queryClient, unmount } = renderOperations('/patrol/operations', value)
+    try {
+      expect(screen.getByText('Exact-boundary property')).toBeVisible()
+      expect(screen.getByText('Unknown deadline property')).toBeVisible()
+      expect(olderMissedHits(1).details).not.toHaveAttribute('open')
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+
+      const older = olderMissedHits(2)
+      expect(older.details).not.toHaveAttribute('open')
+      expect(screen.getByText('Unknown deadline property')).toBeVisible()
+      expect(older.history.getByText('Exact-boundary property')).not.toBeVisible()
+      expect(queryClient.getQueryData<PatrolWorkspace>(['patrol-workspace'])?.makeupQueue).toEqual(snapshot)
+      expect(dataMocks.getPatrolWorkspace).not.toHaveBeenCalled()
+      expect(dataMocks.assignPatrolMakeup).not.toHaveBeenCalled()
+    } finally {
+      unmount()
+    }
+  })
+
+  it('keeps an older-only unresolved count on Overview without presenting old hits as live work', async () => {
+    const value = workspace(false)
+    value.makeupQueue = [missedHit('Older-only property')]
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    const user = userEvent.setup()
+    renderOperations('/patrol')
+
+    await screen.findByText(/^Older missed hits.*1 unresolved$/i)
+    expect(screen.queryByText('Older-only property')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Review queue' }))
+    expect(screen.getByRole('heading', { name: 'Missed hits awaiting makeup' })).toBeVisible()
+    const older = olderMissedHits(1)
+    expect(older.details).not.toHaveAttribute('open')
+    expect(screen.queryByRole('button', { name: 'Assign makeup' })).not.toBeInTheDocument()
+    await user.click(older.summary)
+    expect(older.history.getByText('Older-only property')).toBeVisible()
+    expect(dataMocks.assignPatrolMakeup).not.toHaveBeenCalled()
+  })
+
+  it('searches every historical page by property, route, guard, and both date formats without changing the unresolved total', async () => {
+    const value = workspace(false)
+    value.makeupQueue = Array.from({ length: 42 }, (_, index) =>
+      missedHit('Past property ' + (index + 1), {
+        dueEndAt: new Date(Date.UTC(2020, 10, 15) - index * 86_400_000).toISOString(),
+        serviceDate: '2020-10-15',
+      }))
+    value.makeupQueue[41] = {
+      ...value.makeupQueue[41], employeeName: 'Unique Guard', locationLabel: 'Distinct Property',
+      routeName: 'Canyon Loop', serviceDate: '2020-09-29',
+    }
+    const snapshot = structuredClone(value.makeupQueue)
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    const user = userEvent.setup()
+    renderOperations()
+    await screen.findByText(/^Older missed hits.*42 unresolved$/i)
+    const older = olderMissedHits(42)
+    await user.click(older.summary)
+    expect(older.history.getByText('Past property 1')).toBeVisible()
+    expect(older.history.queryByText('Distinct Property')).not.toBeInTheDocument()
+    for (let page = 1; page < 5; page += 1) {
+      await user.click(older.history.getByRole('button', { name: 'Next' }))
+    }
+    expect(older.history.getByText('Distinct Property')).toBeVisible()
+    expect(older.history.getByRole('button', { name: 'Next' })).toBeDisabled()
+
+    const search = older.history.getByRole('searchbox', { name: 'Search older missed hits' })
+    for (const term of ['distinct PROPERTY', 'canyon loop', 'unique GUARD', '2020-09-29', '09/29/2020']) {
+      await user.clear(search)
+      await user.type(search, term)
+      expect(older.history.getByText('Distinct Property')).toBeVisible()
+      expect(older.history.getByText(/09\/29\/2020/)).toBeVisible()
+      expect(older.history.queryByText('Past property 1')).not.toBeInTheDocument()
+      expect(older.summary).toHaveTextContent('42 unresolved')
+    }
+    await user.clear(search)
+    await user.type(search, 'no matching property')
+    expect(older.history.getByText('No older missed hits match your search.')).toBeVisible()
+    expect(older.summary).toHaveTextContent('42 unresolved')
+    expect(dataMocks.assignPatrolMakeup).not.toHaveBeenCalled()
+    expect(value.makeupQueue).toEqual(snapshot)
+  })
+
+  it('does not expose Operations missed-hit history or totals to a Guard', async () => {
+    const value = workspace(false)
+    value.actor.canViewOperations = false
+    // Test the component gate even if a stale query snapshot contains rows.
+    value.makeupQueue = [missedHit('Restricted history property')]
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    renderOperations('/patrol/operations')
+
+    await screen.findByRole('heading', { name: 'Patrol Command Center' })
+    expect(screen.queryByText(/Older missed hits/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Restricted history property')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Review queue' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Assign makeup' })).not.toBeInTheDocument()
+    expect(dataMocks.assignPatrolMakeup).not.toHaveBeenCalled()
+  })
+
+  it('reports both queues empty with zero unresolved instead of implying cleanup completed any work', async () => {
+    const value = workspace(false)
+    value.makeupQueue = []
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    const user = userEvent.setup()
+    renderOperations()
+
+    expect(await screen.findByText('No recent missed patrol hits are waiting for makeup.')).toBeVisible()
+    const older = olderMissedHits(0)
+    await user.click(older.summary)
+    expect(older.history.getByText('No older missed hits are unresolved.')).toBeVisible()
+    expect(older.history.queryByRole('button', { name: 'Assign makeup' })).not.toBeInTheDocument()
+    expect(dataMocks.assignPatrolMakeup).not.toHaveBeenCalled()
+  })
+
+  it('keeps explicit makeup assignment available with a valid source and never turns history into a mutation', async () => {
+    const value = workspace(true)
+    const [source, target] = value.assignments
+    value.assignments[1] = { ...target, routeVersionId: source.routeVersionId, status: 'active' }
+    value.makeupQueue = [
+      missedHit('Live makeup property', { assignmentId: source.id, dueEndAt: new Date(Date.now() - 60_000).toISOString() }),
+      missedHit('Older linked property', { assignmentId: source.id, dueEndAt: new Date(Date.now() - fourteenDays - 60_000).toISOString() }),
+      missedHit('Older unlinked property'),
+    ]
+    dataMocks.getPatrolWorkspace.mockResolvedValue(value)
+    const user = userEvent.setup()
+    renderOperations()
+
+    const liveRow = (await screen.findByText('Live makeup property')).closest('.patrol-operation-row') as HTMLElement
+    await user.click(within(liveRow).getByRole('button', { name: 'Assign makeup' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Assign makeup patrol hit' }))
+    expect(dialog.getByRole('option', { name: /Completed Guard/ })).toBeInTheDocument()
+    expect(dataMocks.assignPatrolMakeup).not.toHaveBeenCalled()
+    await user.click(dialog.getByRole('button', { name: 'Cancel' }))
+
+    const older = olderMissedHits(2)
+    await user.click(older.summary)
+    expect(older.history.getByText('Older unlinked property')).toBeVisible()
+    expect(older.history.getByText('Older linked property')).toBeVisible()
+    expect(older.history.getAllByRole('button', { name: 'Assign makeup' })).toHaveLength(1)
+    expect(dataMocks.assignPatrolMakeup).not.toHaveBeenCalled()
+
+    dataMocks.assignPatrolMakeup.mockResolvedValueOnce(crypto.randomUUID())
+    await user.click(older.history.getByRole('button', { name: 'Assign makeup' }))
+    const olderDialog = within(screen.getByRole('dialog', { name: 'Assign makeup patrol hit' }))
+    await user.selectOptions(olderDialog.getByRole('combobox', { name: /Current or upcoming assignment on the same route/ }), target.id)
+    await user.click(olderDialog.getByRole('button', { name: 'Assign makeup' }))
+    await waitFor(() => expect(dataMocks.assignPatrolMakeup).toHaveBeenCalledExactlyOnceWith(value.makeupQueue[1].obligationId, target.id, expect.any(String)))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Assign makeup patrol hit' })).not.toBeInTheDocument())
+    expect(value.makeupQueue.every((item) => item.status === 'missed')).toBe(true)
   })
 })
