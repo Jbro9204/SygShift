@@ -1,4 +1,4 @@
-import type { FloatingPatrolScope, FloatingPatrolTarget, PatrolRouteInput, PatrolWorkspace } from '../../src/data/patrol'
+import type { FloatingPatrolPostScope, FloatingPatrolScope, FloatingPatrolTarget, PatrolRouteInput, PatrolWorkspace } from '../../src/data/patrol'
 
 export const isSupabaseConfigured = true
 export class PatrolRouteSaveError extends Error {
@@ -125,6 +125,20 @@ export async function saveFloatingPatrolScope(target: FloatingPatrolTarget, site
   document.body.dataset.fixtureFloatingRequest = JSON.stringify({ shiftId: target.shiftId, employeeId: target.employeeId, siteIds, revision, reason })
   floatingScope = { ...prior, approvedSiteIds: siteIds, siteIds, configured: true, revision: (revision ?? 0) + 1, active: Boolean(siteIds.length), status: siteIds.length ? 'ready' : 'blocked' }
   return structuredClone(floatingScope)
+}
+let floatingPostScope: FloatingPatrolPostScope | null = null
+export async function getFloatingPatrolPostScope(postId: string): Promise<FloatingPatrolPostScope> {
+  if (!floatingScenario || !fixture.locations.some((site) => site.postId === postId)) return forbidden()
+  return structuredClone(floatingPostScope ?? { postId, siteIds: [], approvedSiteIds: [], active: false, revision: null })
+}
+export async function saveFloatingPatrolPostScope(postId: string, siteIds: string[], revision: number | null, reason: string) {
+  const prior = await getFloatingPatrolPostScope(postId)
+  if (prior.revision !== revision || !siteIds.length || siteIds.some((id) => !fixture.locations.some((site) => site.siteId === id))) return forbidden()
+  mutationCount += 1
+  document.body.dataset.fixtureMutationCount = String(mutationCount)
+  document.body.dataset.fixtureFloatingPostRequest = JSON.stringify({ postId, siteIds, revision, reason })
+  floatingPostScope = { ...prior, siteIds, approvedSiteIds: siteIds, revision: (revision ?? 0) + 1, active: true }
+  return structuredClone(floatingPostScope)
 }
 export async function getPatrolReleaseReadiness() {
   return { generatedAt: '2026-11-17T18:00:00Z', readyForBroadRelease: false, summary: { activeSites: 2, sitesMissingClient: 0, sitesMissingAddress: 0, activeRoutes: 0, activeAssignments: 0, storedPhotos: 0, storedVideos: 0, longestVideoSeconds: null }, routes: [], checks: [] }

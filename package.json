@@ -63,7 +63,7 @@
     "database:capture:history": "node tools/capture-history-repair-baseline.mjs",
     "test:history-native": "node --test tools/capture-history-repair-baseline.test.mjs && node tools/time-off-history-postgres-regression.mjs",
     "test:patrol-route-native": "node tools/patrol-route-builder-postgres-regression.mjs",
-    "test:patrol-schedule-native": "node tools/patrol-schedule-lifecycle-postgres-regression.mjs && node tools/patrol-continuity-lock-postgres-regression.mjs",
+    "test:patrol-schedule-native": "node tools/patrol-schedule-lifecycle-postgres-regression.mjs && node tools/patrol-continuity-lock-postgres-regression.mjs && node tools/floating-patrol-post-policy-postgres-regression.mjs",
     "test:patrol-continuity-release": "node --test tools/patrol-continuity-release.test.mjs tools/capture-patrol-continuity-baseline.test.mjs",
     "database:retry:verify": "node tools/verify-postgres-retry-repair.mjs",
     "bootstrap:admin": "node tools/bootstrap-admin.mjs"

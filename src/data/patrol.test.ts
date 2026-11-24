@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getFloatingPatrolScope, getPatrolWorkspace, PatrolRouteSaveError, reconcilePatrolScheduleConnection, saveFloatingPatrolScope, savePatrolRoute, type PatrolRouteInput } from './patrol'
+import { getFloatingPatrolPostScope, getFloatingPatrolScope, getPatrolWorkspace, PatrolRouteSaveError, reconcilePatrolScheduleConnection, saveFloatingPatrolPostScope, saveFloatingPatrolScope, savePatrolRoute, type PatrolRouteInput } from './patrol'
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: () => ({ rpc }) }))
@@ -80,5 +80,19 @@ describe('patrol route data contracts', () => {
     })
     rpc.mockResolvedValue({ error: null, data: { ...saved, employeeId: crypto.randomUUID() } })
     await expect(getFloatingPatrolScope(target)).rejects.toThrow('does not match the selected employee and shift')
+  })
+
+  it('fences reusable property reads and approvals to the selected post and version', async () => {
+    const postId = crypto.randomUUID()
+    const siteIds = [crypto.randomUUID()]
+    const saved = { postId, active: true, revision: 2, siteIds, approvedSiteIds: siteIds }
+    rpc.mockResolvedValue({ error: null, data: saved })
+    await expect(saveFloatingPatrolPostScope(postId, siteIds, 1, 'Recurring dispatch coverage')).resolves.toEqual(saved)
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('save_floating_patrol_post_scope_v1', {
+      target_post_id: postId, target_site_ids: siteIds, target_expected_revision: 1, target_reason: 'Recurring dispatch coverage',
+    })
+    rpc.mockResolvedValue({ error: null, data: { ...saved, postId: crypto.randomUUID() } })
+    await expect(getFloatingPatrolPostScope(postId)).rejects.toThrow('does not match the selected scheduling post')
+    expect(rpc).toHaveBeenLastCalledWith('get_floating_patrol_post_scope_v1', { target_post_id: postId })
   })
 })

@@ -141,6 +141,11 @@ const floatingPatrolScopeSchema = floatingPatrolTargetSchema.extend({
 })
 export type FloatingPatrolTarget = z.infer<typeof floatingPatrolTargetSchema>
 export type FloatingPatrolScope = z.infer<typeof floatingPatrolScopeSchema>
+const floatingPatrolPostScopeSchema = z.object({
+  postId: z.string().uuid(), active: z.boolean(), revision: z.number().int().positive().nullable(),
+  siteIds: z.array(z.string().uuid()), approvedSiteIds: z.array(z.string().uuid()),
+})
+export type FloatingPatrolPostScope = z.infer<typeof floatingPatrolPostScopeSchema>
 
 function parseFloatingPatrolScope(data: unknown, target: FloatingPatrolTarget) {
   const scope = floatingPatrolScopeSchema.parse(data)
@@ -170,6 +175,31 @@ export async function saveFloatingPatrolScope(target: FloatingPatrolTarget, site
   })
   if (error) throw messageFromError(error, 'The approved property list could not be saved.')
   return parseFloatingPatrolScope(data, input)
+}
+
+function parseFloatingPatrolPostScope(data: unknown, postId: string) {
+  const scope = floatingPatrolPostScopeSchema.parse(data)
+  if (scope.postId !== postId) throw new Error('The saved property list does not match the selected scheduling post.')
+  return scope
+}
+
+export async function getFloatingPatrolPostScope(postId: string) {
+  const id = z.string().uuid().parse(postId)
+  const { data, error } = await getSupabaseClient().rpc('get_floating_patrol_post_scope_v1', { target_post_id: id })
+  if (error) throw messageFromError(error, 'The reusable property list could not be loaded.')
+  return parseFloatingPatrolPostScope(data, id)
+}
+
+export async function saveFloatingPatrolPostScope(postId: string, siteIds: string[], revision: number | null, reason: string) {
+  const input = floatingPatrolPostScopeSchema.pick({ postId: true, revision: true }).extend({
+    siteIds: z.array(z.string().uuid()).max(100), reason: z.string().trim().min(8).max(500),
+  }).parse({ postId, siteIds, revision, reason })
+  const { data, error } = await getSupabaseClient().rpc('save_floating_patrol_post_scope_v1', {
+    target_post_id: input.postId, target_site_ids: input.siteIds,
+    target_expected_revision: input.revision, target_reason: input.reason,
+  })
+  if (error) throw messageFromError(error, 'The reusable property list could not be saved.')
+  return parseFloatingPatrolPostScope(data, input.postId)
 }
 
 export interface PatrolRouteInput {
