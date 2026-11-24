@@ -97,7 +97,9 @@ describe('enterprise Patrol operations', () => {
     expect(page).toContain('findPatrolScheduleCandidate')
     expect(page).toContain('getPatrolOperationState')
     expect(page).toContain('workspace.actor.canManageAssignments ?')
-    expect(page).toContain('workspace.actor.canManageExceptions ?')
+    expect(page).toContain('mayAssign(item)')
+    expect(page).toContain('mayAssign={() => workspace.actor.canManageExceptions}')
+    expect(page).toContain('mayAssign={(item) => workspace.actor.canManageExceptions && workspace.assignments.some((assignment) => assignment.id === item.assignmentId)}')
     expect(data).not.toContain("dateStyle: 'medium', timeStyle: 'short', timeZone, timeZoneName: 'short'")
   })
 
