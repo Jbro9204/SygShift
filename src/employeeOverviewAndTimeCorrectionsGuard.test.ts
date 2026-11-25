@@ -10,6 +10,7 @@ const eventsSource = readFileSync(join(sourceRoot, 'pages', 'EventsPage.tsx'), '
 const opportunitiesSource = readFileSync(join(sourceRoot, 'data', 'opportunities.ts'), 'utf8')
 const myTimeSource = readFileSync(join(sourceRoot, 'time', 'MyTimePage.tsx'), 'utf8')
 const timeWorkspaceSource = readFileSync(join(sourceRoot, 'time', 'TimeWorkspace.tsx'), 'utf8')
+const callOffSource = readFileSync(join(sourceRoot, 'time', 'AttendanceReport.tsx'), 'utf8')
 const cssSource = readFileSync(join(sourceRoot, 'App.css'), 'utf8')
 
 describe('employee overview and time correction guardrails', () => {
@@ -49,8 +50,10 @@ describe('employee overview and time correction guardrails', () => {
     expect(overviewSource).toContain('home-quick-actions')
     expect(overviewSource).toContain('Report sick / call-off')
     expect(overviewSource).toContain('to="/time/my-time?report=call-off"')
-    expect(myTimeSource).toContain("searchParams.get('report') !== 'call-off'")
-    expect(myTimeSource).toContain('setAttendanceReportOpen(true)')
+    expect(timeWorkspaceSource).toContain('isUrgentCallOffLocation(pathname, search) ? <UrgentCallOffPage />')
+    expect(callOffSource).toContain('getTimekeepingDashboard()')
+    expect(callOffSource).not.toContain('getPayrollPeriodContext')
+    expect(myTimeSource).toContain('attendanceReport.setOpen(true)')
     expect(myTimeSource).toContain('Dispatch is notified immediately')
   })
 

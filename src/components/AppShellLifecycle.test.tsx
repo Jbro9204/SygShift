@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AnnouncementBanner } from '../data/announcements'
+import type { RequiredActionCheckpointItem } from '../data/actionCenter'
+import { MyTimePage } from '../time/MyTimePage'
+import { TimeWorkspace } from '../time/TimeWorkspace'
 import { AppShell } from './AppShell'
 
 const employeeId = 'a25a5f5f-45b6-4e43-87a6-79298ed9347f'
@@ -53,10 +56,15 @@ const shared = vi.hoisted(() => ({
   operationalWorkspace: { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' } as OperationalWorkspaceFixture,
   requiredActionBlocking: false,
   requiredActionError: null as Error | null,
+  requiredActionItems: [] as RequiredActionCheckpointItem[],
   mustChangePassword: false,
   scope: null as null | 'platform' | 'sygsphere',
   sessionContextError: null as Error | null,
   sessionContextFailureKind: 'transient' as 'compatibility' | 'revoked' | 'transient',
+  guardPermissions: null as string[] | null,
+  loadShiftChoices: vi.fn(),
+  loadPayrollPeriod: vi.fn(),
+  sendCallOff: vi.fn(),
 }))
 
 vi.mock('../lib/sharedIdentitySession', () => ({
@@ -142,10 +150,10 @@ vi.mock('../data/auth', () => ({
       employeeId,
       hasMfa: false,
       mfaEnrolledAt: null,
-      mfaRequired: true,
+      mfaRequired: shared.guardPermissions === null,
       mustChangePassword: shared.mustChangePassword,
       passwordChangedAt: null,
-      permissions: ['actions.self.view', 'apps.sygilant.access', 'operations.view', 'time.view'],
+      permissions: shared.guardPermissions ?? ['actions.self.view', 'apps.sygilant.access', 'operations.view', 'time.view'],
       role: 'guard',
       timeZone: 'America/Denver',
       username: 'shareduser',
@@ -159,10 +167,10 @@ vi.mock('../data/auth', () => ({
       employeeId,
       hasMfa: false,
       mfaEnrolledAt: null,
-      mfaRequired: true,
+      mfaRequired: shared.guardPermissions === null,
       mustChangePassword: shared.mustChangePassword,
       passwordChangedAt: null,
-      permissions: ['actions.self.view', 'apps.sygilant.access', 'operations.view', 'time.view'],
+      permissions: shared.guardPermissions ?? ['actions.self.view', 'apps.sygilant.access', 'operations.view', 'time.view'],
       role: 'guard',
       timeZone: 'America/Denver',
       username: 'shareduser',
@@ -209,16 +217,22 @@ vi.mock('../data/timeOperations', async (loadOriginal) => ({
   ...await loadOriginal<typeof import('../data/timeOperations')>(),
   getTimekeepingOperationsWorkspace: vi.fn(async () => shared.operationalWorkspace),
 }))
+vi.mock('../data/timekeeping', async (loadOriginal) => ({
+  ...await loadOriginal<typeof import('../data/timekeeping')>(),
+  getTimekeepingDashboard: shared.loadShiftChoices,
+  getPayrollPeriodContext: shared.loadPayrollPeriod,
+  reportAttendanceIssue: shared.sendCallOff,
+}))
 vi.mock('../data/actionCenter', () => ({
   getRequiredActionCheckpoint: vi.fn(async () => {
     if (shared.requiredActionError) throw shared.requiredActionError
     return {
       blocking: shared.requiredActionBlocking,
-      items: [],
+      items: shared.requiredActionItems,
       rollout: { enabled: true, enrolled: shared.requiredActionBlocking, mode: 'canary' },
       serverTimestamp: '2026-09-11T12:00:00Z',
       summary: { announcements: 0, critical: 0, documents: 0, hrTasks: 0, overdue: 0, schedules: 0, signatures: 0, training: 0 },
-      total: 0,
+      total: shared.requiredActionItems.length,
       urgentAccess: [],
     }
   }),
@@ -237,7 +251,10 @@ vi.mock('../data/myAccount', () => ({
 }))
 vi.mock('../data/pushNotifications', () => ({ clearPushSession: vi.fn(async () => undefined) }))
 vi.mock('../lib/payrollReminder', () => ({ shouldShowPayrollExportReminder: vi.fn(() => false) }))
-vi.mock('../lib/time', () => ({ lastCompletedPayrollWeek: vi.fn(() => ({ fromLabel: '09/01/2026', throughLabel: '09/07/2026' })) }))
+vi.mock('../lib/time', async (loadOriginal) => ({
+  ...await loadOriginal<typeof import('../lib/time')>(),
+  lastCompletedPayrollWeek: vi.fn(() => ({ fromLabel: '09/01/2026', throughLabel: '09/07/2026' })),
+}))
 vi.mock('../lib/theme', () => ({
   applyTheme: vi.fn(),
   getCurrentTheme: vi.fn(() => 'light'),
@@ -277,6 +294,11 @@ beforeEach(() => {
   shared.operationalWorkspace = { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' }
   shared.requiredActionBlocking = false
   shared.requiredActionError = null
+  shared.requiredActionItems = []
+  shared.guardPermissions = null
+  shared.loadShiftChoices.mockReset()
+  shared.loadPayrollPeriod.mockReset()
+  shared.sendCallOff.mockReset()
   shared.scope = null
   shared.sessionContextError = null
   shared.sessionContextFailureKind = 'transient'
@@ -377,6 +399,118 @@ describe('AppShell shared-session lifecycle', () => {
     expect(await screen.findByText('Action Center workspace')).toBeInTheDocument()
     expect(screen.queryByText('Time route')).not.toBeInTheDocument()
     expect(document.querySelector('.app-shell--required-actions')).not.toBeNull()
+  })
+
+  it('opens and submits the real Guard call-off from a blocking checkpoint without opening payroll or clock tools', async () => {
+    const user = userEvent.setup()
+    const { shiftId } = prepareGuardCallOffTest()
+    shared.loadPayrollPeriod.mockRejectedValue(new Error('Payroll period metadata unavailable'))
+    shared.sendCallOff.mockResolvedValue({ dispatchNotified: true })
+    renderShell('/actions')
+
+    await user.click(await screen.findByRole('link', { name: 'Report sick / call-off' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Report sick or call-off' })
+    expect(document.querySelector('.app-shell--required-actions')).not.toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Time and Attendance sections' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Pay period' })).not.toBeInTheDocument()
+    expect(shared.loadPayrollPeriod).not.toHaveBeenCalled()
+    expect(shared.sendCallOff).not.toHaveBeenCalled()
+    await within(dialog).findByRole('option', { name: /Fixture site/ })
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Shift' }), shiftId)
+    await user.click(within(dialog).getByRole('radio', { name: /Call-off \/ cannot work/ }))
+    await user.type(within(dialog).getByRole('textbox', { name: /^Short note/ }), 'Cannot safely reach the assigned post.')
+    await user.dblClick(within(dialog).getByRole('button', { name: 'Send to Dispatch' }))
+
+    expect(await screen.findByText('Dispatch was notified automatically.')).toBeVisible()
+    expect(screen.queryByRole('dialog', { name: 'Report sick or call-off' })).not.toBeInTheDocument()
+    expect(shared.sendCallOff).toHaveBeenCalledExactlyOnceWith({
+      eventType: 'call_off', note: 'Cannot safely reach the assigned post.', operationalDate: null, shiftId,
+    })
+    await user.click(screen.getByRole('link', { name: 'Return to Home' }))
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    expect(document.querySelector('.app-shell--required-actions')).not.toBeNull()
+  })
+
+  it('keeps a date-only call-off usable if shift lookup fails and keeps the note after a failed save', async () => {
+    const user = userEvent.setup()
+    prepareGuardCallOffTest()
+    shared.loadShiftChoices.mockRejectedValue(new Error('Shift choices unavailable'))
+    shared.sendCallOff
+      .mockRejectedValueOnce(new Error('Call-off could not be sent'))
+      .mockResolvedValueOnce({ dispatchNotified: false })
+    renderShell('/time/my-time?report=call-off')
+
+    const dialog = await screen.findByRole('dialog', { name: 'Report sick or call-off' })
+    expect(await within(dialog).findByText(/Assigned shifts could not be loaded/)).toBeVisible()
+    const send = within(dialog).getByRole('button', { name: 'Send to Dispatch' })
+    expect(send).toBeDisabled()
+    const note = within(dialog).getByRole('textbox', { name: /^Short note/ })
+    await user.type(note, 'Synthetic call-off fixture.')
+    expect(send).toBeDisabled()
+    fireEvent.change(within(dialog).getByLabelText('Date'), { target: { value: '2026-11-25' } })
+    await user.click(send)
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Your entries are still here.')
+    expect(note).toHaveValue('Synthetic call-off fixture.')
+    expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-11-25')
+    expect(shared.sendCallOff).toHaveBeenCalledTimes(1)
+    expect(shared.loadPayrollPeriod).not.toHaveBeenCalled()
+
+    await user.click(send)
+    expect(await screen.findByText(/report was saved, but Dispatch email needs follow-up/)).toBeVisible()
+    expect(shared.sendCallOff).toHaveBeenCalledTimes(2)
+    expect(shared.sendCallOff).toHaveBeenLastCalledWith({
+      eventType: 'called_in_sick', note: 'Synthetic call-off fixture.', operationalDate: '2026-11-25', shiftId: null,
+    })
+  })
+
+  it('returns from cancel to the allowed home and opens a clean form without a save', async () => {
+    const user = userEvent.setup()
+    prepareGuardCallOffTest()
+    renderShell('/time/my-time?report=call-off')
+
+    const dialog = await screen.findByRole('dialog', { name: 'Report sick or call-off' })
+    await user.type(within(dialog).getByRole('textbox', { name: /^Short note/ }), 'Do not save this.')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Report sick / call-off' }))
+    expect(within(await screen.findByRole('dialog', { name: 'Report sick or call-off' })).getByRole('textbox', { name: /^Short note/ })).toHaveValue('')
+    expect(shared.sendCallOff).not.toHaveBeenCalled()
+  })
+
+  it.each(['/time/my-time', '/time/my-time?report=other', '/time/team?report=call-off'])(
+    'does not extend checkpoint access to %s',
+    async (path) => {
+      prepareGuardCallOffTest()
+      renderShell(path)
+
+      expect(await screen.findByText('Action Center workspace')).toBeInTheDocument()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(shared.loadShiftChoices).not.toHaveBeenCalled()
+      expect(shared.sendCallOff).not.toHaveBeenCalled()
+    },
+  )
+
+  it('does not let an authorized urgent URL override login, password setup, or missing time permissions', async () => {
+    const initialEntry = '/time/my-time?report=call-off'
+    const signedOut = renderShell(initialEntry)
+    expect(await screen.findByText('Native login')).toBeInTheDocument()
+    signedOut.unmount()
+
+    prepareGuardCallOffTest()
+    shared.mustChangePassword = true
+    const passwordGated = renderShell(initialEntry)
+    expect(await screen.findByText('Account security')).toBeInTheDocument()
+    passwordGated.unmount()
+
+    prepareGuardCallOffTest()
+    shared.guardPermissions = ['actions.self.view']
+    shared.mustChangePassword = false
+    renderShell(initialEntry)
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(shared.loadShiftChoices).not.toHaveBeenCalled()
+    expect(shared.sendCallOff).not.toHaveBeenCalled()
   })
 
   it('keeps cached blocking checkpoint data authoritative when its background refresh fails', async () => {
@@ -1211,10 +1345,12 @@ describe('AppShell shared-session lifecycle', () => {
     const requiredActionKey = ['required-action-checkpoint', employeeId]
     const timeOffPageKey = ['time-off-request-page', employeeId, 1, '', 'all', 'history', 0, null]
     const timeOffExactKey = ['time-off-request-page', employeeId, 1, 'exact-action', 'selected-request']
+    const callOffShiftsKey = ['urgent-call-off-shifts', employeeId]
     queryClient.setQueryData(communicationsKey, { privatePreview: 'Employee A message' })
     queryClient.setQueryData(requiredActionKey, { blocking: true, items: [{ title: 'Private employee action' }] })
     queryClient.setQueryData(timeOffPageKey, { items: [{ reason: 'Private leave reason' }] })
     queryClient.setQueryData(timeOffExactKey, { items: [{ reason: 'Private selected leave' }] })
+    queryClient.setQueryData(callOffShiftsKey, { eligibleShifts: [{ siteName: 'Private assignment' }] })
     queryClient.setQueryData(['session-context'], { employeeId })
     queryClient.setQueryData(['unrelated-cache'], { retained: true })
 
@@ -1224,6 +1360,7 @@ describe('AppShell shared-session lifecycle', () => {
     expect(queryClient.getQueryData(requiredActionKey)).toBeUndefined()
     expect(queryClient.getQueryData(timeOffPageKey)).toBeUndefined()
     expect(queryClient.getQueryData(timeOffExactKey)).toBeUndefined()
+    expect(queryClient.getQueryData(callOffShiftsKey)).toBeUndefined()
     expect(queryClient.getQueryData(['session-context'])).toBeUndefined()
     expect(queryClient.getQueryData(['unrelated-cache'])).toEqual({ retained: true })
   })
@@ -1237,6 +1374,47 @@ function prepareSharedSession(scope: 'platform' | 'sygsphere') {
     refreshToken: 'refresh-token',
     scope,
   }
+}
+
+function prepareGuardCallOffTest() {
+  const shiftId = '20000000-0000-4000-8000-000000000001'
+  shared.activeAccessToken = accessToken
+  shared.guardPermissions = ['actions.self.view', 'time.self.view', 'time.punch', 'accountability.report_call_off']
+  shared.requiredActionBlocking = true
+  shared.requiredActionItems = [{
+    actionLabel: 'Review schedule',
+    actionType: 'schedule',
+    assignedAt: '2026-11-24T11:00:00Z',
+    authoritativeVersion: 'schedule-v1',
+    description: 'Please acknowledge your newly published schedule.',
+    dueAt: null,
+    id: '10000000-0000-4000-8000-000000000001',
+    metadata: {},
+    position: 1,
+    priority: 'normal',
+    responseKind: 'acknowledgment',
+    route: '/my-documents',
+    status: 'pending',
+    title: 'Review published schedule',
+    viewedAt: null,
+  }]
+  shared.loadShiftChoices.mockResolvedValue({
+    employee: { timeZone: 'America/Denver' },
+    operationalDate: '2026-11-25',
+    eligibleShifts: [{
+      assignmentId: '10000000-0000-4000-8000-000000000001',
+      shiftId,
+      startsAt: '2026-11-26T02:00:00Z',
+      endsAt: '2026-11-26T10:00:00Z',
+      timeZone: 'America/Denver',
+      postName: 'Fixture patrol',
+      siteName: 'Fixture site',
+      requiresArmed: false,
+    }],
+  })
+  HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) { this.open = true })
+  HTMLDialogElement.prototype.close = vi.fn(function close(this: HTMLDialogElement) { this.open = false })
+  return { shiftId }
 }
 
 function operationalAlert(
@@ -1293,6 +1471,10 @@ function renderShell(initialEntry: string) {
             <Route path="/my-documents" element={<div>My Documents workspace</div>} />
             <Route path="/sygsphere" element={<div>SygSphere workspace <Link to="/time">Attempt time route</Link></div>} />
             <Route path="/time" element={<div>Time route</div>} />
+            <Route element={<TimeWorkspace />}>
+              <Route path="/time/my-time" element={<MyTimePage />} />
+              <Route path="/time/team" element={<div>Team review workspace</div>} />
+            </Route>
           </Route>
           <Route path="/account-security" element={<div>Account security</div>} />
           <Route path="/login" element={<div>Native login</div>} />

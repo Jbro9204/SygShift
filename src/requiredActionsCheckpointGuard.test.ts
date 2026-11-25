@@ -40,7 +40,7 @@ describe('mandatory required-actions checkpoint guardrails', () => {
 
   it('gates ordinary routes only after the existing password and MFA checkpoint', () => {
     expect(shell.indexOf('needsSecurityCheckpoint && !isAccountSecurityRoute')).toBeLessThan(shell.indexOf('requiredActionCheckpointActive && !checkpointAllowsLocation'))
-    expect(shell).toContain("pathname === '/time/my-time' && new URLSearchParams(search).get('report') === 'call-off'")
+    expect(shell).toContain('return isUrgentCallOffLocation(pathname, search)')
     expect(shell).toContain('RequiredActionsCheckpointNotice')
   })
 

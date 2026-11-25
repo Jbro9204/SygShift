@@ -1,5 +1,10 @@
 # SygShift Development Log
 
+## 11/25/2026 - Urgent Guard call-off repair candidate
+
+- Keep the call-off bookmark usable while required actions are blocking, without opening unrelated My Time controls or waiting for payroll-period data. Preserve the existing authenticated attendance action and offer a clearly identified date-only option if assigned shifts cannot be loaded.
+- Test the real shell, route and form with synthetic Guard sessions. No database migration, operational record, or production deployment is part of local verification. See `docs/changelogs/CHANGELOG_2026-11-25_URGENT_GUARD_CALL_OFF.md`.
+
 ## 11/24/2026 - Company-wide Requests shared database activation
 
 - Installed one additive Requests migration and independently verified the 475-entry ledger with all 474 predecessors unchanged. Canonical SygShift ticket functions, audit, existing employee access, notification routing, and the Worker bundle are unchanged.

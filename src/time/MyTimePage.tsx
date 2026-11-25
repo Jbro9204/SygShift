@@ -29,15 +29,12 @@ import {
   getPayrollPeriodContext,
   getTimekeepingDashboard,
   payrollHours,
-  reportAttendanceIssue,
   requestTimeEventCorrection,
   type PendingCorrection,
-  type AttendanceReportResult,
   type TimeEventKind,
   type TimekeepingDashboard,
   type TimekeepingEvent,
   type TimekeepingReviewRow,
-  type TimekeepingShift,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
 import {
@@ -47,9 +44,9 @@ import {
   validViewDateKey,
   type MyTimeDateSelection,
 } from '../lib/sessionViewDateSelection'
-import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { dateKeyInTimeZone, formatDualTimeRange, formatOperationalDateTime } from '../lib/time'
-import { continentalUsTimeZoneLabel, continentalUsTimeZoneShortLabel } from '../lib/usTimeZones'
+import { continentalUsTimeZoneLabel } from '../lib/usTimeZones'
+import { AttendanceReportModal, AttendanceReportSuccess } from './AttendanceReport'
 import { canViewOwnTime } from './timePermissions'
 import { isActiveInProgressTimeRow } from './timePayroll'
 import {
@@ -60,6 +57,7 @@ import {
   payrollOccurrenceMinutes,
 } from './payrollAllocations'
 import { currentPayrollPeriod, formatUsDateKey, payrollPeriodFromBoundary } from './timeRules'
+import { useAttendanceReport } from './useAttendanceReport'
 import { ZonedTimeOccurrenceChoice } from './ZonedDateTimeField'
 import {
   TimeAlertCard,
@@ -71,7 +69,6 @@ import {
   TimeStatusBadge,
 } from './TimeKit'
 
-type AttendanceIssueType = 'called_in_sick' | 'call_off'
 type TimeCorrectionMode = 'change_time' | 'void' | 'review_note'
 
 const eventLabels: Record<TimeEventKind, string> = {
@@ -84,11 +81,6 @@ const eventLabels: Record<TimeEventKind, string> = {
 export function MyTimePage() {
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [attendanceReportOpen, setAttendanceReportOpen] = useState(false)
-  const [attendanceReportType, setAttendanceReportType] = useState<AttendanceIssueType>('called_in_sick')
-  const [attendanceReportShiftId, setAttendanceReportShiftId] = useState('')
-  const [attendanceReportDate, setAttendanceReportDate] = useState('')
-  const [attendanceReportNote, setAttendanceReportNote] = useState('')
   const [correctionEvent, setCorrectionEvent] = useState<TimekeepingEvent | null>(null)
   const [missingTimeRequestOpen, setMissingTimeRequestOpen] = useState(false)
   const requestedFromDate = searchParams.get('from')
@@ -114,6 +106,7 @@ export function MyTimePage() {
   })
 
   const dashboard = dashboardQuery.data
+  const attendanceReport = useAttendanceReport(dashboard?.operationalDate)
   const periodQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     queryFn: getPayrollPeriodContext,
@@ -220,38 +213,6 @@ export function MyTimePage() {
     () => dashboard ? currentRows.filter((row) => row.operationalDate === dashboard.operationalDate) : [],
     [dashboard, currentRows],
   )
-  useEffect(() => {
-    if (dashboard?.operationalDate && !attendanceReportDate) setAttendanceReportDate(dashboard.operationalDate)
-  }, [attendanceReportDate, dashboard?.operationalDate])
-
-  useEffect(() => {
-    if (!ownTimeAllowed || searchParams.get('report') !== 'call-off') return
-
-    setAttendanceReportOpen(true)
-    const nextParams = new URLSearchParams(searchParams)
-    nextParams.delete('report')
-    setSearchParams(nextParams, { replace: true })
-  }, [ownTimeAllowed, searchParams, setSearchParams])
-
-  const attendanceReportMutation = useMutation({
-    mutationFn: () => reportAttendanceIssue({
-      eventType: attendanceReportType,
-      note: attendanceReportNote,
-      operationalDate: attendanceReportShiftId ? null : attendanceReportDate,
-      shiftId: attendanceReportShiftId || null,
-    }),
-    onSuccess: async () => {
-      setAttendanceReportNote('')
-      setAttendanceReportOpen(false)
-      setAttendanceReportShiftId('')
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['my-time-dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['my-time-review'] }),
-        queryClient.invalidateQueries({ queryKey: ['time-payroll-accountability'] }),
-      ])
-    },
-  })
-
   const correctionMutation = useMutation({
     mutationFn: (input: { timeEventId: string; replacementTime: string | null; voided: boolean; reason: string }) => requestTimeEventCorrection(input),
     onSuccess: async () => {
@@ -355,9 +316,9 @@ export function MyTimePage() {
         </TimeAlertCard>
       ) : null}
 
-      {attendanceReportMutation.isError ? (
+      {attendanceReport.mutation.isError ? (
         <TimeAlertCard icon={CircleAlert} title="Attendance report could not be sent" tone="danger">
-          <p>{attendanceReportMutation.error.message}</p>
+          <p>{attendanceReport.mutation.error.message}</p>
         </TimeAlertCard>
       ) : null}
       {correctionMutation.isError ? (
@@ -370,8 +331,8 @@ export function MyTimePage() {
           <p>{missingTimeMutation.error.message}</p>
         </TimeAlertCard>
       ) : null}
-      {attendanceReportMutation.isSuccess ? (
-        <AttendanceReportSuccess result={attendanceReportMutation.data} />
+      {attendanceReport.mutation.isSuccess ? (
+        <AttendanceReportSuccess result={attendanceReport.mutation.data} />
       ) : null}
       {correctionMutation.isSuccess ? (
         <TimeAlertCard icon={CheckCircle2} title="Correction request sent" tone="good">
@@ -412,7 +373,7 @@ export function MyTimePage() {
             title="Report or correct time"
           />
           <div className="my-time-self-service-card__actions">
-            <TimeButton icon={AlertTriangle} onClick={() => setAttendanceReportOpen(true)} variant="secondary">
+            <TimeButton icon={AlertTriangle} onClick={() => attendanceReport.setOpen(true)} variant="secondary">
               Report sick / call-off
             </TimeButton>
             <p>Use this if you cannot work. Dispatch is notified immediately.</p>
@@ -444,19 +405,10 @@ export function MyTimePage() {
         />
       </section>
 
-      {attendanceReportOpen ? (
+      {attendanceReport.open ? (
         <AttendanceReportModal
-          date={attendanceReportDate || dashboard.operationalDate}
-          eventType={attendanceReportType}
-          note={attendanceReportNote}
-          onChangeDate={setAttendanceReportDate}
-          onChangeEventType={setAttendanceReportType}
-          onChangeNote={setAttendanceReportNote}
-          onChangeShiftId={setAttendanceReportShiftId}
-          onClose={() => setAttendanceReportOpen(false)}
-          onSubmit={() => attendanceReportMutation.mutate()}
-          pending={attendanceReportMutation.isPending}
-          selectedShiftId={attendanceReportShiftId}
+          {...attendanceReport.form}
+          onClose={() => attendanceReport.setOpen(false)}
           shifts={dashboard.eligibleShifts}
           timeZone={dashboard.employee.timeZone}
         />
@@ -481,141 +433,6 @@ export function MyTimePage() {
         />
       ) : null}
     </main>
-  )
-}
-
-function AttendanceReportSuccess({ result }: { result: AttendanceReportResult }) {
-  return (
-    <TimeAlertCard icon={CheckCircle2} title="Attendance report saved" tone={result.dispatchNotified ? 'good' : 'warning'}>
-      <p>
-        {result.dispatchNotified
-          ? 'Dispatch was notified automatically.'
-          : `The report was saved, but Dispatch email needs follow-up${result.dispatchError ? `: ${result.dispatchError}` : '.'}`}
-      </p>
-    </TimeAlertCard>
-  )
-}
-
-function AttendanceReportModal({
-  date,
-  eventType,
-  note,
-  onChangeDate,
-  onChangeEventType,
-  onChangeNote,
-  onChangeShiftId,
-  onClose,
-  onSubmit,
-  pending,
-  selectedShiftId,
-  shifts,
-  timeZone,
-}: {
-  date: string
-  eventType: AttendanceIssueType
-  note: string
-  onChangeDate: (value: string) => void
-  onChangeEventType: (value: AttendanceIssueType) => void
-  onChangeNote: (value: string) => void
-  onChangeShiftId: (value: string) => void
-  onClose: () => void
-  onSubmit: () => void
-  pending: boolean
-  selectedShiftId: string
-  shifts: TimekeepingShift[]
-  timeZone: string
-}) {
-  const noteReady = note.trim().length > 0
-  const canSubmit = noteReady && (selectedShiftId || date)
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (canSubmit) onSubmit()
-  }
-
-  return (
-    <ModalDialog
-      busy={pending}
-      busyLabel="Saving report and notifying Dispatch..."
-      className="modal-dialog--attendance-report"
-      description="Report a sick call or call-off without removing yourself from the shift until coverage is handled."
-      onClose={onClose}
-      title="Report sick or call-off"
-    >
-      <form className="attendance-report-form" onSubmit={submit}>
-        <TimeAlertCard icon={AlertTriangle} title="Important coverage rule" tone="warning">
-          <p>Your shift remains your responsibility until coverage is approved. This report alerts Dispatch so coverage can be worked immediately.</p>
-        </TimeAlertCard>
-
-        <fieldset className="attendance-report-choice-grid">
-          <legend>What are you reporting?</legend>
-          <label className={eventType === 'called_in_sick' ? 'attendance-report-choice attendance-report-choice--selected' : 'attendance-report-choice'}>
-            <input
-              checked={eventType === 'called_in_sick'}
-              disabled={pending}
-              name="attendance-report-type"
-              onChange={() => onChangeEventType('called_in_sick')}
-              type="radio"
-            />
-            <span>
-              <strong>Called in sick</strong>
-              <small>Use this for illness or sickness-related absence.</small>
-            </span>
-          </label>
-          <label className={eventType === 'call_off' ? 'attendance-report-choice attendance-report-choice--selected' : 'attendance-report-choice'}>
-            <input
-              checked={eventType === 'call_off'}
-              disabled={pending}
-              name="attendance-report-type"
-              onChange={() => onChangeEventType('call_off')}
-              type="radio"
-            />
-            <span>
-              <strong>Call-off / cannot work</strong>
-              <small>Use this for other last-minute coverage issues.</small>
-            </span>
-          </label>
-        </fieldset>
-
-        <div className="attendance-report-grid">
-          <label>
-            <span>Shift</span>
-            <select disabled={pending} onChange={(event) => onChangeShiftId(event.target.value)} value={selectedShiftId}>
-              <option value="">No specific shift / date only</option>
-              {shifts.map((shift) => (
-                <option key={shift.assignmentId} value={shift.shiftId}>
-                  {formatShiftDate(shift.startsAt, timeZone)} - {shiftTitle(shift)} - {shiftRequirementLabel(shift.requiresArmed)} - {shiftLocation(shift)} - {employeeShiftTimeLabel(shift, timeZone)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Date</span>
-            <input disabled={pending || Boolean(selectedShiftId)} onChange={(event) => onChangeDate(event.target.value)} type="date" value={date} />
-          </label>
-        </div>
-
-        <label className="attendance-report-note">
-          <span>Short note</span>
-          <textarea
-            disabled={pending}
-            maxLength={2000}
-            onChange={(event) => onChangeNote(event.target.value)}
-            placeholder="Example: I am sick and cannot work tonight. I will be available by phone if Dispatch needs details."
-            rows={5}
-            value={note}
-          />
-          <small>{note.trim().length}/2000 characters</small>
-        </label>
-
-        <div className="modal-actions attendance-report-actions">
-          <button className="secondary-button" disabled={pending} onClick={onClose} type="button">Cancel</button>
-          <TimeButton disabled={!canSubmit} loading={pending} type="submit" variant="primary">
-            Send to Dispatch
-          </TimeButton>
-        </div>
-      </form>
-    </ModalDialog>
   )
 }
 
@@ -1195,15 +1012,6 @@ function TimeCorrectionRequestModal({
   )
 }
 
-function formatShiftDate(value: string, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone,
-    year: 'numeric',
-  }).format(new Date(value))
-}
-
 function correctionReason(mode: TimeCorrectionMode, reason: string): string {
   const prefix = mode === 'change_time'
     ? 'Employee requested time correction'
@@ -1242,20 +1050,6 @@ function formatRowWindow(row: TimekeepingReviewRow, timeZone: string, activeInPr
   }
   if (row.scheduledStartsAt && row.scheduledEndsAt) return formatDualTimeRange(row.scheduledStartsAt, row.scheduledEndsAt, timeZone)
   return 'No punch window recorded yet.'
-}
-
-function shiftLocation(shift: TimekeepingShift): string {
-  return [shift.siteCode, shift.siteName ?? shift.locationName].filter(Boolean).join(' - ') || 'Location pending'
-}
-
-function shiftTitle(shift: TimekeepingShift): string {
-  return shiftDisplayTitle(shift)
-}
-
-function employeeShiftTimeLabel(shift: TimekeepingShift, employeeTimeZone: string): string {
-  const employeeTime = `Employee Time — ${continentalUsTimeZoneShortLabel(employeeTimeZone)}: ${formatDualTimeRange(shift.startsAt, shift.endsAt, employeeTimeZone)}`
-  if (shift.timeZone === employeeTimeZone) return employeeTime
-  return `${employeeTime} · Site Time — ${continentalUsTimeZoneShortLabel(shift.timeZone)}: ${formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}`
 }
 
 function myTimePayrollAllocationNote(row: TimekeepingReviewRow): string | null {

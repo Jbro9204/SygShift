@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
 import { canAccessRoute } from '../app/accessPolicy'
+import { isUrgentCallOffLocation } from '../app/urgentCallOff'
 import {
   EarlyClockInAcknowledgmentNotice,
   EarlyClockInWarningDialog,
@@ -43,6 +44,7 @@ import {
   canViewOwnTime,
 } from './timePermissions'
 import { TimeButton, TimeStatusBadge } from './TimeKit'
+import { UrgentCallOffPage } from './AttendanceReport'
 
 const actionLabels: Record<TimeEventKind, string> = {
   break_end: 'End break',
@@ -67,6 +69,12 @@ function activeShift(dashboard: Awaited<ReturnType<typeof getTimekeepingDashboar
 }
 
 export function TimeWorkspace() {
+  const { pathname, search } = useLocation()
+  // The checkpoint allows this exact URL for call-off reporting, not for the full Time workspace.
+  return isUrgentCallOffLocation(pathname, search) ? <UrgentCallOffPage /> : <StandardTimeWorkspace />
+}
+
+function StandardTimeWorkspace() {
   const queryClient = useQueryClient()
   const location = useLocation()
   const punchLock = useRef(false)

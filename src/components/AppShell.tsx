@@ -3,6 +3,7 @@ import { type QueryClient, useIsMutating, useQuery, useQueryClient } from '@tans
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, BellRing, ChevronDown, ChevronsLeft, ChevronsRight, FileClock, Home, LogOut, Megaphone, Menu, Moon, ShieldAlert, ShieldCheck, Sun, X } from 'lucide-react'
 import { homeNavigationItem, navigationGroups } from '../app/navigation'
+import { isUrgentCallOffLocation } from '../app/urgentCallOff'
 import {
   INTERNAL_NAVIGATION_STORAGE_KEY,
   internalHref,
@@ -111,6 +112,7 @@ class RequiredActionCheckpointTimeoutError extends Error {
 const COMPACT_NAVIGATION_QUERY = '(max-width: 1280px), (max-width: 1366px) and (max-height: 800px)'
 const SESSION_SCOPED_QUERY_ROOTS = [
   'time-off-request-page',
+  'urgent-call-off-shifts',
   'support',
   'my-notifications',
   'notification-device-session',
@@ -163,7 +165,7 @@ function routePathFromHref(href: string): string {
 
 function checkpointAllowsLocation(pathname: string, search: string): boolean {
   if (pathname === '/' || pathname === '/actions' || pathname === '/my-documents' || pathname === '/account-security') return true
-  return pathname === '/time/my-time' && new URLSearchParams(search).get('report') === 'call-off'
+  return isUrgentCallOffLocation(pathname, search)
 }
 
 async function getRequiredActionCheckpointWithinDeadline(signal: AbortSignal) {
