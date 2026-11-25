@@ -1,5 +1,10 @@
 # SygShift Development Log
 
+## 11/24/2026 - Company-wide Requests shared database activation
+
+- Installed one additive Requests migration and independently verified the 475-entry ledger with all 474 predecessors unchanged. Canonical SygShift ticket functions, audit, existing employee access, notification routing, and the Worker bundle are unchanged.
+- All 57 isolated route, privacy, workflow, and safe transfer checks passed. The hosted rollback rehearsal and exact activation evidence are recorded in `docs/changelogs/CHANGELOG_2026-11-24_SYGILANT_TECHNOLOGY_SUPPORT_TICKETS.md`.
+
 ## 11/23/2026 - Floating patrol database activation
 
 - Verified the coordinated floating patrol migrations in production. The independently observed 472-entry ledger preserves all earlier migration identities, statement fingerprints and ownership; the release granted no property access and changed no schedule or report records.

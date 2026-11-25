@@ -17,7 +17,7 @@
     "test:watch": "node tools/run-vitest.mjs",
     "test:e2e": "playwright test",
     "check:toolchain": "node tools/validate-toolchain.mjs",
-    "check": "pnpm check:toolchain && pnpm typecheck && pnpm lint && pnpm test && pnpm test:history-native && pnpm test:patrol-route-native && pnpm test:patrol-schedule-native && pnpm test:patrol-continuity-release && pnpm release:test && pnpm build",
+    "check": "pnpm check:toolchain && pnpm typecheck && pnpm lint && pnpm test && pnpm test:history-native && pnpm test:patrol-route-native && pnpm test:patrol-schedule-native && pnpm test:patrol-continuity-release && pnpm test:support-technology-native && pnpm release:test && pnpm build",
     "test:e2e:time-clock": "node tools/run-time-clock-release-test.mjs",
     "release:verify": "pnpm check && pnpm test:e2e:time-clock && pnpm build",
     "setup:git-hooks": "git config core.hooksPath .githooks",
@@ -65,6 +65,7 @@
     "test:patrol-route-native": "node tools/patrol-route-builder-postgres-regression.mjs",
     "test:patrol-schedule-native": "node tools/patrol-schedule-lifecycle-postgres-regression.mjs && node tools/patrol-continuity-lock-postgres-regression.mjs && node tools/floating-patrol-post-policy-postgres-regression.mjs",
     "test:patrol-continuity-release": "node --test tools/patrol-continuity-release.test.mjs tools/capture-patrol-continuity-baseline.test.mjs",
+    "test:support-technology-native": "node tools/technology-support-postgres-regression.mjs",
     "database:retry:verify": "node tools/verify-postgres-retry-repair.mjs",
     "bootstrap:admin": "node tools/bootstrap-admin.mjs"
   },
