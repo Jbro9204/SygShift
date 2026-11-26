@@ -26,6 +26,28 @@ beforeEach(() => {
 })
 
 describe('cross-platform notification controls', () => {
+  it('opens the exact guided HR page in another tab without starting a platform session or exposing a record ID', async () => {
+    const markRead = vi.fn(() => Promise.reject(new Error('read status unavailable')))
+    const dismiss = vi.fn()
+    render(<MemoryRouter><NotificationActionControl
+      actionPath="/hr/my-tasks"
+      onBeforeLaunch={markRead}
+      onLaunchPrepared={dismiss}
+      sourceId="4896f7c0-7143-48f9-9978-d1f6a342186f"
+      sourceType="corrective_action"
+    >Review and sign in Sygilant</NotificationActionControl></MemoryRouter>)
+
+    const link = screen.getByRole('link', { name: 'Review and sign in Sygilant' })
+    expect(link).toHaveAttribute('href', 'https://sygilant.us/hr/my-tasks')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    await userEvent.click(link)
+    expect(markRead).toHaveBeenCalledOnce()
+    expect(dismiss).toHaveBeenCalledOnce()
+    expect(launchMock).not.toHaveBeenCalled()
+    expect(submitMock).not.toHaveBeenCalled()
+  })
+
   it('launches an inbox dispatch action even when best-effort mark-read fails', async () => {
     const destination = '/dispatch?call=4896f7c0-7143-48f9-9978-d1f6a342186f' as const
     const launch = launchFixture(destination)

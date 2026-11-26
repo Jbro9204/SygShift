@@ -25,6 +25,22 @@ describe('notification action routing', () => {
     })).toEqual({ kind: 'local', path: '/support?ticket=123' })
   })
 
+  it('routes accepted guided HR notifications directly to My HR tasks without putting the corrective record ID in the URL', () => {
+    expect(resolveNotificationAction({ actionPath: '/hr/my-tasks', sourceId: reportId, sourceType: 'corrective_action' }))
+      .toEqual({ kind: 'sygilant-hr-tasks', href: 'https://sygilant.us/hr/my-tasks' })
+    expect(resolveNotificationAction({ actionPath: '/actions?checkpoint=required', sourceId: reportId, sourceType: 'corrective_action' }))
+      .toEqual({ kind: 'local', path: '/actions?checkpoint=required' })
+  })
+
+  it.each([
+    { actionPath: '/hr/my-tasks', sourceId: reportId, sourceType: 'direct' },
+    { actionPath: '/hr/my-tasks', sourceId: null, sourceType: 'corrective_action' },
+    { actionPath: '/hr/my-tasks?next=https://example.test', sourceId: reportId, sourceType: 'corrective_action' },
+    { actionPath: '/hr/my-tasks/ext', sourceId: reportId, sourceType: 'corrective_action' },
+  ])('does not route unbound or modified HR task paths to Sygilant', (reference) => {
+    expect(resolveNotificationAction(reference)).toEqual({ kind: 'none' })
+  })
+
   it.each([
     'sygilant_incident_report_completion',
     'sygilant_incident_report_ownership',

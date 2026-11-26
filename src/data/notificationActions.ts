@@ -15,10 +15,13 @@ const sygilantIncidentReportSourceTypes = new Set([
   'sygilant_incident_report_ownership',
 ])
 const sygilantReportSourceTypes = new Set(['sygilant_report', 'sygilant_report_correction'])
+const guidedHrTaskPath = '/hr/my-tasks'
+const guidedHrTaskUrl = 'https://sygilant.us/hr/my-tasks'
 
 export type NotificationAction =
   | { kind: 'local'; path: string }
   | { destination: SygilantPlatformDestination; kind: 'sygilant' }
+  | { kind: 'sygilant-hr-tasks'; href: typeof guidedHrTaskUrl }
   | { kind: 'none' }
 
 export type NotificationActionReference = {
@@ -28,6 +31,12 @@ export type NotificationActionReference = {
 }
 
 export function resolveNotificationAction(reference: NotificationActionReference): NotificationAction {
+  if (reference.actionPath?.startsWith(guidedHrTaskPath)) {
+    return reference.actionPath === guidedHrTaskPath && reference.sourceType === 'corrective_action'
+      && reference.sourceId && uuidPattern.test(reference.sourceId)
+      ? { kind: 'sygilant-hr-tasks', href: guidedHrTaskUrl }
+      : { kind: 'none' }
+  }
   const crossPlatformCandidate = sygilantDispatchSourceTypes.has(reference.sourceType)
     || sygilantIncidentReportSourceTypes.has(reference.sourceType)
     || sygilantReportSourceTypes.has(reference.sourceType)

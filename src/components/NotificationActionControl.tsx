@@ -36,12 +36,13 @@ export function NotificationActionControl({
   const [launching, setLaunching] = useState(false)
   const action = resolveNotificationAction({ actionPath, sourceId, sourceType })
 
-  if (action.kind === 'local') {
-    return <Link className={className} onClick={() => {
-      try { void Promise.resolve(onBeforeLaunch?.()).catch(() => undefined) } catch { /* Best-effort UI state. */ }
-      try { void Promise.resolve(onLaunchPrepared?.()).catch(() => undefined) } catch { /* Best-effort UI state. */ }
-    }} to={action.path}>{children}</Link>
+  function recordNavigation() {
+    try { void Promise.resolve(onBeforeLaunch?.()).catch(() => undefined) } catch { /* Best-effort UI state. */ }
+    try { void Promise.resolve(onLaunchPrepared?.()).catch(() => undefined) } catch { /* Best-effort UI state. */ }
   }
+  if (action.kind === 'local') return <Link className={className} onClick={recordNavigation} to={action.path}>{children}</Link>
+  if (action.kind === 'sygilant-hr-tasks') return <a className={className} href={action.href} onClick={recordNavigation}
+    rel="noopener noreferrer" target="_blank">{children}</a>
   if (action.kind === 'none') {
     return showInactive ? <div className={inactiveClassName}>{children}</div> : null
   }
