@@ -1,0 +1,14 @@
+# Floating patrol property continuity — 11/27/2026
+
+Status: locally verified repair candidate. The database migration is not installed in production. Neither application was deployed for this repair.
+
+- Preserve an existing exact floating patrol property approval when an unchanged assignment moves to a newer published revision of the same week. Require a unique lineage match and retain the original employee, occurrence, site-to-client bindings, and approval evidence.
+- Preserve an explicit empty revocation. Changed, reassigned, or unverifiable work still requires Operations review. Native routes retain precedence; a separate coverage vacancy inherits no sites.
+- Installation does not backfill lost approvals or rewrite published schedules, assignments, punches, payroll, reports, or audit history. When an eligible schedule is published, retain the copied approval and its new audit receipt as part of that publication. Operations must explicitly reapprove a list lost before this fix.
+- Verified the original failure, then ran 415 disposable native PostgreSQL assertions against the existing full-week, employee-only, and Dispatch coverage publishing functions. Included exact scope and report authorization, denial of an unapproved property and separate coverage vacancy, preserved revocation and client identity, draft rebase, duplicate retry rejection, and stable punches, payroll, reports, and evidence. No production connection or records were used.
+- A rollback-only publication probe used 300 synthetic shifts, 40 current approvals, and 16,300 total approval records. Restricting the new lookup to the same post and exact shift times before the existing authority checks reduced median publish time from 546 ms in the initial candidate to 102 ms; the unpatched 36 ms control did not preserve approvals. Both repair variants matched the same 40 site/client approvals and preserved all 300 assignments, the synthetic punch, and payroll. This is not a hosted timing or capacity claim.
+- The deployed Sygilant report-scope source (`00d2398041887c8cd7d3ea32d0995a802ea41e17`, 12 matching imported files) consumed the real migrated fixture RPC results through an isolated test adapter. It returned the approved site and kept the superseded and revoked scopes blocked. This was a server-consumer integration check, not a signed-in browser-to-PostgREST or client-delivery test.
+
+## Release boundary
+
+Keep the release on hold until the existing SygShift and Sygilant signed-in workflows are verified against an isolated post-migration database and the reviewed production migration ledger is reconciled. The candidate does not require new Worker, browser, or Sygilant application code. If a later Worker promotion is separately needed, do not treat a Worker rollback as a database rollback. Retain the database history and review any remediation as a new forward change.

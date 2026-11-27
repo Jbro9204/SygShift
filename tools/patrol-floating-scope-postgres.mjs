@@ -94,18 +94,114 @@ export async function testFloatingPatrolScope({ sql, read, migrationBody, check,
   rejected('delete from private.floating_patrol_scope_properties;', '42501')
   check(save(floatingShift, guard, [siteB], 2).revision, 3, 'A reviewed approval can deliberately supersede the revocation')
 
-  const floatingDraft = materialize(), successor = newShiftFor(floatingDraft, floatingShift)
+  sql(read('supabase/migrations/20261124151311_floating_patrol_post_policy.sql'))
+  const continuity = read('supabase/migrations/20261127211000_floating_patrol_schedule_continuity.sql')
+  const beforeContinuity = protectedSnapshot()
+  const predecessor = 'private.floating_patrol_predecessor_exists_v1(uuid,uuid)'
+  const preservePublication = 'private.preserve_floating_patrol_schedule_publication_v1()'
+  const postId = sql(`select post_id from public.shifts where id='${floatingShift}';`)
+  check(JSON.parse(sql(context() + `select public.save_floating_patrol_post_scope_v1('${postId}',${uuidArray([siteA])},null,'Approved recurring test properties');`)).active, true, 'Recurring policy is available as a control')
+  check(save(floatingShift, otherGuard, [], null).status, 'blocked', 'Second guard explicitly revokes the recurring post list')
+  const beforeFix = JSON.parse(sql(context() + `begin;
+    create temporary table unpatched_floating_draft as
+      select private.materialize_schedule_draft_revision((select week_starts_on from public.schedules
+        where id=(select schedule_id from public.shifts where id='${floatingShift}'))) as id;
+    do $publish$ begin perform public.publish_schedule_draft((select id from unpatched_floating_draft)); end $publish$;
+    select public.get_floating_patrol_scope_v1(link.draft_shift_id,'${guard}')
+    from private.schedule_shift_revision_links link join unpatched_floating_draft draft on draft.id=link.draft_schedule_id
+    where link.source_shift_id='${floatingShift}';
+    rollback;`))
+  check(beforeFix.status, 'review_required', 'Before the fix, the unchanged published shift loses its exact approval')
+  check(beforeFix.siteIds, [], 'Before the fix, the Guard cannot use the approved site on the new revision')
+  check(getScope(floatingShift).siteIds, [siteB], 'The unpatched control rolls back, keeping its starting approval')
+  sql(`begin;\n${migrationBody(continuity)}\nrollback;`)
+  check(sql(`select to_regprocedure('${preservePublication}') is null`), 't', 'Publication continuity migration can be rehearsed and rolled back')
+  sql(continuity)
+  check(protectedSnapshot(), beforeContinuity, 'Activating continuity does not modify schedules, reports, payroll, or patrol records')
+  for (const role of ['anon', 'authenticated', 'service_role']) {
+    check(sql(`select has_function_privilege('${role}','${preservePublication}','execute')`), 'f', 'Publication trigger is private')
+    check(sql(`select has_function_privilege('${role}','${predecessor}','execute')`), 'f', 'Predecessor helper stays private')
+  }
+
+  const floatingDraft = materialize()
+  let successor = newShiftFor(floatingDraft, floatingShift)
+  sql(`update public.sites set client_id='${clientA}' where id='${siteB}';`)
   publish(floatingDraft)
-  check(serviceScopes(guard, [floatingShift]), floatingRow(floatingShift, guard, []), 'Superseded assignment loses its prior scope')
-  check(getScope(successor).status, 'review_required', 'Operations can identify a replacement requiring explicit review')
-  check(serviceScopes(guard, [successor]), floatingRow(successor, guard, []), 'Even an unchanged copied block waits for explicit review and cannot use fixed fallback')
-  check(save(successor, guard, [siteB], null).revision, 1, 'Operations may explicitly approve the new published assignment')
-  check(authorizeScope(successor, guard, siteB), 't', 'Only the new approved exact occurrence authorizes the property')
-  check(authorizeScope(floatingShift, guard, siteB), 'f', 'Preserved historical records do not grant current report writes')
+  check(serviceScopes(guard, [floatingShift]), floatingRow(floatingShift, guard, []), 'Superseded assignment loses current write authority')
+  check(getScope(successor).approvedSiteIds, [siteB], 'Unchanged copy preserves the approved property ID even when it is unavailable')
+  check(getScope(successor).status, 'blocked', 'Approved property cannot be reused under a different client')
+  check(getScope(successor, otherGuard).status, 'blocked', 'Empty exact approval stays revoked on full publication')
+  check(getScope(successor, otherGuard).revision, 1, 'Revocation has an exact new generation ahead of reusable scope')
+  check(authorizeScope(successor, guard, siteA), 'f', 'Exact continuity does not add a recurring property')
+  sql(`update public.sites set client_id='${clientB}' where id='${siteB}';`)
+  check(serviceScopes(guard, [successor]), floatingRow(successor, guard, [siteB]), 'Original client binding is effective after the original relationship is restored')
+  check(authorizeScope(successor, guard, siteB), 't', 'Unchanged full publication preserves exact report authorization')
+  check(authorizeScope(floatingShift, guard, siteB), 'f', 'Retained predecessor does not authorize a new report')
+
+  const findSuccessor = (previous, employee, targetSchedule = null) => sql(`select target.id from public.shifts target
+    join public.schedules schedule on schedule.id=target.schedule_id
+      and ${targetSchedule ? `schedule.id='${targetSchedule}'` : "schedule.status='published'"}
+    join public.shift_assignments assignment on assignment.shift_id=target.id and assignment.employee_id='${employee}'
+    join public.shifts source on source.id='${previous}'
+    where target.post_id=source.post_id and target.starts_at=source.starts_at and target.ends_at=source.ends_at;`)
+  for (const employee of [otherGuard, guard, guard]) {
+    const scopedDraft = materialize()
+    sql(context() + `select public.publish_employee_schedule_slice('${scopedDraft}','${employee}');`)
+    const prior = successor
+    successor = findSuccessor(prior, guard)
+    const revokedSuccessor = findSuccessor(prior, otherGuard)
+    check(getScope(successor).siteIds, [siteB], 'Employee-only publication preserves unchanged exact approval')
+    check(getScope(revokedSuccessor, otherGuard).status, 'blocked', 'Employee-only publication preserves explicit revocation')
+    check(getScope(revokedSuccessor, otherGuard).revision, 1, 'Revocation is copied as history and continues to override recurring scope')
+    check(authorizeScope(prior, guard, siteB), 'f', 'Only the current published successor authorizes a new report')
+  }
+
+  const coverageBefore = protectedSnapshot(), draftBeforeCoverage = materialize()
+  const pendingBlock = findSuccessor(successor, guard, draftBeforeCoverage)
+  sql(`update public.shifts set notes='Synthetic unpublished edit' where id='${pendingBlock}';`)
+  const coverageSource = successor
+  const dispatchPublish = `private.create_absence_coverage_shift('${coverageSource}','${actor}')`
+  const opening = sql(context() + `select ${dispatchPublish};`)
+  const coverageRelease = sql(`select schedule_id from public.shifts where id='${opening}';`)
+  successor = findSuccessor(coverageSource, guard, coverageRelease)
+  check(getScope(successor).siteIds, [siteB], 'The existing Dispatch publisher keeps the unchanged exact approval')
+  check(authorizeScope(successor, guard, siteB), 't', 'Sygilant report authority follows the unchanged assignment through Dispatch publication')
+  check(authorizeScope(successor, guard, siteA), 'f', 'Dispatch publication does not add the recurring property')
+  check(authorizeScope(coverageSource, guard, siteB), 'f', 'Dispatch supersedes the former assignment without reusing it for new reports')
+  check(getScope(findSuccessor(coverageSource, otherGuard, coverageRelease), otherGuard).status, 'blocked', 'Dispatch publication preserves the explicit revocation of another assigned guard')
+  check(sql(`select count(*) from private.floating_patrol_scope_approvals where shift_id='${opening}';`), '0', 'The separate vacancy does not inherit an approval')
+  check(authorizeScope(opening, guard, siteB), 'f', 'The separate vacancy cannot authorize a report for the original guard')
+  check(authorizeScope(opening, otherGuard, siteB), 'f', 'The separate vacancy cannot authorize a report for another guard')
+  check(sql(`select count(*) from public.shifts s join public.schedules w on w.id=s.schedule_id
+    where w.status='draft' and w.previous_revision_id='${coverageRelease}' and s.notes='Synthetic unpublished edit';`),
+  '1', 'Dispatch rebases one copy of existing unpublished work')
+  rejected(context() + `perform ${dispatchPublish};`, '23514')
+  check(sql(`select count(*) from public.shifts s join public.schedules w on w.id=s.schedule_id
+    where w.status='published' and s.coverage_source_shift_id='${coverageSource}';`), '1', 'Retry does not duplicate published coverage')
+  check(sql(`select count(*) from private.audit_events where operation='preserve_schedule_revision' and row_id='${successor}'
+    and new_record->>'employeeId'='${guard}';`), '1', 'Retry does not duplicate the carried approval receipt')
+  check(protectedSnapshot(), coverageBefore, 'Dispatch publication preserves original coverage, punches, payroll, reports and evidence')
+
+  const changedDraft = materialize()
+  const changedBlock = findSuccessor(successor, guard, changedDraft)
+  sql(`update public.shift_assignments set assigned_at=assigned_at+interval '1 second'
+    where shift_id='${changedBlock}' and employee_id='${guard}';`)
+  sql(context() + `select public.publish_employee_schedule_slice('${changedDraft}','${guard}');`)
+  successor = findSuccessor(successor, guard)
+  check(getScope(successor).status, 'review_required', 'Reassigning the same employee requires a new approval')
+  check(serviceScopes(guard, [successor]), floatingRow(successor, guard, []), 'Changed assignment stays blocked ahead of recurring scope')
+  check(save(successor, guard, [siteB], null).revision, 1, 'Operations can approve the changed assignment explicitly')
   sql(`update public.shift_assignments set assigned_at=assigned_at+interval '1 second' where shift_id='${successor}' and employee_id='${guard}';`)
   check(serviceScopes(guard, [successor]), floatingRow(successor, guard, []), 'Reassigning even the same guard and row UUID invalidates the old assignment snapshot')
   check(save(successor, guard, [siteB], 1).revision, 2, 'Operations can reapprove the exact re-assignment')
   check(save(successor, guard, [], 2).revision, 3, 'Operations can remove the floating properties before attaching a native route')
   check(Boolean(sql(context() + `select public.link_patrol_route_shift('${routeA}','${successor}','${guard}');`)), true, 'Fixed-route setup succeeds after explicit revocation')
   check(serviceScopes(guard, [successor]), [], 'An explicitly connected native route now has precedence and no floating fallback')
+  // Use a new draft directly based on this published native route.
+  sql("update public.schedules set status='archived' where status='draft';")
+  const nativeDraft = materialize(), nativeSuccessor = newShiftFor(nativeDraft, successor)
+  publish(nativeDraft)
+  check(getScope(nativeSuccessor).status, 'native_route', 'Native continuity takes precedence during actual publication')
+  check(sql(`select count(*) from private.floating_patrol_scope_approvals where shift_id='${nativeSuccessor}' and employee_id='${guard}';`),
+    '0', 'Publication does not copy a revocation onto an already governed native route')
 }

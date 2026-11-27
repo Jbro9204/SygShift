@@ -108,6 +108,8 @@ grant execute on function public.save_patrol_hit(uuid,uuid,uuid,uuid,uuid,text,t
 ${extract(read('supabase/migrations/20260802103000_scheduler_manual_notifications_and_week_copy.sql'), 'public.publish_schedule_draft')}
 ${read('supabase/migrations/20260820143000_overnight_occurrence_and_schedule_publication_integrity.sql').match(/do \$patch_full_schedule_publish\$[\s\S]*?\$patch_full_schedule_publish\$;/u)[0]}
 ${extract(read('supabase/migrations/20260731161500_employee_scoped_schedule_publish.sql'), 'public.publish_employee_schedule_slice')}
+${extract(read('supabase/migrations/20260913175135_absence_coverage_workflow.sql'), 'private.create_absence_coverage_shift')}
+revoke all on function private.create_absence_coverage_shift(uuid,uuid) from public,anon,authenticated,service_role;
 ${read('supabase/migrations/20260820143000_overnight_occurrence_and_schedule_publication_integrity.sql').match(/do \$patch_employee_schedule_publish\$[\s\S]*?\$patch_employee_schedule_publish\$;/u)[0]}
 ${extract(read('supabase/migrations/20260925182312_enforce_schedule_dst_boundaries.sql'), 'public.replace_schedule_week_draft_from_revision')}
 insert into public.employees values('${actor}','Synthetic','Manager','active','America/Denver'),('${guard}','Synthetic','Guard','active','America/Denver'),('${otherGuard}','Synthetic','Other','active','America/Denver');

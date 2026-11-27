@@ -1,5 +1,9 @@
 # SygShift Development Log
 
+## 11/27/2026 - Floating patrol property continuity
+
+- Preserve separately approved patrol properties, or a deliberate revocation, through uniquely matched unchanged schedule revisions without enlarging Guard access. The local repair passed the disposable schedule and Dispatch coverage regression; production activation and signed-in acceptance remain held. See `docs/changelogs/CHANGELOG_2026-11-27_FLOATING_PATROL_SCHEDULE_CONTINUITY.md`.
+
 ## 11/25/2026 - Urgent Guard call-off repair candidate
 
 - Keep the call-off bookmark usable while required actions are blocking, without opening unrelated My Time controls or waiting for payroll-period data. Preserve the existing authenticated attendance action and offer a clearly identified date-only option if assigned shifts cannot be loaded.
