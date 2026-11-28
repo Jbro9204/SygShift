@@ -1,6 +1,6 @@
 import {expect,test} from '@playwright/test'
 const fixture=`http://127.0.0.1:${4191+Number(process.env.PLAYWRIGHT_PORT_OFFSET??0)}/tests/fixtures/urgent-maintenance-ui.html`
-for(const surface of ['my-time','requests']){
+for(const surface of ['my-time','urgent-call-off','requests']){
   test(`${surface}: employee urgent absence remains usable during full read-only maintenance`,async({page})=>{
     const submitted:Array<Record<string,unknown>>=[]
     await page.route('**/api/v1/time/attendance/report',async route=>{
@@ -10,7 +10,8 @@ for(const surface of ['my-time','requests']){
         id:'30000000-0000-4000-8000-000000000001',callOffId:'40000000-0000-4000-8000-000000000001',employeeId:'10000000-0000-4000-8000-000000000001',employeeName:'Test Employee',username:'testemployee',eventType:body.eventType,status:'reported',operationalDate:body.operationalDate??'2026-09-07',shiftId:body.shiftId??null,startsAt:null,endsAt:null,timeZone:'America/Denver',siteName:null,siteCode:null,postName:null,eventName:null,locationName:'Test site',note:body.note,createdAt:'2026-09-06T16:00:00Z',created:true,alreadyRecorded:false,dispatchNotified:true,dispatchError:null,
       })})
     })
-    await page.goto(`${fixture}?surface=${surface}&scenario=ready`)
+    const scenario = surface === 'urgent-call-off' ? 'early' : 'ready'
+    await page.goto(`${fixture}?surface=${surface}&scenario=${scenario}`)
     await expect(page.getByRole('status',{name:'SygShift maintenance notice'})).toContainText('Full database maintenance is in progress')
     if(surface==='my-time'){
       await expect(page.getByRole('button',{name:'Report sick / call-off'})).toBeEnabled()
@@ -24,6 +25,30 @@ for(const surface of ['my-time','requests']){
       await expect(page.getByText('Attendance report saved')).toBeVisible()
       expect(submitted).toHaveLength(1)
       expect(submitted[0].eventType).toBe('called_in_sick')
+    }else if(surface==='urgent-call-off'){
+      const dialog = page.getByRole('dialog', { name: 'Report sick or call-off' })
+      const shift = dialog.getByRole('combobox', { name: 'Shift' })
+      const date = dialog.getByLabel('Date', { exact: true })
+      const shiftId = '20000000-0000-4000-8000-000000000001'
+      await expect(date).toHaveValue('2026-09-06')
+      await date.fill('2026-09-09')
+      await shift.selectOption(shiftId)
+      await expect(date).toBeDisabled()
+      await expect(date).toHaveValue('2026-09-07')
+      await shift.selectOption('')
+      await expect(date).toBeEnabled()
+      await expect(date).toHaveValue('2026-09-09')
+      await shift.selectOption(shiftId)
+      await dialog.getByRole('radio', { name: /Call-off \/ cannot work/ }).check()
+      await dialog.getByLabel(/Short note/).fill('Isolated browser future-shift call-off')
+      await dialog.getByRole('button', { name: 'Send to Dispatch' }).click()
+      await expect(page.getByText('Attendance report saved')).toBeVisible()
+      expect(submitted).toEqual([{
+        eventType: 'call_off',
+        note: 'Isolated browser future-shift call-off',
+        operationalDate: null,
+        shiftId,
+      }])
     }else{
       await expect(page.getByRole('button',{name:'Review call-off'})).toBeEnabled()
       await page.getByRole('combobox',{name:'Assigned shift'}).selectOption('20000000-0000-4000-8000-000000000001')

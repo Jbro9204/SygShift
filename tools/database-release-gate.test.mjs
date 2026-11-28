@@ -1,14 +1,18 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { buildOwnershipManifest, readSourceTree } from './database-migration-ownership.mjs'
 import { authBanCompatibilitySql, requireDatabaseReleaseBaseline } from './database-release-gate.mjs'
 import { executeProductionRelease, parseProductionReleaseArguments } from './release-production.mjs'
-import { retrySafetyCatalogSql } from './postgres-retry-safety.mjs'
+import { retrySafetyCatalogSql, sha256 } from './postgres-retry-safety.mjs'
 
-function fixture(t, ledger = [{ version: '11', name: 'one', statements: ["select 'PRIVATE_LEDGER_BODY'"] }]) {
+const isRetrySafetyCatalogSql = (argument) => argument.startsWith('select n.nspname') && argument.includes('from pg_proc p join pg_namespace n')
+
+function fixture(t, ledger = [{ version: '11', name: 'one', statements: ["select 'PRIVATE_LEDGER_BODY'"] }], {
+  sygilantSource, sygilantManifest = {}, catalogRows = [],
+} = {}) {
   const folder = mkdtempSync(join(tmpdir(), 'sygshift-database-gate-'))
   t.after(() => rmSync(folder, { recursive: true, force: true }))
   const cwd = join(folder, 'SygShift')
@@ -18,6 +22,14 @@ function fixture(t, ledger = [{ version: '11', name: 'one', statements: ["select
     mkdirSync(join(root, 'docs/reliability'), { recursive: true })
     writeFileSync(join(root, 'docs/reliability/postgres-retry-safety.json'), JSON.stringify({ formatVersion: 1, immutableHistoricalSources: [], runtimeExceptions: [], functions: [] }))
   }
+  if (sygilantSource) {
+    const path = join(sygilant, sygilantSource.path)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, sygilantSource.text)
+  }
+  const retryManifestPath = join(sygilant, 'docs/reliability/postgres-retry-safety.json')
+  const initialSygilantManifest = JSON.parse(readFileSync(retryManifestPath, 'utf8'))
+  writeFileSync(retryManifestPath, JSON.stringify({ ...initialSygilantManifest, ...sygilantManifest }))
   const docs = join(cwd, 'docs/work-orders/2026-10-19-overnight')
   mkdirSync(docs, { recursive: true })
   writeFileSync(join(docs, 'migration-source-ownership-decisions.json'), '{}')
@@ -33,7 +45,7 @@ function fixture(t, ledger = [{ version: '11', name: 'one', statements: ["select
   }
   const run = async (args, runOptions) => {
     calls.push({ args, runOptions })
-    return { stdout: args[0] === 'dlx' ? JSON.stringify({ rows: args.includes(retrySafetyCatalogSql) ? [] : args.includes(authBanCompatibilitySql) ? [{ non_finite_ban_count: '0' }] : ledger }) : 'docs/reviewed-v2.json\n', stderr: '' }
+    return { stdout: args[0] === 'dlx' ? JSON.stringify({ rows: args.some(isRetrySafetyCatalogSql) ? catalogRows : args.includes(authBanCompatibilitySql) ? [{ non_finite_ban_count: '0' }] : ledger }) : 'docs/reviewed-v2.json\n', stderr: '' }
   }
   return { options, calls, run, ledger, sourceFile, baselinePath }
 }
@@ -130,6 +142,83 @@ test('unsafe effective runtime definitions block release even with an unchanged 
     ? { stdout: JSON.stringify({ rows: [{ identity: 'public.unsafe()', body: "begin raise sqlstate '40001'; end;", definition_md5: 'bad' }] }) }
     : f.run(args, options)
   await assert.rejects(requireDatabaseReleaseBaseline(f.options, { run }), /retry-safety gate refused/u)
+})
+
+const canonicalSuccessionSource = 'create function public.fixture() returns int language sql as $$select 1$$;\n'
+const canonicalSuccessionPath = 'supabase/guided-hr-canonical/22_fixture.sql'
+const updatedWrapper = { identity: 'public.fixture()', afterMd5: 'a'.repeat(32), metadataMd5: 'b'.repeat(32) }
+const retainedImplementation = { identity: 'private.fixture()', afterMd5: 'c'.repeat(32), metadataMd5: 'd'.repeat(32) }
+const historicWrapper = { ...updatedWrapper, afterMd5: 'e'.repeat(32) }
+const wrapperBody = 'select private.fixture()'
+const retainedBody = "begin raise sqlstate 'PT409'; end;"
+const effectiveRow = (fingerprint, body) => ({
+  identity: fingerprint.identity, body, definition_md5: fingerprint.afterMd5, metadata_md5: fingerprint.metadataMd5,
+})
+const expectedEffectiveRows = [
+  effectiveRow(updatedWrapper, wrapperBody),
+  effectiveRow(retainedImplementation, retainedBody),
+]
+
+function successionFixture(t, { changes = {}, applied = true, catalogRows = expectedEffectiveRows } = {}) {
+  const statements = ['reviewed hosted statement envelope']
+  const ledger = [{ version: '11', name: 'one', statements: ['select 1'] }]
+  if (applied) ledger.push({ version: '22', name: 'fixture', statements })
+  const succession = {
+    migrationPath: canonicalSuccessionPath,
+    migrationSha256: sha256(canonicalSuccessionSource),
+    orderedStatementsSha256: sha256(statements.join(';\n')),
+    supersedes: [historicWrapper.identity],
+    functions: [updatedWrapper, retainedImplementation],
+    ...changes,
+  }
+  return fixture(t, ledger, {
+    sygilantSource: { path: canonicalSuccessionPath, text: canonicalSuccessionSource },
+    sygilantManifest: { functions: [historicWrapper], functionSuccessions: [succession] },
+    catalogRows,
+  })
+}
+
+test('the mandatory gate verifies a reviewed wrapper without retry markers and its retained implementation', async (t) => {
+  const f = successionFixture(t)
+  const result = await requireDatabaseReleaseBaseline(f.options, { run: f.run })
+  assert.equal(result.retrySafetyCheckedFunctions, 2)
+  const sql = f.calls[3].args.find(isRetrySafetyCatalogSql)
+  assert.match(sql, /p\.prosrc ~\* '\(40001\|40P01\|PT409\|serialization_failure\|deadlock_detected\|errcode\)' or/u)
+  const digests = expectedEffectiveRows.map(({ identity }) => sha256(identity)).join(',')
+  assert.match(sql, /encode\(sha256\(convert_to\(/u)
+  assert.ok(sql.includes("= any(string_to_array('" + digests + "', ','))"))
+  for (const { identity } of expectedEffectiveRows) assert.ok(!sql.includes(identity))
+})
+
+test('a reviewed successor still fails on definition drift, metadata drift, duplicate rows or unsafe retry raises', async (t) => {
+  for (const catalogRows of [
+    expectedEffectiveRows.slice(1),
+    [{ ...expectedEffectiveRows[0], definition_md5: historicWrapper.afterMd5 }, expectedEffectiveRows[1]],
+    [{ ...expectedEffectiveRows[0], metadata_md5: 'f'.repeat(32) }, expectedEffectiveRows[1]],
+    [...expectedEffectiveRows, expectedEffectiveRows[0]],
+    [...expectedEffectiveRows, { identity: 'private.unreviewed()', body: "begin raise sqlstate '40001'; end;", definition_md5: 'bad' }],
+  ]) {
+    const f = successionFixture(t, { catalogRows })
+    await assert.rejects(requireDatabaseReleaseBaseline(f.options, { run: f.run }), /retry-safety gate refused/u)
+    assert.equal(f.calls.length, 4)
+  }
+})
+
+test('unapplied, unbound or malformed successions fail before the live catalog check', async (t) => {
+  for (const options of [
+    { applied: false },
+    { changes: { migrationPath: 'supabase/guided-hr-canonical/../22_fixture.sql' } },
+    { changes: { migrationSha256: 'a'.repeat(64) } },
+    { changes: { orderedStatementsSha256: 'b'.repeat(64) } },
+    { changes: { supersedes: ['public.unreviewed()'] } },
+    { changes: { supersedes: [updatedWrapper.identity, updatedWrapper.identity] } },
+    { changes: { functions: [retainedImplementation] } },
+    { changes: { functions: [updatedWrapper, updatedWrapper, retainedImplementation] } },
+  ]) {
+    const f = successionFixture(t, options)
+    await assert.rejects(requireDatabaseReleaseBaseline(f.options, { run: f.run }), /retry-safety gate refused/u)
+    assert.equal(f.calls.length, 3)
+  }
 })
 
 test('missing configuration and wrong target fail before any CLI or release command', async (t) => {

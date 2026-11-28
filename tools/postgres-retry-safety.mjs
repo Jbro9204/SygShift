@@ -165,6 +165,7 @@ export function assertRuntimeRetrySafety(rows, reviewedExceptions = []) {
 
 export function assertReviewedFunctionFingerprints(rows, manifest) {
   const byIdentity = new Map(rows.map((row) => [row.identity, row]))
+  if (byIdentity.size !== rows.length) throw new Error('Duplicate effective retry-safety function identity')
   for (const target of manifest.functions ?? []) {
     const row = byIdentity.get(target.identity)
     if (row?.definition_md5 !== target.afterMd5 || row?.metadata_md5 !== target.metadataMd5) {
@@ -174,7 +175,106 @@ export function assertReviewedFunctionFingerprints(rows, manifest) {
   return { verifiedFunctions: manifest.functions?.length ?? 0 }
 }
 
-export const retrySafetyCatalogSql = `select n.nspname||'.'||p.proname||'('||oidvectortypes(p.proargtypes)||')' as identity, p.prosrc as body, md5(pg_get_functiondef(p.oid)) as definition_md5, md5((to_jsonb(p)-'prosrc')::text) as metadata_md5 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','private') and p.prokind='f' and p.prosrc ~* '(40001|40P01|PT409|serialization_failure|deadlock_detected|errcode)' order by identity`
+const functionIdentityPattern = /^(?:public|private)\.[^\u0000\r\n]+\([^\u0000\r\n]*\)$/u
+const md5Pattern = /^[0-9a-f]{32}$/u
+const sha256Pattern = /^[0-9a-f]{64}$/u
+const reviewedMigrationPattern = /^supabase\/(migrations|guided-hr-canonical)\/([0-9]+)_([A-Za-z0-9_-]+)\.sql$/u
+
+function indexedFingerprints(functions) {
+  if (!Array.isArray(functions)) throw new Error('Reviewed retry-safety function inventory must be an array')
+  const byIdentity = new Map()
+  for (const target of functions) {
+    if (typeof target?.identity !== 'string' || !functionIdentityPattern.test(target.identity)
+      || !md5Pattern.test(target.afterMd5) || !md5Pattern.test(target.metadataMd5)
+      || byIdentity.has(target.identity)) {
+      throw new Error('Invalid or duplicate reviewed retry-safety function fingerprint')
+    }
+    byIdentity.set(target.identity, target)
+  }
+  return byIdentity
+}
+
+function requireAppliedSuccession(owner, root, succession, appliedByVersion) {
+  const path = succession?.migrationPath
+  const match = typeof path === 'string' && path.match(reviewedMigrationPattern)
+  if (!match || (match[1] === 'guided-hr-canonical' && owner !== 'Sygilant')
+    || !sha256Pattern.test(succession.migrationSha256) || !sha256Pattern.test(succession.orderedStatementsSha256)) {
+    throw new Error('Invalid reviewed retry-safety succession migration')
+  }
+  const [, , version, name] = match
+  const sourcePath = resolve(root, path)
+  const entry = appliedByVersion.get(version)
+  if (entry?.owner !== owner || entry.name !== name || entry.sourceMatch !== 'exact-version-and-name'
+    || entry.statementArrayState !== 'array' || entry.statementCount < 1
+    || entry.orderedStatementsSha256 !== succession.orderedStatementsSha256
+    || !entry.sourceCandidates.some((source) => source.owner === owner && source.path === sourcePath
+      && source.version === version && source.name === name && source.normalizedSourceSha256 === succession.migrationSha256)
+    || sha256(readFileSync(sourcePath, 'utf8').replaceAll('\r\n', '\n')) !== succession.migrationSha256) {
+    throw new Error('Reviewed retry-safety succession lacks matching applied ledger and source evidence')
+  }
+  return version
+}
+
+// The release gate supplies fresh entries only after their ledger and owning
+// source inventory have matched the committed baseline.
+export function resolveReviewedFunctionFingerprints(owningManifests, appliedEntries) {
+  const appliedByVersion = new Map(appliedEntries.map((entry) => [entry.version, entry]))
+  const current = new Map()
+  const originalOwners = new Map()
+  for (const { owner, manifest } of owningManifests) {
+    for (const [identity, fingerprint] of indexedFingerprints(manifest.functions ?? [])) {
+      if (current.has(identity)) throw new Error('Duplicate reviewed retry-safety identity across owners')
+      current.set(identity, fingerprint)
+      originalOwners.set(identity, owner)
+    }
+  }
+
+  const usedMigrations = new Set()
+  const replacedIdentities = new Set()
+  for (const { owner, root, manifest } of owningManifests) {
+    const successions = manifest.functionSuccessions === undefined ? [] : manifest.functionSuccessions
+    if (!Array.isArray(successions)) throw new Error('Reviewed retry-safety successions must be an array')
+    for (const succession of successions) {
+      const version = requireAppliedSuccession(owner, root, succession, appliedByVersion)
+      if (usedMigrations.has(version)) throw new Error('Duplicate reviewed retry-safety succession migration')
+      usedMigrations.add(version)
+      const replacements = indexedFingerprints(succession.functions)
+      if (!Array.isArray(succession.supersedes) || !succession.supersedes.length) {
+        throw new Error('Reviewed retry-safety succession must name a tracked identity')
+      }
+      const supersedes = new Set(succession.supersedes)
+      if (supersedes.size !== succession.supersedes.length) throw new Error('Duplicate superseded retry-safety identity')
+      for (const identity of supersedes) {
+        if (typeof identity !== 'string' || !identity.startsWith('public.')
+          || originalOwners.get(identity) !== owner || replacedIdentities.has(identity) || !replacements.has(identity)) {
+          throw new Error('Reviewed retry-safety succession must replace each tracked identity with its exact counterpart')
+        }
+        replacedIdentities.add(identity)
+      }
+      for (const [identity, fingerprint] of replacements) {
+        if (current.has(identity) && !supersedes.has(identity)) {
+          throw new Error('Duplicate or undeclared replacement retry-safety identity')
+        }
+        current.set(identity, fingerprint)
+      }
+    }
+  }
+  return [...current.values()]
+}
+
+const retrySafetyIdentity = "n.nspname||'.'||p.proname||'('||oidvectortypes(p.proargtypes)||')'"
+const retrySafetyCatalogSelect = "select " + retrySafetyIdentity + " as identity, p.prosrc as body, md5(pg_get_functiondef(p.oid)) as definition_md5, md5((to_jsonb(p)-'prosrc')::text) as metadata_md5 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','private') and p.prokind='f'"
+const retrySafetyCatalogFilter = "p.prosrc ~* '(40001|40P01|PT409|serialization_failure|deadlock_detected|errcode)'"
+export const retrySafetyCatalogSql = retrySafetyCatalogSelect + ' and ' + retrySafetyCatalogFilter + ' order by identity'
+
+export function buildRetrySafetyCatalogSql(functions) {
+  if (!functions.length) return retrySafetyCatalogSql
+  // Keep the command line short on Windows. Hashes select rows only; the
+  // fingerprint validator still compares their full identities and hashes.
+  const digests = functions.map(({ identity }) => sha256(identity)).join(',')
+  return retrySafetyCatalogSelect + ' and (' + retrySafetyCatalogFilter + ' or encode(sha256(convert_to('
+    + retrySafetyIdentity + ", 'UTF8')), 'hex') = any(string_to_array('" + digests + "', ','))) order by identity"
+}
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {

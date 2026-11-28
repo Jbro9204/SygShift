@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
-import { buildOwnershipManifest, verifyOwnershipBaseline } from './database-migration-ownership.mjs'
+import { buildOwnershipManifest, readSourceTree, verifyOwnershipBaseline } from './database-migration-ownership.mjs'
 
 const source = (owner, version, name, disposition = 'requires-ledger-reconciliation') => ({ owner, version, name, disposition, filename: `${version}_${name}.sql`, normalizedSourceSha256: 'a'.repeat(64) })
 const manifest = (ledgerRows, sources) => buildOwnershipManifest({ ledgerRows, sources, capturedAt: '2026-10-19T00:00:00Z', ledgerSha256: 'test' })
@@ -110,4 +113,55 @@ test('a changed applied name fails even when SQL and version are identical', () 
   const current = structuredClone(reviewed)
   current.entries[0].name = 'renamed'
   assert.match(verifyOwnershipBaseline(current, reviewed).driftErrors.join('\n'), /Applied migration name changed/u)
+})
+
+function scanFixture(t) {
+  const root = mkdtempSync(join(tmpdir(), 'sygshift-migration-ownership-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  mkdirSync(join(root, 'supabase', 'migrations'), { recursive: true })
+  return root
+}
+
+test('the audit recognizes separately governed hosted HR SQL as a Sygilant owning source', (t) => {
+  const root = scanFixture(t)
+  const sql = 'select 1;\n'
+  writeFileSync(join(root, 'supabase', 'migrations', '11_one.sql'), sql)
+  assert.deepEqual(readSourceTree(root, 'Sygilant').map(({ filename }) => filename), ['11_one.sql'])
+
+  const version = '20261127000224'
+  const name = 'guided_hr_required_employee_response'
+  const filename = version + '_' + name + '.sql'
+  const canonical = join(root, 'supabase', 'guided-hr-canonical')
+  mkdirSync(canonical)
+  const canonicalPath = join(canonical, filename)
+  writeFileSync(canonicalPath, sql)
+  const rows = [{ version, name, statements: [sql] }]
+  const reviewed = manifest(rows, readSourceTree(root, 'Sygilant'))
+  assert.equal(reviewed.entries[0].owner, 'Sygilant')
+  assert.equal(reviewed.entries[0].sourceMatch, 'exact-version-and-name')
+  assert.equal(reviewed.entries[0].sourceCandidates[0].path, canonicalPath)
+  assert.equal(reviewed.entries[0].replayAuthorization, 'none-no-bulk-push')
+  assert.equal(verifyOwnershipBaseline(reviewed, reviewed).accepted, true)
+
+  writeFileSync(canonicalPath, 'select 2;\n')
+  const changed = manifest(rows, readSourceTree(root, 'Sygilant'))
+  assert.deepEqual(verifyOwnershipBaseline(changed, reviewed).driftErrors, [
+    'Owning-source checksum changed: Sygilant/' + filename,
+  ])
+})
+
+test('only Sygilant scans the exact canonical HR directory without traversing other folders', (t) => {
+  const root = scanFixture(t)
+  for (const [directory, file] of [
+    ['migrations', '11_one.sql'],
+    ['guided-hr-canonical', '22_canonical.sql'],
+    ['guided-hr-canonical/nested', '33_nested.sql'],
+    ['other-shared-sql', '44_unreviewed.sql'],
+  ]) {
+    const folder = join(root, 'supabase', directory)
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, file), 'select 1;\n')
+  }
+  assert.deepEqual(readSourceTree(root, 'SygShift').map(({ filename }) => filename), ['11_one.sql'])
+  assert.deepEqual(readSourceTree(root, 'Sygilant').map(({ filename }) => filename), ['11_one.sql', '22_canonical.sql'])
 })

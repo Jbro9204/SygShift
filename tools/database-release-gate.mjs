@@ -4,7 +4,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildOwnershipManifest, readSourceTree, verifyOwnershipBaseline } from './database-migration-ownership.mjs'
 import { commandEnvironment, createCommandRunner } from './production-release-core.mjs'
-import { assertReviewedFunctionFingerprints, assertRuntimeRetrySafety, checkMigrationRetrySafety, retrySafetyCatalogSql } from './postgres-retry-safety.mjs'
+import { assertReviewedFunctionFingerprints, assertRuntimeRetrySafety, buildRetrySafetyCatalogSql, checkMigrationRetrySafety, resolveReviewedFunctionFingerprints } from './postgres-retry-safety.mjs'
 
 const productionProject = 'eqkdfrbwtioiqtjsyglg'
 const ledgerQuery = 'select version,name,statements from supabase_migrations.schema_migrations order by version'
@@ -79,18 +79,22 @@ export async function requireDatabaseReleaseBaseline(options, injected = {}) {
   }
   let retrySafety
   try {
-    const retryManifests = [cwd, sygilantRoot].map((root) => {
+    const retryManifests = [
+      { root: cwd, owner: 'SygShift' },
+      { root: sygilantRoot, owner: 'Sygilant' },
+    ].map(({ root, owner }) => {
       const manifest = JSON.parse(readFileSync(resolve(root, 'docs/reliability/postgres-retry-safety.json'), 'utf8'))
       checkMigrationRetrySafety(root, manifest)
-      return manifest
+      return { root, owner, manifest }
     })
+    const functions = resolveReviewedFunctionFingerprints(retryManifests, current.entries)
     const result = await run([
       'dlx', 'supabase@2.121.0', 'db', 'query', '--linked', '--project-ref', productionProject,
-      retrySafetyCatalogSql, '-o', 'json',
+      buildRetrySafetyCatalogSql(functions), '-o', 'json',
     ], commandOptions)
     const catalog = JSON.parse(result.stdout)
-    retrySafety = assertRuntimeRetrySafety(catalog.rows, retryManifests.flatMap((manifest) => manifest.runtimeExceptions ?? []))
-    for (const manifest of retryManifests) assertReviewedFunctionFingerprints(catalog.rows, manifest)
+    retrySafety = assertRuntimeRetrySafety(catalog.rows, retryManifests.flatMap(({ manifest }) => manifest.runtimeExceptions ?? []))
+    assertReviewedFunctionFingerprints(catalog.rows, { functions })
   } catch {
     throw new Error('The mandatory PostgreSQL retry-safety gate refused the release. Check immutable migration sources and live effective function definitions. No release command ran; catalog bodies were withheld.')
   }

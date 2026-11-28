@@ -8,8 +8,19 @@ const normalized = (value) => value.replaceAll('\r\n', '\n')
 const retiredSygilantVersion = '202609020003'
 
 export function readSourceTree(root, owner) {
-  const folder = join(resolve(root), 'supabase', 'migrations')
-  return readdirSync(folder).filter((file) => file.endsWith('.sql')).map((file) => {
+  const supabase = join(resolve(root), 'supabase')
+  const migrations = join(supabase, 'migrations')
+  const files = readdirSync(migrations).map((file) => ({ folder: migrations, file }))
+  if (owner === 'Sygilant') {
+    // Audit separately governed shared HR sources without adding them to the CLI replay chain.
+    const canonicalHr = join(supabase, 'guided-hr-canonical')
+    try {
+      files.push(...readdirSync(canonicalHr).map((file) => ({ folder: canonicalHr, file })))
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
+  }
+  return files.filter(({ file }) => file.endsWith('.sql')).map(({ folder, file }) => {
     const match = file.match(/^([0-9]+)_(.+)\.sql$/u)
     if (!match) throw new Error(`Invalid migration source filename: ${file}`)
     const path = join(folder, file)

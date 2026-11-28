@@ -9,7 +9,7 @@ import { getSessionContext } from '../data/auth'
 import { getTimekeepingDashboard, type AttendanceReportResult, type TimekeepingShift } from '../data/timekeeping'
 import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { formatDualTimeRange } from '../lib/time'
+import { dateKeyInTimeZone, formatDualTimeRange } from '../lib/time'
 import { continentalUsTimeZoneShortLabel } from '../lib/usTimeZones'
 import { TimeAlertCard, TimeButton, TimePageHeader } from './TimeKit'
 import { useAttendanceReport, type AttendanceIssueType } from './useAttendanceReport'
@@ -118,6 +118,11 @@ export function AttendanceReportModal({
   shifts: TimekeepingShift[]
   timeZone: string
 }) {
+  const selectedShift = shifts.find((shift) => shift.shiftId === selectedShiftId)
+  // The attendance RPC records a linked absence on the shift's local start date.
+  const reportDate = selectedShift
+    ? dateKeyInTimeZone(new Date(selectedShift.startsAt), selectedShift.timeZone)
+    : date
   const noteReady = note.trim().length > 0
   const canSubmit = noteReady && (selectedShiftId || date)
 
@@ -187,7 +192,7 @@ export function AttendanceReportModal({
           </label>
           <label>
             <span>Date</span>
-            <input disabled={pending || Boolean(selectedShiftId)} onChange={(event) => onChangeDate(event.target.value)} type="date" value={date} />
+            <input disabled={pending || Boolean(selectedShiftId)} onChange={(event) => onChangeDate(event.target.value)} type="date" value={reportDate} />
           </label>
         </div>
 
@@ -235,5 +240,8 @@ function shiftTitle(shift: TimekeepingShift): string {
 function employeeShiftTimeLabel(shift: TimekeepingShift, employeeTimeZone: string): string {
   const employeeTime = `Employee Time — ${continentalUsTimeZoneShortLabel(employeeTimeZone)}: ${formatDualTimeRange(shift.startsAt, shift.endsAt, employeeTimeZone)}`
   if (shift.timeZone === employeeTimeZone) return employeeTime
-  return `${employeeTime} · Site Time — ${continentalUsTimeZoneShortLabel(shift.timeZone)}: ${formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}`
+  const employeeDate = formatShiftDate(shift.startsAt, employeeTimeZone)
+  const siteDate = formatShiftDate(shift.startsAt, shift.timeZone)
+  const siteDateLabel = siteDate === employeeDate ? '' : `${siteDate} `
+  return `${employeeTime} · Site Time — ${continentalUsTimeZoneShortLabel(shift.timeZone)}: ${siteDateLabel}${formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}`
 }

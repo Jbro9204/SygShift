@@ -1,5 +1,9 @@
 # SygShift Development Log
 
+## 11/27/2026 - Guard call-off date
+
+- Show the recorded start date for the selected shift and preserve the date-only draft. The existing shift-linked submission and coverage steps carry forward. See docs/changelogs/CHANGELOG_2026-11-27_GUARD_CALL_OFF_DATE.md.
+
 ## 11/27/2026 - Floating patrol property continuity
 
 - Preserve separately approved patrol properties, or a deliberate revocation, through uniquely matched unchanged schedule revisions without enlarging Guard access. The local repair passed the disposable schedule and Dispatch coverage regression; production activation and signed-in acceptance remain held. See `docs/changelogs/CHANGELOG_2026-11-27_FLOATING_PATROL_SCHEDULE_CONTINUITY.md`.

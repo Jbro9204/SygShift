@@ -415,8 +415,14 @@ describe('AppShell shared-session lifecycle', () => {
     expect(screen.queryByRole('combobox', { name: 'Pay period' })).not.toBeInTheDocument()
     expect(shared.loadPayrollPeriod).not.toHaveBeenCalled()
     expect(shared.sendCallOff).not.toHaveBeenCalled()
-    await within(dialog).findByRole('option', { name: /Fixture site/ })
+    const shiftOption = await within(dialog).findByRole('option', { name: /Fixture site/ })
+    const dateInput = within(dialog).getByLabelText('Date')
+    expect(shiftOption).toHaveTextContent(/11\/27\/2026.*Site Time.*11\/28\/2026/)
+    expect(dateInput).toBeEnabled()
+    expect(dateInput).toHaveValue('2026-11-25')
     await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Shift' }), shiftId)
+    expect(dateInput).toBeDisabled()
+    expect(dateInput).toHaveValue('2026-11-28')
     await user.click(within(dialog).getByRole('radio', { name: /Call-off \/ cannot work/ }))
     await user.type(within(dialog).getByRole('textbox', { name: /^Short note/ }), 'Cannot safely reach the assigned post.')
     await user.dblClick(within(dialog).getByRole('button', { name: 'Send to Dispatch' }))
@@ -429,6 +435,31 @@ describe('AppShell shared-session lifecycle', () => {
     await user.click(screen.getByRole('link', { name: 'Return to Home' }))
     expect(await screen.findByText('Platform home')).toBeInTheDocument()
     expect(document.querySelector('.app-shell--required-actions')).not.toBeNull()
+  })
+
+  it('restores the manually entered date when the Guard clears a selected shift', async () => {
+    const user = userEvent.setup()
+    const { shiftId } = prepareGuardCallOffTest()
+    shared.sendCallOff.mockResolvedValue({ dispatchNotified: true })
+    renderShell('/time/my-time?report=call-off')
+
+    const dialog = await screen.findByRole('dialog', { name: 'Report sick or call-off' })
+    await within(dialog).findByRole('option', { name: /Fixture site/ })
+    const dateInput = within(dialog).getByLabelText('Date')
+    const shiftSelect = within(dialog).getByRole('combobox', { name: 'Shift' })
+    fireEvent.change(dateInput, { target: { value: '2026-11-29' } })
+    await user.selectOptions(shiftSelect, shiftId)
+    expect(dateInput).toHaveValue('2026-11-28')
+    await user.selectOptions(shiftSelect, '')
+    expect(dateInput).toBeEnabled()
+    expect(dateInput).toHaveValue('2026-11-29')
+    await user.type(within(dialog).getByRole('textbox', { name: /^Short note/ }), 'Date-only fixture.')
+    await user.click(within(dialog).getByRole('button', { name: 'Send to Dispatch' }))
+
+    expect(await screen.findByText('Dispatch was notified automatically.')).toBeVisible()
+    expect(shared.sendCallOff).toHaveBeenCalledExactlyOnceWith({
+      eventType: 'called_in_sick', note: 'Date-only fixture.', operationalDate: '2026-11-29', shiftId: null,
+    })
   })
 
   it('keeps a date-only call-off usable if shift lookup fails and keeps the note after a failed save', async () => {
@@ -1399,13 +1430,13 @@ function prepareGuardCallOffTest() {
     viewedAt: null,
   }]
   shared.loadShiftChoices.mockResolvedValue({
-    employee: { timeZone: 'America/Denver' },
+    employee: { timeZone: 'America/Los_Angeles' },
     operationalDate: '2026-11-25',
     eligibleShifts: [{
       assignmentId: '10000000-0000-4000-8000-000000000001',
       shiftId,
-      startsAt: '2026-11-26T02:00:00Z',
-      endsAt: '2026-11-26T10:00:00Z',
+      startsAt: '2026-11-28T07:30:00Z',
+      endsAt: '2026-11-28T15:30:00Z',
       timeZone: 'America/Denver',
       postName: 'Fixture patrol',
       siteName: 'Fixture site',
